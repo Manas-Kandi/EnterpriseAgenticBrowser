@@ -33,7 +33,7 @@
     - **References:** `requirements.md` (FR-09)
     - **Git:** `git add . && git commit -m "feat: create agent tool registry system" && git push origin main`
 
-- [ ] **Task 2.3: Build Audit Logging**
+- [x] **Task 2.3: Build Audit Logging**
     - **Description:** Set up SQLite (better-sqlite3). Create an `AuditService` that logs every agent action (tool call, inputs, outputs, timestamp) to a local encrypted DB.
     - **References:** `requirements.md` (FR-14)
     - **Git:** `git add . && git commit -m "feat: implement local sqlite audit logging" && git push origin main`

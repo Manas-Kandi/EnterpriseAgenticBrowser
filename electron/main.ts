@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { vaultService } from './services/VaultService'
 import { agentService } from './services/AgentService'
+import { auditService } from './services/AuditService'
 
 const require = createRequire(import.meta.url)
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -84,7 +85,25 @@ app.whenReady().then(() => {
 
   // Agent IPC Handlers
   ipcMain.handle('agent:chat', async (_, message) => {
-    return await agentService.chat(message);
+    // Log User Input
+    await auditService.log({
+        actor: 'user',
+        action: 'chat_message',
+        details: { message },
+        status: 'success'
+    });
+    
+    const response = await agentService.chat(message);
+    
+    // Log Agent Response
+    await auditService.log({
+        actor: 'agent',
+        action: 'chat_response',
+        details: { response },
+        status: 'success'
+    });
+
+    return response;
   });
 
   createWindow();
