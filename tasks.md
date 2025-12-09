@@ -23,9 +23,10 @@
 ## Phase 2: Agent Core
 
 - [ ] **Task 2.1: Setup LangChain & LLM Client**
-    - **Description:** Initialize LangChain. Create an `AgentService` that connects to OpenAI/Anthropic. Implement a simple "Chat" interface in the sidebar where the user can send a message and get a text response.
+    - **Description:** Initialize LangChain. Create an `AgentService` that connects to the NVIDIA API (Meta Llama 3 70B). Implement a simple "Chat" interface in the sidebar where the user can send a message and get a text response.
+    - **Note:** Use `NVIDIA_API_KEY` from `.env`.
     - **References:** `requirements.md` (FR-05)
-    - **Git:** `git add . && git commit -m "feat: setup langchain client and chat interface" && git push origin main`
+    - **Git:** `git add . && git commit -m "feat: setup langchain client with nvidia llama3 and chat interface" && git push origin main`
 
 - [ ] **Task 2.2: Implement Tool Definition Interface**
     - **Description:** Create a TypeScript interface for `AgentTool`. This should define `name`, `description`, `schema` (Zod), and `execute` function. Create a registry to hold these tools.
