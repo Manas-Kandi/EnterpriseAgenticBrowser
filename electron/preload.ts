@@ -28,3 +28,7 @@ contextBridge.exposeInMainWorld('vault', {
   get: (account: string) => ipcRenderer.invoke('vault:get', account),
   delete: (account: string) => ipcRenderer.invoke('vault:delete', account),
 })
+
+contextBridge.exposeInMainWorld('agent', {
+  chat: (message: string) => ipcRenderer.invoke('agent:chat', message),
+})

@@ -22,7 +22,7 @@
 
 ## Phase 2: Agent Core
 
-- [ ] **Task 2.1: Setup LangChain & LLM Client**
+- [x] **Task 2.1: Setup LangChain & LLM Client**
     - **Description:** Initialize LangChain. Create an `AgentService` that connects to the NVIDIA API (Meta Llama 3 70B). Implement a simple "Chat" interface in the sidebar where the user can send a message and get a text response.
     - **Note:** Use `NVIDIA_API_KEY` from `.env`.
     - **References:** `requirements.md` (FR-05)

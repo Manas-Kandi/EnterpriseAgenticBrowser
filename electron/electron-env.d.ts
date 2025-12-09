@@ -29,4 +29,7 @@ interface Window {
     get: (account: string) => Promise<string | null>
     delete: (account: string) => Promise<boolean>
   }
+  agent: {
+    chat: (message: string) => Promise<string>
+  }
 }

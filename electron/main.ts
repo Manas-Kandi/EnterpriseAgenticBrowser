@@ -3,6 +3,7 @@ import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { vaultService } from './services/VaultService'
+import { agentService } from './services/AgentService'
 
 const require = createRequire(import.meta.url)
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -79,6 +80,11 @@ app.whenReady().then(() => {
 
   ipcMain.handle('vault:delete', async (_, account) => {
     return await vaultService.deleteSecret(account);
+  });
+
+  // Agent IPC Handlers
+  ipcMain.handle('agent:chat', async (_, message) => {
+    return await agentService.chat(message);
   });
 
   createWindow();
