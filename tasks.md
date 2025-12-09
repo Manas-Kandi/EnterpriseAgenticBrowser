@@ -12,7 +12,7 @@
     - **References:** `requirements.md` (FR-13)
     - **Git:** `git add . && git commit -m "feat: implement secure vault service with keytar" && git push origin main`
 
-- [ ] **Task 1.3: Build UI Shell**
+- [x] **Task 1.3: Build UI Shell**
     - **Description:** Create the main layout based on the Design System.
         - Sidebar (Collapsible)
         - Main WebView area (for rendering external SaaS apps)
