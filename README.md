@@ -1,16 +1,17 @@
-# Enterprise Agentic Browser
+# Enterprise Agentic Browser (SuiteOS)
 
 ## Overview
-The **Enterprise Agentic Browser** is a specialized workspace browser designed to function as an operating system for a company's SaaS portfolio. Unlike traditional consumer browsers that focus on passive consumption, this browser is an **active integration layer**. It unifies fragmented workflows across tools like Jira, Slack, Salesforce, and Dropbox into a single, cohesive agentic interface.
+The **Enterprise Agentic Browser** is a white-label browser platform designed for multi-product SaaS vendors (e.g., Atlassian, Salesforce, Adobe). It functions as a unifying "Operating System" for a vendor's fragmented portfolio, transforming a collection of siloed apps into a cohesive, intelligent suite.
 
 By sitting at the browser level, the application has native access to session contexts, auth tokens, and workflows, allowing AI agents to orchestrate complex multi-step tasks that would otherwise require manual context switching.
 
 ## Vision
-To transform the browser from a passive window into an intelligent enterprise operating system that automates the "glue work" between disparate SaaS applications.
+**The "Google Chrome" for Enterprise Suites.**
+Just as Chrome unifies Google's ecosystem (Docs, Drive, Gmail), this browser allows other enterprise vendors to ship a native integration layer to their customers. It solves the fragmentation problem where a vendor's acquired products (e.g., Jira, Confluence, Trello) struggle to talk to each other.
 
 ## Key Features
-- **Unified Command Center:** A natural language interface to drive complex workflows across multiple apps.
-- **Context Awareness:** The browser understands what you are looking at and can act on it (e.g., "Attach this Confluence page to the Jira ticket I was just looking at").
+- **Suite Unification:** A shared agentic layer that weaves together workflows across a specific vendor's distinct products.
+- **Vendor-Specific Context:** The agent is pre-trained on the specific domain knowledge and APIs of the vendor's suite.
 - **Local-First Intelligence:** Built on Electron, ensuring data privacy and local execution of sensitive workflows.
 - **Hybrid Automation Engine:** Utilizes robust public APIs for speed and falls back to DOM-based web automation (Playwright) for capabilities missing from APIs.
 - **Enterprise Security:** Secure credential storage, detailed audit logging, and granular permission scopes.

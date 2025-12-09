@@ -1,12 +1,11 @@
 # Product Requirements Document (PRD)
 
 ## 1. Executive Summary
-The Enterprise Agentic Browser is a desktop application that wraps a standard web browsing engine with an intelligent agent layer. It is designed to act as the primary interface for enterprise users to interact with their SaaS suite (Jira, Slack, Salesforce, etc.), automating cross-application workflows and reducing context switching.
+The Enterprise Agentic Browser is a desktop application platform that enables multi-product SaaS vendors to deliver a unified "Operating System" experience to their customers. Instead of forcing users to stitch together a vendor's fragmented tools (e.g., Jira + Confluence + Trello) via browser tabs, this application provides a cohesive shell with an intelligent agent that orchestrates workflows *across* the vendor's specific suite.
 
 ## 2. User Personas
-*   **The Power User (PM/Dev):** Uses Jira, Confluence, Github, and Slack simultaneously. Needs to link tickets, docs, and PRs quickly.
-*   **The Account Executive:** Uses Salesforce, Gmail, LinkedIn, and Slack. Needs to log interactions and sync data without copy-pasting.
-*   **The Ops Manager:** Uses Dropbox, DocuSign, and ERPs. Needs to move files and approve workflows across systems.
+*   **The Vendor Product Manager:** Wants to ship a unified experience for their suite (e.g., Atlassian) without rewriting legacy codebases.
+*   **The Suite Power User:** A customer who spends 80% of their day inside one vendor's ecosystem (e.g., a Dev using the Atlassian Stack). They struggle with the friction between the vendor's different tools.
 
 ## 3. Functional Requirements
 
@@ -23,7 +22,7 @@ The Enterprise Agentic Browser is a desktop application that wraps a standard we
 *   **FR-08:** The agent must maintain conversation history and context within a session.
 
 ### 3.3. Integration Layer
-*   **FR-09:** The system must support "Connectors" for SaaS tools (MVP: Jira, Slack, Dropbox).
+*   **FR-09:** The system must support a "Reference Implementation" for the Atlassian Suite (Jira, Confluence, Trello) to demonstrate the vision.
 *   **FR-10:** Connectors must support authentication (OAuth2) and secure token storage.
 *   **FR-11:** Connectors must prioritize API execution but support fallback to Playwright-driven web automation if APIs are insufficient.
 *   **FR-12:** The system must handle rate limiting and API failures gracefully (retries, error messaging).

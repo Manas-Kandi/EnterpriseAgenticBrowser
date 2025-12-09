@@ -37,7 +37,7 @@
     - **References:** `requirements.md` (FR-14)
     - **Git:** `git add . && git commit -m "feat: implement local sqlite audit logging" && git push origin main`
 
-## Phase 3: Integrations (Jira & Slack)
+## Phase 3: Reference Implementation (Atlassian Suite)
 
 - [ ] **Task 3.1: Jira Connector (API)**
     - **Description:** Implement `JiraConnector` class.
@@ -46,15 +46,21 @@
     - **References:** `requirements.md` (FR-09)
     - **Git:** `git add . && git commit -m "feat: add jira connector with read/write tools" && git push origin main`
 
-- [ ] **Task 3.2: Slack Connector (API)**
-    - **Description:** Implement `SlackConnector` class.
-        - Auth: Bot Token / OAuth.
-        - Tools: `send_message`, `read_channel_history`.
+- [ ] **Task 3.2: Confluence Connector (API)**
+    - **Description:** Implement `ConfluenceConnector` class.
+        - Auth: Reuse Atlassian Account if possible, or separate OAuth.
+        - Tools: `search_pages`, `read_page`, `create_page`.
     - **References:** `requirements.md` (FR-09)
-    - **Git:** `git add . && git commit -m "feat: add slack connector" && git push origin main`
+    - **Git:** `git add . && git commit -m "feat: add confluence connector" && git push origin main`
 
-- [ ] **Task 3.3: Web Automation Fallback (Playwright)**
-    - **Description:** Integrate Playwright. Create a generic `BrowserAutomationTool` that the agent can use if an API tool fails or doesn't exist. Implement a basic "Take Screenshot" and "Click Element" tool.
+- [ ] **Task 3.3: Trello/Bitbucket Connector (Optional)**
+    - **Description:** Implement a third connector to prove "Suite" value.
+        - **Decision:** Pick Trello for project management or Bitbucket for code.
+    - **References:** `requirements.md` (FR-09)
+    - **Git:** `git add . && git commit -m "feat: add third suite connector" && git push origin main`
+
+- [ ] **Task 3.4: Web Automation Fallback (Playwright)**
+    - **Description:** Integrate Playwright. Create a generic `BrowserAutomationTool` that the agent can use if an API tool fails.
     - **References:** `requirements.md` (FR-11)
     - **Git:** `git add . && git commit -m "feat: integrate playwright for fallback automation" && git push origin main`
 
