@@ -28,7 +28,7 @@
     - **References:** `requirements.md` (FR-05)
     - **Git:** `git add . && git commit -m "feat: setup langchain client with nvidia llama3 and chat interface" && git push origin main`
 
-- [ ] **Task 2.2: Implement Tool Definition Interface**
+- [x] **Task 2.2: Implement Tool Definition Interface**
     - **Description:** Create a TypeScript interface for `AgentTool`. This should define `name`, `description`, `schema` (Zod), and `execute` function. Create a registry to hold these tools.
     - **References:** `requirements.md` (FR-09)
     - **Git:** `git add . && git commit -m "feat: create agent tool registry system" && git push origin main`
