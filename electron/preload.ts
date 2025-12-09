@@ -22,3 +22,9 @@ contextBridge.exposeInMainWorld('ipcRenderer', {
   // You can expose other APTs you need here.
   // ...
 })
+
+contextBridge.exposeInMainWorld('vault', {
+  set: (account: string, secret: string) => ipcRenderer.invoke('vault:set', account, secret),
+  get: (account: string) => ipcRenderer.invoke('vault:get', account),
+  delete: (account: string) => ipcRenderer.invoke('vault:delete', account),
+})

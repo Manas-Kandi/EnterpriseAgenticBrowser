@@ -1,7 +1,8 @@
-import { app, BrowserWindow } from 'electron'
+import { app, BrowserWindow, ipcMain } from 'electron'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
+import { vaultService } from './services/VaultService'
 
 const require = createRequire(import.meta.url)
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -65,4 +66,19 @@ app.on('activate', () => {
   }
 })
 
-app.whenReady().then(createWindow)
+app.whenReady().then(() => {
+  // Vault IPC Handlers
+  ipcMain.handle('vault:set', async (_, account, secret) => {
+    return await vaultService.setSecret(account, secret);
+  });
+
+  ipcMain.handle('vault:get', async (_, account) => {
+    return await vaultService.getSecret(account);
+  });
+
+  ipcMain.handle('vault:delete', async (_, account) => {
+    return await vaultService.deleteSecret(account);
+  });
+
+  createWindow();
+})

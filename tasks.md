@@ -7,7 +7,7 @@
     - **References:** `README.md` (Tech Stack)
     - **Git:** `git add . && git commit -m "chore: init electron project with typescript and react" && git push origin main`
 
-- [ ] **Task 1.2: Implement Security Fundamentals**
+- [x] **Task 1.2: Implement Security Fundamentals**
     - **Description:** Install `keytar` for secure storage. Create a `VaultService` class that abstracts saving/retrieving secrets from the OS Keychain. Ensure IPC channels are secure (Context Isolation = true).
     - **References:** `requirements.md` (FR-13)
     - **Git:** `git add . && git commit -m "feat: implement secure vault service with keytar" && git push origin main`

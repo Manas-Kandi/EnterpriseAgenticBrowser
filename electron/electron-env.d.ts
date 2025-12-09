@@ -24,4 +24,9 @@ declare namespace NodeJS {
 // Used in Renderer process, expose in `preload.ts`
 interface Window {
   ipcRenderer: import('electron').IpcRenderer
+  vault: {
+    set: (account: string, secret: string) => Promise<void>
+    get: (account: string) => Promise<string | null>
+    delete: (account: string) => Promise<boolean>
+  }
 }
