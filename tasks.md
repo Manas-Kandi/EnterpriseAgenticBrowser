@@ -2,7 +2,7 @@
 
 ## Phase 1: Foundation & Setup
 
-- [ ] **Task 1.1: Initialize Electron Project**
+- [x] **Task 1.1: Initialize Electron Project**
     - **Description:** Set up the base repo using a robust boilerplate (e.g., electron-vite or electron-react-boilerplate). Configure TypeScript, ESLint, and Prettier. Ensure the app opens a window and renders "Hello World".
     - **References:** `README.md` (Tech Stack)
     - **Git:** `git add . && git commit -m "chore: init electron project with typescript and react" && git push origin main`
