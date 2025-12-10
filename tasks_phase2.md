@@ -15,7 +15,7 @@
 
 ## Phase 2: The Mock SaaS Suite (Localhost)
 
-- [ ] **Task 2.1: Mock Server Setup**
+- [x] **Task 2.1: Mock Server Setup**
     - **Description:** Create a separate `mock-saas` folder (Vite + React). This will run on port 3000.
     - **Git:** `git add . && git commit -m "chore: init mock saas project"`
 
