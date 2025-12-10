@@ -1,5 +1,5 @@
 import { ChatOpenAI } from "@langchain/openai";
-import { HumanMessage, SystemMessage } from "@langchain/core/messages";
+import { HumanMessage, SystemMessage, BaseMessage, AIMessage, ToolMessage } from "@langchain/core/messages";
 import { Runnable } from "@langchain/core/runnables";
 import dotenv from 'dotenv';
 
@@ -9,6 +9,7 @@ dotenv.config();
 
 export class AgentService {
   private model: Runnable;
+  private tools: any[];
 
   constructor() {
     const apiKey = process.env.NVIDIA_API_KEY;
@@ -22,16 +23,17 @@ export class AgentService {
         apiKey: apiKey,
       },
       modelName: "meta/llama3-70b-instruct",
-      temperature: 0.5,
-      streaming: true,
+      temperature: 0.2, // Lower temperature for more reliable tool use
+      streaming: false, // Disable streaming for simpler tool handling loop
     });
 
-    this.model = chatModel.bindTools(toolRegistry.toLangChainTools());
+    this.tools = toolRegistry.toLangChainTools();
+    this.model = chatModel.bindTools(this.tools);
   }
 
-  async chat(message: string): Promise<string> {
+  async chat(userMessage: string): Promise<string> {
     try {
-      const response = await this.model.invoke([
+      const messages: BaseMessage[] = [
         new SystemMessage(`You are a helpful enterprise assistant integrated into a browser. 
         
         You have access to two types of tools:
@@ -40,17 +42,74 @@ export class AgentService {
         
         IMPORTANT: When using Browser Automation, you are controlling the user's active tab.
         - If the user asks to "create a ticket on the Jira page", do NOT use the API tool. Instead:
-          1. Navigate to http://localhost:3000/jira (if not there)
-          2. Click the "Create" button
-          3. Fill in the summary
-          4. Click "Submit"
+          1. Call browser_navigate({ url: "http://localhost:3000/jira" })
+          2. Call browser_click({ selector: "button:has-text('Create')" })
+          3. Call browser_type({ selector: "input[placeholder*='What needs to be done']", text: "Fix alignment" })
+          4. Call browser_click({ selector: "button[type='submit']" })
         `),
-        new HumanMessage(message),
-      ]);
-      return response.content as string;
+        new HumanMessage(userMessage),
+      ];
+
+      // ReAct Loop (Max 5 turns)
+      for (let i = 0; i < 5; i++) {
+        // Force tool calling if we haven't completed the goal? 
+        // No, let's trust the prompt. But if the response contains "browser_" text but no tool calls, force it.
+        
+        const response = await this.model.invoke(messages) as AIMessage;
+        messages.push(response);
+
+        // Check if the model decided to call tools
+        if (response.tool_calls && response.tool_calls.length > 0) {
+           // Process tool calls
+           for (const toolCall of response.tool_calls) {
+              const tool = this.tools.find((t: any) => t.name === toolCall.name);
+              if (tool) {
+                console.log(`Executing tool: ${tool.name} with args:`, toolCall.args);
+                
+                try {
+                   // Execute tool
+                   const result = await tool.invoke(toolCall.args);
+                   
+                   // Add result to messages
+                   messages.push(new ToolMessage({
+                       tool_call_id: toolCall.id!,
+                       content: result
+                   }));
+                } catch (err: any) {
+                   console.error(`Tool execution failed: ${err}`);
+                   messages.push(new ToolMessage({
+                       tool_call_id: toolCall.id!,
+                       content: `Error executing tool: ${err.message}`
+                   }));
+                }
+              } else {
+                console.error(`Tool not found: ${toolCall.name}`);
+                messages.push(new ToolMessage({
+                   tool_call_id: toolCall.id!,
+                   content: `Error: Tool ${toolCall.name} not found`
+               }));
+              }
+           }
+        } else {
+           // HALLUCINATION DETECTION
+           const content = response.content as string;
+           if (content.includes("browser_") && (content.includes("navigate") || content.includes("click") || content.includes("type"))) {
+               console.warn("Detected hallucinated tool calls. Attempting to repair...");
+               // Add a system message telling it to actually CALL the tool
+               messages.push(new SystemMessage("You described the actions but did not actually call the tools. You MUST output a tool_call to execute these actions. Do not just describe them. Call browser_navigate now."));
+               continue; // Retry the loop
+           }
+           
+           return response.content as string;
+        }
+        // Loop continues to let model see tool outputs and decide next step
+      }
+
+      return "I completed the actions, but reached the maximum number of steps.";
+
     } catch (error) {
       console.error('Error in AgentService chat:', error);
-      throw error;
+      return "Sorry, I encountered an error while processing your request.";
     }
   }
 
