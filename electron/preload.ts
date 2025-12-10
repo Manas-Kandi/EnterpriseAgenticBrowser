@@ -31,4 +31,8 @@ contextBridge.exposeInMainWorld('vault', {
 
 contextBridge.exposeInMainWorld('agent', {
   chat: (message: string) => ipcRenderer.invoke('agent:chat', message),
+  onApprovalRequest: (callback: (toolName: string, args: any) => void) => {
+    ipcRenderer.on('agent:request-approval', (_, { toolName, args }) => callback(toolName, args));
+  },
+  respondApproval: (toolName: string, approved: boolean) => ipcRenderer.send('agent:approval-response', { toolName, approved }),
 })

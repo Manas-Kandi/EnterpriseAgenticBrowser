@@ -68,7 +68,7 @@
 
 ## Phase 4: Polish & Workflow
 
-- [ ] **Task 4.1: Human-in-the-Loop Approval UI**
+- [x] **Task 4.1: Human-in-the-Loop Approval UI**
     - **Description:** Update the `AgentService`. If a tool is marked `risk: high`, the execution must pause and render a "Approve/Deny" card in the chat UI. The user must click "Approve" for the agent to proceed.
     - **References:** `requirements.md` (FR-07)
     - **Git:** `git add . && git commit -m "feat: add human-in-the-loop approval flow" && git push origin main`

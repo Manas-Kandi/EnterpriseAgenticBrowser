@@ -5,6 +5,7 @@ import path from 'node:path'
 import { vaultService } from './services/VaultService'
 import { agentService } from './services/AgentService'
 import { auditService } from './services/AuditService'
+import { toolRegistry } from './services/ToolRegistry'
 import './integrations/mock/MockJiraConnector'; // Initialize Mock Jira
 import './integrations/mock/MockConfluenceConnector'; // Initialize Mock Confluence
 import './integrations/mock/MockTrelloConnector'; // Initialize Mock Trello
@@ -88,7 +89,7 @@ app.whenReady().then(() => {
   });
 
   // Agent IPC Handlers
-  ipcMain.handle('agent:chat', async (_, message) => {
+  ipcMain.handle('agent:chat', async (event, message) => {
     // Log User Input
     await auditService.log({
         actor: 'user',
@@ -97,6 +98,22 @@ app.whenReady().then(() => {
         status: 'success'
     });
     
+    // Set up Approval Handler context
+    toolRegistry.setApprovalHandler(async (toolName, args) => {
+        // Send request to renderer
+        event.sender.send('agent:request-approval', { toolName, args });
+        
+        // Wait for response
+        return new Promise<boolean>((resolve) => {
+            ipcMain.once('agent:approval-response', (_, { toolName: respondedTool, approved }) => {
+                // In a real app we'd verify request IDs to ensure we don't mix up approvals
+                if (respondedTool === toolName) {
+                    resolve(approved);
+                }
+            });
+        });
+    });
+
     const response = await agentService.chat(message);
     
     // Log Agent Response

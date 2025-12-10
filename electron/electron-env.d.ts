@@ -31,5 +31,7 @@ interface Window {
   }
   agent: {
     chat: (message: string) => Promise<string>
+    onApprovalRequest: (callback: (toolName: string, args: any) => void) => void
+    respondApproval: (toolName: string, approved: boolean) => void
   }
 }

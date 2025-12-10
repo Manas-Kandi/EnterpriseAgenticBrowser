@@ -1,10 +1,15 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
-import { MessageSquare, ChevronLeft, ChevronRight, Settings, Send, User, Bot } from 'lucide-react';
+import { MessageSquare, ChevronLeft, ChevronRight, Settings, Send, User, Bot, AlertTriangle, Check, X } from 'lucide-react';
 
 interface Message {
   role: 'user' | 'assistant';
   content: string;
+}
+
+interface ApprovalRequest {
+  toolName: string;
+  args: any;
 }
 
 export function Sidebar() {
@@ -12,6 +17,26 @@ export function Sidebar() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [approvalRequest, setApprovalRequest] = useState<ApprovalRequest | null>(null);
+
+  useEffect(() => {
+    // Listen for approval requests
+    window.agent.onApprovalRequest((toolName, args) => {
+      setApprovalRequest({ toolName, args });
+    });
+  }, []);
+
+  const handleApproval = (approved: boolean) => {
+    if (approvalRequest) {
+      window.agent.respondApproval(approvalRequest.toolName, approved);
+      setApprovalRequest(null);
+      // Optimistically add a system message
+      setMessages(prev => [...prev, { 
+          role: 'assistant', 
+          content: approved ? `✅ Approved execution of ${approvalRequest.toolName}` : `❌ Denied execution of ${approvalRequest.toolName}` 
+      }]);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -71,6 +96,34 @@ export function Sidebar() {
                     )}
                 </div>
             ))
+        )}
+        {approvalRequest && !collapsed && (
+            <div className="bg-amber-500/10 border border-amber-500/50 rounded-lg p-3 space-y-2">
+                <div className="flex items-center gap-2 text-amber-500 font-medium text-sm">
+                    <AlertTriangle size={16} />
+                    Approval Required
+                </div>
+                <div className="text-xs text-muted-foreground">
+                    The agent wants to execute <strong>{approvalRequest.toolName}</strong> with:
+                </div>
+                <pre className="text-xs bg-background p-2 rounded border border-border overflow-x-auto">
+                    {JSON.stringify(approvalRequest.args, null, 2)}
+                </pre>
+                <div className="flex gap-2 pt-2">
+                    <button 
+                        onClick={() => handleApproval(false)}
+                        className="flex-1 flex items-center justify-center gap-1 bg-destructive/10 text-destructive hover:bg-destructive/20 text-xs py-1.5 rounded"
+                    >
+                        <X size={14} /> Deny
+                    </button>
+                    <button 
+                        onClick={() => handleApproval(true)}
+                        className="flex-1 flex items-center justify-center gap-1 bg-primary text-primary-foreground hover:bg-primary/90 text-xs py-1.5 rounded"
+                    >
+                        <Check size={14} /> Approve
+                    </button>
+                </div>
+            </div>
         )}
         {loading && !collapsed && (
              <div className="flex gap-2">

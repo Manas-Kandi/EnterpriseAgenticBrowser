@@ -80,6 +80,7 @@ export class MockJiraConnector {
     const createIssueTool: AgentTool<z.ZodObject<{ summary: z.ZodString; description: z.ZodString; assignee: z.ZodOptional<z.ZodString> }>> = {
       name: 'jira_create_issue',
       description: 'Create a new Jira issue.',
+      requiresApproval: true,
       schema: z.object({
         summary: z.string().describe('The issue summary/title'),
         description: z.string().describe('The issue description'),
