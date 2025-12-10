@@ -5,6 +5,7 @@ import path from 'node:path'
 import { vaultService } from './services/VaultService'
 import { agentService } from './services/AgentService'
 import { auditService } from './services/AuditService'
+import './integrations/mock/MockJiraConnector'; // Initialize Mock Jira
 
 const require = createRequire(import.meta.url)
 const __dirname = path.dirname(fileURLToPath(import.meta.url))

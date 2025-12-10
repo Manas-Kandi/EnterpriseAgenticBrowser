@@ -38,27 +38,28 @@
     - **References:** `requirements.md` (FR-14)
     - **Git:** `git add . && git commit -m "feat: implement local sqlite audit logging" && git push origin main`
 
-## Phase 3: Reference Implementation (Atlassian Suite)
+## Phase 3: Reference Implementation (Mock Atlassian Suite)
 
-- [ ] **Task 3.1: Jira Connector (API)**
-    - **Description:** Implement `JiraConnector` class.
-        - Auth: OAuth2 flow (capture redirect in Electron).
-        - Tools: `list_issues`, `get_issue_details`, `create_issue`.
+- [x] **Task 3.1: Jira Connector (Mock)**
+    - **Description:** Implement `MockJiraConnector` class.
+        - **Behavior:** Simulate network delay (500ms). Return static JSON data for tickets.
+        - **Tools:** `jira_list_issues`, `jira_get_issue`, `jira_create_issue` (logs to in-memory array).
     - **References:** `requirements.md` (FR-09)
-    - **Git:** `git add . && git commit -m "feat: add jira connector with read/write tools" && git push origin main`
+    - **Git:** `git add . && git commit -m "feat: add mock jira connector" && git push origin main`
 
-- [ ] **Task 3.2: Confluence Connector (API)**
-    - **Description:** Implement `ConfluenceConnector` class.
-        - Auth: Reuse Atlassian Account if possible, or separate OAuth.
-        - Tools: `search_pages`, `read_page`, `create_page`.
+- [ ] **Task 3.2: Confluence Connector (Mock)**
+    - **Description:** Implement `MockConfluenceConnector` class.
+        - **Behavior:** Simulate searching and reading docs.
+        - **Tools:** `confluence_search`, `confluence_read_page`.
     - **References:** `requirements.md` (FR-09)
-    - **Git:** `git add . && git commit -m "feat: add confluence connector" && git push origin main`
+    - **Git:** `git add . && git commit -m "feat: add mock confluence connector" && git push origin main`
 
-- [ ] **Task 3.3: Trello/Bitbucket Connector (Optional)**
-    - **Description:** Implement a third connector to prove "Suite" value.
-        - **Decision:** Pick Trello for project management or Bitbucket for code.
+- [ ] **Task 3.3: Trello Connector (Mock)**
+    - **Description:** Implement a third mock connector.
+        - **Behavior:** Simulate board/card management.
+        - **Tools:** `trello_move_card`, `trello_get_board`.
     - **References:** `requirements.md` (FR-09)
-    - **Git:** `git add . && git commit -m "feat: add third suite connector" && git push origin main`
+    - **Git:** `git add . && git commit -m "feat: add mock trello connector" && git push origin main`
 
 - [ ] **Task 3.4: Web Automation Fallback (Playwright)**
     - **Description:** Integrate Playwright. Create a generic `BrowserAutomationTool` that the agent can use if an API tool fails.
