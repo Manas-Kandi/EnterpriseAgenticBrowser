@@ -1,74 +1,85 @@
-# Design System & Guidelines
+# Enterprise Browser - Design System 2.0 (Pro / Dark Mode)
 
 ## Philosophy
-Our design philosophy mirrors the **iOS Human Interface Guidelines (HIG)**: Clarity, Deference, and Depth. The browser interface should be invisible until needed, deferring to the content (the SaaS apps) while providing deep functionality through the agent layer.
+**"Professional, Immersive, Stealth."**
+The interface should feel like a high-end development tool (Linear, Arc, VS Code). It defaults to **Dark Mode** to reduce eye strain and emphasize content. The browser chrome is minimal, deferring entirely to the SaaS applications and the Agent.
 
 ## 1. Visual Language
 
+### Color Palette (Dark Mode Default)
+*   **Backgrounds:**
+    *   `bg-background`: `#09090b` (Deepest Black/Zinc-950) - Main app background.
+    *   `bg-surface`: `#18181b` (Zinc-900) - Sidebar, Panels, Cards.
+    *   `bg-surface-hover`: `#27272a` (Zinc-800) - Hover states, Inputs.
+*   **Borders:**
+    *   `border-border`: `#27272a` (Zinc-800) - Subtle separation.
+    *   `border-active`: `#3f3f46` (Zinc-700) - Focused elements.
+*   **Typography:**
+    *   `text-primary`: `#fafafa` (Zinc-50) - Headings, Main text.
+    *   `text-secondary`: `#a1a1aa` (Zinc-400) - Metadata, descriptions.
+    *   `text-muted`: `#52525b` (Zinc-600) - Placeholders, disabled.
+*   **Accents:**
+    *   `primary`: `#3b82f6` (Blue-500) or `#6366f1` (Indigo-500) - Key actions (Submit, Active Tab).
+    *   `destructive`: `#ef4444` (Red-500) - Errors, Delete.
+    *   `success`: `#22c55e` (Green-500) - Success states.
+
 ### Typography
-*   **Font Family:** `Inter` or System San-Serif (SF Pro on Mac, Segoe UI on Windows).
-*   **Hierarchy:**
-    *   **H1:** 24px, Semibold (Title of agent panel)
-    *   **H2:** 18px, Medium (Section headers)
-    *   **Body:** 14px, Regular (Chat messages, general text)
-    *   **Caption:** 12px, Text-Muted (Timestamps, metadata)
-    *   **Code:** 13px, Monospace (JetBrains Mono or SF Mono)
+*   **Font:** `Inter`, `SF Pro Text`, or `Segoe UI`.
+*   **Size:** Slightly denser than standard web.
+    *   **Base:** 13px or 14px.
+    *   **H1 (Agent Header):** 16px Medium.
+    *   **H2:** 14px Semibold.
+    *   **Monospace:** `JetBrains Mono` or `Fira Code` for code blocks/logs.
 
-### Color Palette (Light/Dark Mode Support)
-We utilize a semantic color system based on Tailwind/shadcn conventions.
-
-*   **Primary/Brand:** `#007AFF` (iOS Blue) - Used for primary actions, active states.
-*   **Background:**
-    *   Light: `#FFFFFF` (Main), `#F2F2F7` (Sidebar/Secondary)
-    *   Dark: `#000000` (Main), `#1C1C1E` (Sidebar/Secondary)
-*   **Surface/Cards:**
-    *   Light: `#FFFFFF` with minimal shadow.
-    *   Dark: `#2C2C2E`
-*   **Text:**
-    *   Primary: `#000000` / `#FFFFFF`
-    *   Secondary: `#3C3C43 (60%)` / `#EBEBF5 (60%)`
-*   **Status:**
-    *   Success: `#34C759` (Green)
-    *   Warning: `#FF9500` (Orange)
-    *   Error: `#FF3B30` (Red)
-
-### Spacing & Layout
-*   **Base Unit:** 4px. All spacing should be multiples of 4 (4, 8, 12, 16, 24, 32).
-*   **Padding:**
-    *   Standard Container: `p-4` (16px) or `p-6` (24px).
-    *   Compact Item: `p-2` (8px).
+### Spacing & Radius
 *   **Radius:**
-    *   Buttons/Inputs: `rounded-md` (6px) or `rounded-lg` (8px).
-    *   Cards/Panels: `rounded-xl` (12px).
-    *   Window Corners: Native OS radius.
+    *   `rounded-md`: 6px (Inputs, Buttons).
+    *   `rounded-lg`: 8px (Cards, Modals).
+    *   `rounded-full`: Pills, Tags.
+*   **Spacing:** Compact. Padding should be tighter (`p-2`, `p-3`) to maximize screen real estate for the browser view.
 
-## 2. Components
+## 2. Core Layout Components
 
-### The Agent Sidebar (The "Command Center")
-*   **Position:** Right side, collapsible.
-*   **Width:** Fixed 320px-400px.
-*   **Behavior:**
-    *   **Glassmorphism:** Slight background blur (`backdrop-blur-md`) to indicate it sits "above" the web content.
-    *   **Chat Interface:** Bubbles for user/agent. User = Right aligned (Brand Color), Agent = Left aligned (Gray/Surface).
-    *   **Streaming:** When the agent is thinking, use a subtle pulsing animation or skeleton loader. Do not block the UI.
+### A. The Browser Frame (Main Window)
+*   **Window Controls:** Custom traffic lights (macOS) integrated into the sidebar or top bar.
+*   **Browser View:** A dedicated `BrowserView` (Electron) or `webview` that takes up 100% of the non-sidebar space.
+*   **Tab Bar:** Minimalist horizontal tabs at the top OR vertical tabs in the sidebar (Arc style).
+    *   *Active Tab:* Highlighted background + Accent underline/border.
+    *   *Inactive Tab:* Muted text, transparent background.
 
-### The Command Palette (`Cmd+K`)
-*   **Reference:** Raycast / Spotlight.
-*   **Appearance:** Centered modal, high contrast, focused input.
-*   **Interaction:** Instant search results. Up/Down arrow navigation. `Enter` to execute.
+### B. The Agent Sidebar ("Copilot")
+*   **Position:** Right-aligned, collapsible.
+*   **Width:** Resizable (min 300px, max 500px).
+*   **Appearance:** `bg-surface` with `border-l` separator.
+*   **Chat Interface:**
+    *   **User Bubble:** `bg-primary/10 text-primary` (Subtle tint), rounded corners.
+    *   **Agent Bubble:** Transparent, strict left alignment, markdown rendering.
+    *   **Input Area:** Sticky at bottom. `textarea` grows with content.
 
-### Buttons & Inputs
-*   **Primary Button:** Solid background (Brand Blue), White text.
-*   **Secondary Button:** Transparent/Gray background, Brand text.
-*   **Ghost Button:** No background, changes on hover.
-*   **Input Fields:** Minimal borders, clear focus rings (Brand Blue ring), ample internal padding (10px).
+### C. The Omnibar (URL + Command)
+*   **Location:** Top centered (over webview) or integrated into Agent input.
+*   **Function:**
+    *   Enter URL -> Navigates Webview.
+    *   Enter Natural Language -> Triggers Agent.
+*   **Visual:** "Floating" pill shape when focused, blends into toolbar when inactive.
 
-## 3. Motion & Feedback
-*   **Transitions:** All UI changes (hover, open/close) should happen over `200ms` with an `ease-out` curve.
-*   **Feedback:** Every click must have a reaction (color change, ripple, or sound).
-*   **Loading:** Use optimistic UI updates. If an action takes time, show the "Success" state immediately but keep a small "Syncing..." indicator.
+## 3. Interaction Patterns
 
-## 4. Accessibility (A11y)
-*   **Contrast:** Ensure WCAG AA compliance for text contrast.
-*   **Keyboard:** The entire app must be navigable via keyboard. Global shortcuts for key actions (`Cmd+J` for Jira, `Cmd+L` for Agent).
-*   **Screen Readers:** Use semantic HTML (`<main>`, `<aside>`, `<nav>`) and ARIA labels for icon-only buttons.
+### "Agentic Browsing" Visuals
+When the agent is controlling the browser (clicking/typing):
+1.  **Cursor Ghost:** A visual indicator (fake cursor overlay) showing where the agent is "looking" or clicking.
+2.  **Highlight Ring:** The element being interacted with gets a temporary border (e.g., Orange ring).
+3.  **Status Pill:** A small overlay in the corner of the webview: *"Agent is navigating..."*
+
+### Approval Flows (Human-in-the-Loop)
+*   **Card:** A distinct UI block in the chat stream.
+*   **Visuals:** Amber/Yellow border for "Warning/Approval Needed".
+*   **Actions:** Large tap targets for "Approve" (Green) and "Deny" (Gray).
+
+## 4. The "Mock Suite" (Local SaaS)
+To simulate a real enterprise environment, we will build a local React app hosting:
+1.  **Jira Clone:** `/app/jira` - Ticket list, Kanban board, Create Modal.
+2.  **Confluence Clone:** `/app/wiki` - Read-only docs, Rich text editor.
+3.  **Trello Clone:** `/app/board` - Drag-and-drop cards.
+
+The Browser will point to `http://localhost:port/app/...`, making the "Agentic" experience authentic.
