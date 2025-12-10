@@ -1,6 +1,6 @@
 import { chromium, Browser, Page } from 'playwright';
 import { z } from 'zod';
-import { AgentTool, toolRegistry } from '../../services/ToolRegistry';
+import { AgentTool, toolRegistry } from '../services/ToolRegistry';
 
 export class BrowserAutomationService {
   private browser: Browser | null = null;
