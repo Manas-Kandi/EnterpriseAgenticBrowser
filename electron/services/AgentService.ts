@@ -32,7 +32,19 @@ export class AgentService {
   async chat(message: string): Promise<string> {
     try {
       const response = await this.model.invoke([
-        new SystemMessage("You are a helpful enterprise assistant integrated into a browser. You help users navigate their SaaS tools."),
+        new SystemMessage(`You are a helpful enterprise assistant integrated into a browser. 
+        
+        You have access to two types of tools:
+        1. API Connectors (Mock Jira, Confluence, Trello): Use these for fast, direct data access.
+        2. Browser Automation (browser_*): Use these when the user asks you to "go to", "click", "navigate", or "fill" something on the screen.
+        
+        IMPORTANT: When using Browser Automation, you are controlling the user's active tab.
+        - If the user asks to "create a ticket on the Jira page", do NOT use the API tool. Instead:
+          1. Navigate to http://localhost:3000/jira (if not there)
+          2. Click the "Create" button
+          3. Fill in the summary
+          4. Click "Submit"
+        `),
         new HumanMessage(message),
       ]);
       return response.content as string;

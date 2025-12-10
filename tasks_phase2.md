@@ -37,6 +37,6 @@
     - **Description:** Update `BrowserAutomationService` to attach to the *Electron Webview* instead of launching a separate Chromium window. (This allows the user to watch the agent work in real-time inside the app).
     - **Git:** `git add . && git commit -m "feat: attach playwright to electron webview"`
 
-- [ ] **Task 3.2: Agent Workflow - "Create Ticket"**
+- [x] **Task 3.2: Agent Workflow - "Create Ticket"**
     - **Description:** Train/Prompt the agent to navigate to `localhost:3000/jira` and use DOM selectors to create a ticket, rather than using the API tool.
     - **Git:** `git add . && git commit -m "feat: agent workflow for jira ui"`
