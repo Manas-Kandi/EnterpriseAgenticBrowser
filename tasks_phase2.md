@@ -23,7 +23,7 @@
     - **Description:** Build a simple React page at `/jira` that lists tickets and has a "New Issue" modal.
     - **Git:** `git add . && git commit -m "feat: mock jira application"`
 
-- [ ] **Task 2.3: Mock Confluence (Wiki)**
+- [x] **Task 2.3: Mock Confluence (Wiki)**
     - **Description:** Build a simple React page at `/confluence` that renders markdown content.
     - **Git:** `git add . && git commit -m "feat: mock confluence application"`
 
