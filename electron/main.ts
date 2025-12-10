@@ -7,6 +7,7 @@ import { agentService } from './services/AgentService'
 import { auditService } from './services/AuditService'
 import './integrations/mock/MockJiraConnector'; // Initialize Mock Jira
 import './integrations/mock/MockConfluenceConnector'; // Initialize Mock Confluence
+import './integrations/mock/MockTrelloConnector'; // Initialize Mock Trello
 
 const require = createRequire(import.meta.url)
 const __dirname = path.dirname(fileURLToPath(import.meta.url))

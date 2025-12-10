@@ -54,7 +54,7 @@
     - **References:** `requirements.md` (FR-09)
     - **Git:** `git add . && git commit -m "feat: add mock confluence connector" && git push origin main`
 
-- [ ] **Task 3.3: Trello Connector (Mock)**
+- [x] **Task 3.3: Trello Connector (Mock)**
     - **Description:** Implement a third mock connector.
         - **Behavior:** Simulate board/card management.
         - **Tools:** `trello_move_card`, `trello_get_board`.
