@@ -73,7 +73,7 @@
     - **References:** `requirements.md` (FR-07)
     - **Git:** `git add . && git commit -m "feat: add human-in-the-loop approval flow" && git push origin main`
 
-- [ ] **Task 4.2: Packaging & Release**
+- [x] **Task 4.2: Packaging & Release**
     - **Description:** Configure `electron-builder`. Create build scripts for macOS (.dmg) and Windows (.exe). Verify code signing config (placeholder).
     - **References:** `README.md` (Getting Started)
     - **Git:** `git add . && git commit -m "chore: configure electron-builder for release" && git push origin main`
