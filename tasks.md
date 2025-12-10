@@ -61,7 +61,7 @@
     - **References:** `requirements.md` (FR-09)
     - **Git:** `git add . && git commit -m "feat: add mock trello connector" && git push origin main`
 
-- [ ] **Task 3.4: Web Automation Fallback (Playwright)**
+- [x] **Task 3.4: Web Automation Fallback (Playwright)**
     - **Description:** Integrate Playwright. Create a generic `BrowserAutomationTool` that the agent can use if an API tool fails.
     - **References:** `requirements.md` (FR-11)
     - **Git:** `git add . && git commit -m "feat: integrate playwright for fallback automation" && git push origin main`
