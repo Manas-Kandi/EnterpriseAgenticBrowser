@@ -6,7 +6,7 @@
     - **Description:** Update `index.css` and `tailwind.config.js` to match the new "Zinc" dark mode palette. Implement global dark mode styles.
     - **Git:** `git add . && git commit -m "feat: design system dark mode overhaul"`
 
-- [ ] **Task 1.2: Browser Controls (Tabs & Webview)**
+- [x] **Task 1.2: Browser Controls (Tabs & Webview)**
     - **Description:** Implement a real multi-tab system.
         - Create `TabManager` store (Zustand or Context).
         - Replace the static "placeholder" in `App.tsx` with dynamic `webview` elements.

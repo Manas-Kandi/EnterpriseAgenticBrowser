@@ -1,5 +1,10 @@
 /// <reference types="vite-plugin-electron/electron-env" />
 
+declare namespace JSX {
+  interface IntrinsicElements {
+    webview: React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement> & { src?: string; allowpopups?: string; webpreferences?: string; onDidStartLoading?: any; onDidStopLoading?: any; onPageTitleUpdated?: any }, HTMLElement>;
+  }
+}
 declare namespace NodeJS {
   interface ProcessEnv {
     /**
