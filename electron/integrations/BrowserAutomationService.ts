@@ -12,9 +12,41 @@ export class BrowserAutomationService {
 
   private async ensureBrowser() {
     if (!this.browser) {
-      this.browser = await chromium.launch({ headless: false }); // Headless: false for visibility
-      this.page = await this.browser.newPage();
+      try {
+        this.browser = await chromium.connectOverCDP('http://localhost:9222');
+        // Find the active page/context. 
+        // For simplicity in this iteration, we grab the first page that is NOT the devtools and NOT the main app shell if possible.
+        // Actually, the main app shell is a page. The <webview> is also a page (target).
+        const contexts = this.browser.contexts();
+        // If we don't have a page, we might need to wait or look at targets.
+        // Connecting over CDP usually gives us a browser with contexts.
+        
+        // Strategy: Find the target that matches our active tab URL.
+        // But we don't know the active tab URL here easily without passing it.
+        // Let's just grab the last active page for now.
+        const pages = contexts[0].pages();
+        if (pages.length > 0) {
+            this.page = pages[pages.length - 1]; // Often the most recently created/focused
+        } else {
+            // If no pages found in default context, maybe try to find targets?
+            // electron-webview usually shows up as a page.
+            this.page = await this.browser.newPage(); // Fallback (this might open a new window which we don't want)
+        }
+      } catch (e) {
+        console.error("Failed to connect to Electron CDP:", e);
+        // Fallback to launching a separate browser if connection fails (e.g. dev mode issues)
+        this.browser = await chromium.launch({ headless: false });
+        this.page = await this.browser.newPage();
+      }
     }
+    
+    // Refresh page reference if it's closed
+    if (this.page && this.page.isClosed()) {
+        const contexts = this.browser.contexts();
+        const pages = contexts[0].pages();
+        this.page = pages[pages.length - 1];
+    }
+
     return this.page!;
   }
 

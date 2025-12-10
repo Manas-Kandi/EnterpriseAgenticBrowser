@@ -33,7 +33,7 @@
 
 ## Phase 3: Agent Integration (True Agentic Browsing)
 
-- [ ] **Task 3.1: Playwright-Electron Bridge**
+- [x] **Task 3.1: Playwright-Electron Bridge**
     - **Description:** Update `BrowserAutomationService` to attach to the *Electron Webview* instead of launching a separate Chromium window. (This allows the user to watch the agent work in real-time inside the app).
     - **Git:** `git add . && git commit -m "feat: attach playwright to electron webview"`
 
