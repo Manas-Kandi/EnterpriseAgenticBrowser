@@ -40,12 +40,20 @@ export class AgentService {
         1. API Connectors (Mock Jira, Confluence, Trello): Use these for fast, direct data access.
         2. Browser Automation (browser_*): Use these when the user asks you to "go to", "click", "navigate", or "fill" something on the screen.
         
-        IMPORTANT: When using Browser Automation, you are controlling the user's active tab.
-        - If the user asks to "create a ticket on the Jira page", do NOT use the API tool. Instead:
-          1. Call browser_navigate({ url: "http://localhost:3000/jira" })
-          2. Call browser_click({ selector: "button:has-text('Create')" })
-          3. Call browser_type({ selector: "input[placeholder*='What needs to be done']", text: "Fix alignment" })
-          4. Call browser_click({ selector: "button[type='submit']" })
+        CRITICAL: Browser Automation Strategy
+        - You have no eyes. You must use "browser_observe" to see the page.
+        - Step 1: ALWAYS call "browser_navigate" to the target URL.
+        - Step 2: ALWAYS call "browser_observe" to see what is on the page (this returns a list of buttons/inputs with selectors).
+        - Step 3: Use the selectors returned by "browser_observe" to call "browser_click" or "browser_type".
+        - Step 4: Call "browser_observe" again to confirm the action worked.
+
+        Example: "Create a Jira ticket"
+        1. browser_navigate({ url: "http://localhost:3000/jira" })
+        2. browser_observe({}) -> returns { interactiveElements: [{ text: "Create", selector: "button.bg-blue-600" }] }
+        3. browser_click({ selector: "button.bg-blue-600" })
+        4. browser_observe({}) -> returns { interactiveElements: [{ placeholder: "What needs to be done?", selector: "input.border" }] }
+        5. browser_type({ selector: "input.border", text: "Fix alignment" })
+        6. browser_click({ selector: "button[type='submit']" })
         `),
         new HumanMessage(userMessage),
       ];
