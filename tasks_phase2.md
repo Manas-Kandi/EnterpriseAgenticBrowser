@@ -27,7 +27,7 @@
     - **Description:** Build a simple React page at `/confluence` that renders markdown content.
     - **Git:** `git add . && git commit -m "feat: mock confluence application"`
 
-- [ ] **Task 2.4: Mock Trello (Kanban)**
+- [x] **Task 2.4: Mock Trello (Kanban)**
     - **Description:** Build a simple React page at `/trello` with draggable columns.
     - **Git:** `git add . && git commit -m "feat: mock trello application"`
 
