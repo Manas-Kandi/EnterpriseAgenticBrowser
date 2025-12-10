@@ -47,7 +47,7 @@
     - **References:** `requirements.md` (FR-09)
     - **Git:** `git add . && git commit -m "feat: add mock jira connector" && git push origin main`
 
-- [ ] **Task 3.2: Confluence Connector (Mock)**
+- [x] **Task 3.2: Confluence Connector (Mock)**
     - **Description:** Implement `MockConfluenceConnector` class.
         - **Behavior:** Simulate searching and reading docs.
         - **Tools:** `confluence_search`, `confluence_read_page`.
