@@ -19,7 +19,7 @@
     - **Description:** Create a separate `mock-saas` folder (Vite + React). This will run on port 3000.
     - **Git:** `git add . && git commit -m "chore: init mock saas project"`
 
-- [ ] **Task 2.2: Mock Jira (Tickets)**
+- [x] **Task 2.2: Mock Jira (Tickets)**
     - **Description:** Build a simple React page at `/jira` that lists tickets and has a "New Issue" modal.
     - **Git:** `git add . && git commit -m "feat: mock jira application"`
 
