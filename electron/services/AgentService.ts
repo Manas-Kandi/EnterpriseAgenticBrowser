@@ -22,9 +22,9 @@ export class AgentService {
         baseURL: "https://integrate.api.nvidia.com/v1",
         apiKey: apiKey,
       },
-      modelName: "meta/llama3-70b-instruct",
-      temperature: 0.2, // Lower temperature for more reliable tool use
-      streaming: false, // Disable streaming for simpler tool handling loop
+      modelName: "meta/llama-3.1-70b-instruct",
+      temperature: 0.1, // Very low temperature for strict adherence
+      streaming: false, 
     });
 
     this.tools = toolRegistry.toLangChainTools();
@@ -48,21 +48,20 @@ export class AgentService {
         - Step 4: Call "browser_observe" again to confirm the action worked.
 
         Example: "Create a Jira ticket"
-        1. browser_navigate({ url: "http://localhost:3000/jira" })
-        2. browser_observe({}) -> returns { interactiveElements: [{ text: "Create", selector: "button.bg-blue-600" }] }
-        3. browser_click({ selector: "button.bg-blue-600" })
-        4. browser_observe({}) -> returns { interactiveElements: [{ placeholder: "What needs to be done?", selector: "input.border" }] }
-        5. browser_type({ selector: "input.border", text: "Fix alignment" })
-        6. browser_click({ selector: "button[type='submit']" })
+        User: "Go to Jira and create a ticket"
+        Assistant: [Call browser_navigate(url="http://localhost:3000/jira")]
+        User (Tool Output): "Navigated to..."
+        Assistant: [Call browser_observe()]
+        User (Tool Output): { interactiveElements: [{ text: "Create", selector: "button.bg-blue-600" }] }
+        Assistant: [Call browser_click(selector="button.bg-blue-600")]
+        
+        DO NOT hallucinate the tool calls. You must output the tool call structure provided by the system.
         `),
         new HumanMessage(userMessage),
       ];
 
       // ReAct Loop (Max 15 turns)
       for (let i = 0; i < 15; i++) {
-        // Force tool calling if we haven't completed the goal? 
-        // No, let's trust the prompt. But if the response contains "browser_" text but no tool calls, force it.
-        
         const response = await this.model.invoke(messages) as AIMessage;
         messages.push(response);
 
@@ -101,16 +100,17 @@ export class AgentService {
         } else {
            // HALLUCINATION DETECTION
            const content = response.content as string;
-           if (content.includes("browser_") && (content.includes("navigate") || content.includes("click") || content.includes("type"))) {
+           // Only flag if it explicitly mentions tool names or technical steps but provides no tool calls
+           if (content.includes("browser_") || content.includes("selector:")) {
                console.warn("Detected hallucinated tool calls. Attempting to repair...");
                // Add a system message telling it to actually CALL the tool
-               messages.push(new SystemMessage("You described the actions but did not actually call the tools. You MUST output a tool_call to execute these actions. Do not just describe them. Call browser_navigate now."));
+               messages.push(new SystemMessage("You described the actions but did not actually call the tools. You MUST output a tool_call to execute these actions. Do not just describe them. Call the first tool now."));
                continue; // Retry the loop
            }
            
+           // If it's just a normal response, return it
            return response.content as string;
         }
-        // Loop continues to let model see tool outputs and decide next step
       }
 
       return "I completed the actions, but reached the maximum number of steps.";

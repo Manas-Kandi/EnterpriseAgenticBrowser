@@ -41055,11 +41055,10 @@ class AgentService {
         baseURL: "https://integrate.api.nvidia.com/v1",
         apiKey
       },
-      modelName: "meta/llama3-70b-instruct",
-      temperature: 0.2,
-      // Lower temperature for more reliable tool use
+      modelName: "meta/llama-3.1-70b-instruct",
+      temperature: 0.1,
+      // Very low temperature for strict adherence
       streaming: false
-      // Disable streaming for simpler tool handling loop
     });
     this.tools = toolRegistry.toLangChainTools();
     this.model = chatModel.bindTools(this.tools);
@@ -41081,12 +41080,14 @@ class AgentService {
         - Step 4: Call "browser_observe" again to confirm the action worked.
 
         Example: "Create a Jira ticket"
-        1. browser_navigate({ url: "http://localhost:3000/jira" })
-        2. browser_observe({}) -> returns { interactiveElements: [{ text: "Create", selector: "button.bg-blue-600" }] }
-        3. browser_click({ selector: "button.bg-blue-600" })
-        4. browser_observe({}) -> returns { interactiveElements: [{ placeholder: "What needs to be done?", selector: "input.border" }] }
-        5. browser_type({ selector: "input.border", text: "Fix alignment" })
-        6. browser_click({ selector: "button[type='submit']" })
+        User: "Go to Jira and create a ticket"
+        Assistant: [Call browser_navigate(url="http://localhost:3000/jira")]
+        User (Tool Output): "Navigated to..."
+        Assistant: [Call browser_observe()]
+        User (Tool Output): { interactiveElements: [{ text: "Create", selector: "button.bg-blue-600" }] }
+        Assistant: [Call browser_click(selector="button.bg-blue-600")]
+        
+        DO NOT hallucinate the tool calls. You must output the tool call structure provided by the system.
         `),
         new HumanMessage(userMessage)
       ];
@@ -41121,9 +41122,9 @@ class AgentService {
           }
         } else {
           const content = response.content;
-          if (content.includes("browser_") && (content.includes("navigate") || content.includes("click") || content.includes("type"))) {
+          if (content.includes("browser_") || content.includes("selector:")) {
             console.warn("Detected hallucinated tool calls. Attempting to repair...");
-            messages.push(new SystemMessage("You described the actions but did not actually call the tools. You MUST output a tool_call to execute these actions. Do not just describe them. Call browser_navigate now."));
+            messages.push(new SystemMessage("You described the actions but did not actually call the tools. You MUST output a tool_call to execute these actions. Do not just describe them. Call the first tool now."));
             continue;
           }
           return response.content;
