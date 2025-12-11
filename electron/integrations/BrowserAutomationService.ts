@@ -40,9 +40,7 @@ export class BrowserAutomationService {
         }
       } catch (e) {
         console.error("Failed to connect to Electron CDP:", e);
-        console.log("Falling back to standard Chromium launch...");
-        this.browser = await chromium.launch({ headless: false });
-        this.page = await this.browser.newPage();
+        throw new Error("Could not connect to the Enterprise Browser. Is the app running with remote debugging enabled? Please restart the app.");
       }
     }
     

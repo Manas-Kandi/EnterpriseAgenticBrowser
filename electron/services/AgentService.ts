@@ -58,8 +58,8 @@ export class AgentService {
         new HumanMessage(userMessage),
       ];
 
-      // ReAct Loop (Max 5 turns)
-      for (let i = 0; i < 5; i++) {
+      // ReAct Loop (Max 15 turns)
+      for (let i = 0; i < 15; i++) {
         // Force tool calling if we haven't completed the goal? 
         // No, let's trust the prompt. But if the response contains "browser_" text but no tool calls, force it.
         
