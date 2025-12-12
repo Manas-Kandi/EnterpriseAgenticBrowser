@@ -9,7 +9,6 @@ dotenv.config();
 
 export class AgentService {
   private model: Runnable;
-  private tools: any[];
 
   constructor() {
     const apiKey = process.env.NVIDIA_API_KEY;
@@ -32,18 +31,19 @@ export class AgentService {
       modelKwargs: { "response_format": { "type": "json_object" } } 
     });
 
-    this.tools = toolRegistry.toLangChainTools();
-    // We do NOT bind tools here. We will prompt for JSON.
     this.model = chatModel;
   }
 
   async chat(userMessage: string): Promise<string> {
+    // Fetch tools dynamically to ensure all services have registered their tools
+    const tools = toolRegistry.toLangChainTools();
+    
     try {
       const messages: BaseMessage[] = [
         new SystemMessage(`You are a helpful enterprise assistant integrated into a browser. 
         
         You have access to the following tools:
-        ${this.tools.map(t => `- ${t.name}: ${t.description} (Args: ${JSON.stringify(t.schema.shape || {})})`).join('\n')}
+        ${tools.map(t => `- ${t.name}: ${t.description} (Args: ${JSON.stringify(t.schema.shape || {})})`).join('\n')}
 
         CRITICAL INSTRUCTIONS:
         1. You are an agent that MUST use tools to interact with the world.
@@ -106,7 +106,7 @@ export class AgentService {
         }
 
         // Handle Tool Call
-        const tool = this.tools.find((t: any) => t.name === action.tool);
+        const tool = tools.find((t: any) => t.name === action.tool);
         if (tool) {
             console.log(`Executing tool: ${tool.name} with args:`, action.args);
             try {
@@ -126,7 +126,7 @@ export class AgentService {
         } else {
             console.error(`Tool not found: ${action.tool}`);
             messages.push(new AIMessage(content));
-            messages.push(new SystemMessage(`Error: Tool '${action.tool}' not found. Available tools: ${this.tools.map((t: any) => t.name).join(', ')}`));
+            messages.push(new SystemMessage(`Error: Tool '${action.tool}' not found. Available tools: ${tools.map((t: any) => t.name).join(', ')}`));
         }
       }
 
