@@ -17,18 +17,24 @@ export class AgentService {
       console.warn('NVIDIA_API_KEY is not set in environment variables');
     }
 
+    // We will use a standard ChatOpenAI instance WITHOUT .bindTools first
+    // This allows us to manually handle the tool calling format via prompting (JSON Mode),
+    // which is more robust for models that might struggle with the native 'tool_calls' schema
     const chatModel = new ChatOpenAI({
       configuration: {
         baseURL: "https://integrate.api.nvidia.com/v1",
         apiKey: apiKey,
       },
       modelName: "meta/llama-3.1-70b-instruct",
-      temperature: 0.1, // Very low temperature for strict adherence
+      temperature: 0.1,
       streaming: false, 
+      // Force JSON format via prompt + model config if supported, but Llama3 usually follows prompt well
+      modelKwargs: { "response_format": { "type": "json_object" } } 
     });
 
     this.tools = toolRegistry.toLangChainTools();
-    this.model = chatModel.bindTools(this.tools);
+    // We do NOT bind tools here. We will prompt for JSON.
+    this.model = chatModel;
   }
 
   async chat(userMessage: string): Promise<string> {
@@ -36,26 +42,37 @@ export class AgentService {
       const messages: BaseMessage[] = [
         new SystemMessage(`You are a helpful enterprise assistant integrated into a browser. 
         
-        You have access to two types of tools:
-        1. API Connectors (Mock Jira, Confluence, Trello): Use these for fast, direct data access.
-        2. Browser Automation (browser_*): Use these when the user asks you to "go to", "click", "navigate", or "fill" something on the screen.
-        
-        CRITICAL: Browser Automation Strategy
+        You have access to the following tools:
+        ${this.tools.map(t => `- ${t.name}: ${t.description} (Args: ${JSON.stringify(t.schema.shape || {})})`).join('\n')}
+
+        CRITICAL INSTRUCTIONS:
+        1. You are an agent that MUST use tools to interact with the world.
+        2. To call a tool, you MUST output a VALID JSON object in the following format:
+           {
+             "tool": "tool_name",
+             "args": { "arg_name": "value" }
+           }
+        3. Do not output any other text when calling a tool. Just the JSON.
+        4. If you have completed the task or need to ask the user something, output a JSON with tool "final_response":
+           {
+             "tool": "final_response",
+             "args": { "message": "Your text here" }
+           }
+
+        BROWSER AUTOMATION STRATEGY:
         - You have no eyes. You must use "browser_observe" to see the page.
         - Step 1: ALWAYS call "browser_navigate" to the target URL.
-        - Step 2: ALWAYS call "browser_observe" to see what is on the page (this returns a list of buttons/inputs with selectors).
+        - Step 2: ALWAYS call "browser_observe" to see what is on the page.
         - Step 3: Use the selectors returned by "browser_observe" to call "browser_click" or "browser_type".
         - Step 4: Call "browser_observe" again to confirm the action worked.
 
-        Example: "Create a Jira ticket"
-        User: "Go to Jira and create a ticket"
-        Assistant: [Call browser_navigate(url="http://localhost:3000/jira")]
-        User (Tool Output): "Navigated to..."
-        Assistant: [Call browser_observe()]
-        User (Tool Output): { interactiveElements: [{ text: "Create", selector: "button.bg-blue-600" }] }
-        Assistant: [Call browser_click(selector="button.bg-blue-600")]
-        
-        DO NOT hallucinate the tool calls. You must output the tool call structure provided by the system.
+        Example Interaction:
+        User: "Go to Jira"
+        Assistant: { "tool": "browser_navigate", "args": { "url": "http://localhost:3000/jira" } }
+        User: Tool Output: "Navigated to..."
+        Assistant: { "tool": "browser_observe", "args": {} }
+        User: Tool Output: { "interactiveElements": [...] }
+        Assistant: { "tool": "final_response", "args": { "message": "I have navigated to Jira." } }
         `),
         new HumanMessage(userMessage),
       ];
@@ -63,53 +80,53 @@ export class AgentService {
       // ReAct Loop (Max 15 turns)
       for (let i = 0; i < 15; i++) {
         const response = await this.model.invoke(messages) as AIMessage;
-        messages.push(response);
+        const content = response.content as string;
+        
+        // Log raw response for debugging
+        console.log(`[Agent Turn ${i}] Raw Response:`, content);
 
-        // Check if the model decided to call tools
-        if (response.tool_calls && response.tool_calls.length > 0) {
-           // Process tool calls
-           for (const toolCall of response.tool_calls) {
-              const tool = this.tools.find((t: any) => t.name === toolCall.name);
-              if (tool) {
-                console.log(`Executing tool: ${tool.name} with args:`, toolCall.args);
+        let action;
+        try {
+            // Try to parse JSON. Llama might wrap it in markdown ```json ... ```
+            const cleanContent = content.replace(/```json/g, '').replace(/```/g, '').trim();
+            action = JSON.parse(cleanContent);
+        } catch (e) {
+            console.warn("Failed to parse JSON response:", content);
+            // If parse fails, maybe the model is just talking. 
+            // We can push it back as a message, but since we enforced JSON, this is an error.
+            // Let's remind the model to use JSON.
+            messages.push(response);
+            messages.push(new SystemMessage("Error: You must output valid JSON. Please try again using the specified format."));
+            continue;
+        }
+
+        // Handle Final Response
+        if (action.tool === "final_response") {
+            return action.args.message;
+        }
+
+        // Handle Tool Call
+        const tool = this.tools.find((t: any) => t.name === action.tool);
+        if (tool) {
+            console.log(`Executing tool: ${tool.name} with args:`, action.args);
+            try {
+                // Execute tool
+                const result = await tool.invoke(action.args);
                 
-                try {
-                   // Execute tool
-                   const result = await tool.invoke(toolCall.args);
-                   
-                   // Add result to messages
-                   messages.push(new ToolMessage({
-                       tool_call_id: toolCall.id!,
-                       content: result
-                   }));
-                } catch (err: any) {
-                   console.error(`Tool execution failed: ${err}`);
-                   messages.push(new ToolMessage({
-                       tool_call_id: toolCall.id!,
-                       content: `Error executing tool: ${err.message}`
-                   }));
-                }
-              } else {
-                console.error(`Tool not found: ${toolCall.name}`);
-                messages.push(new ToolMessage({
-                   tool_call_id: toolCall.id!,
-                   content: `Error: Tool ${toolCall.name} not found`
-               }));
-              }
-           }
+                // Add interaction to history
+                // We add the assistant's JSON response
+                messages.push(new AIMessage(content));
+                // We add the tool output as a generic HumanMessage or SystemMessage because we aren't using native tool calling anymore
+                messages.push(new HumanMessage(`Tool '${action.tool}' Output: ${result}`));
+            } catch (err: any) {
+                console.error(`Tool execution failed: ${err}`);
+                messages.push(new AIMessage(content));
+                messages.push(new HumanMessage(`Tool Execution Error: ${err.message}`));
+            }
         } else {
-           // HALLUCINATION DETECTION
-           const content = response.content as string;
-           // Only flag if it explicitly mentions tool names or technical steps but provides no tool calls
-           if (content.includes("browser_") || content.includes("selector:")) {
-               console.warn("Detected hallucinated tool calls. Attempting to repair...");
-               // Add a system message telling it to actually CALL the tool
-               messages.push(new SystemMessage("You described the actions but did not actually call the tools. You MUST output a tool_call to execute these actions. Do not just describe them. Call the first tool now."));
-               continue; // Retry the loop
-           }
-           
-           // If it's just a normal response, return it
-           return response.content as string;
+            console.error(`Tool not found: ${action.tool}`);
+            messages.push(new AIMessage(content));
+            messages.push(new SystemMessage(`Error: Tool '${action.tool}' not found. Available tools: ${this.tools.map((t: any) => t.name).join(', ')}`));
         }
       }
 
