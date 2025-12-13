@@ -35,3 +35,7 @@ electron.contextBridge.exposeInMainWorld("agent", {
     electron.ipcRenderer.on("agent:step", (_, step) => callback(step));
   }
 });
+electron.contextBridge.exposeInMainWorld("browser", {
+  registerWebview: (tabId, webContentsId) => electron.ipcRenderer.invoke("browser:webview-register", { tabId, webContentsId }),
+  setActiveTab: (tabId) => electron.ipcRenderer.invoke("browser:active-tab", { tabId })
+});

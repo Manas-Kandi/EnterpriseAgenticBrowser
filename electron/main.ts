@@ -1,17 +1,16 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
-import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { vaultService } from './services/VaultService'
 import { agentService } from './services/AgentService'
 import { auditService } from './services/AuditService'
 import { toolRegistry } from './services/ToolRegistry'
+import { browserTargetService } from './services/BrowserTargetService'
 import './integrations/mock/MockJiraConnector'; // Initialize Mock Jira
 import './integrations/mock/MockConfluenceConnector'; // Initialize Mock Confluence
 import './integrations/mock/MockTrelloConnector'; // Initialize Mock Trello
 import './integrations/BrowserAutomationService'; // Initialize Playwright Automation
 
-const require = createRequire(import.meta.url)
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 // The built directory structure
@@ -59,7 +58,9 @@ function createWindow() {
 // Quit when all windows are closed, except on macOS. There, it's common
 // for applications and their menu bar to stay active until the user quits
 // explicitly with Cmd + Q.
-app.commandLine.appendSwitch('remote-debugging-port', '9222');
+if (process.env.ENABLE_ELECTRON_REMOTE_DEBUGGING === 'true') {
+  app.commandLine.appendSwitch('remote-debugging-port', '9222');
+}
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
@@ -77,6 +78,14 @@ app.on('activate', () => {
 })
 
 app.whenReady().then(() => {
+  ipcMain.handle('browser:webview-register', async (_, { tabId, webContentsId }) => {
+    browserTargetService.registerWebview(tabId, webContentsId);
+  });
+
+  ipcMain.handle('browser:active-tab', async (_, { tabId }) => {
+    browserTargetService.setActiveTab(tabId ?? null);
+  });
+
   // Vault IPC Handlers
   ipcMain.handle('vault:set', async (_, account, secret) => {
     return await vaultService.setSecret(account, secret);

@@ -39,3 +39,9 @@ contextBridge.exposeInMainWorld('agent', {
     ipcRenderer.on('agent:step', (_, step) => callback(step));
   },
 })
+
+contextBridge.exposeInMainWorld('browser', {
+  registerWebview: (tabId: string, webContentsId: number) =>
+    ipcRenderer.invoke('browser:webview-register', { tabId, webContentsId }),
+  setActiveTab: (tabId: string | null) => ipcRenderer.invoke('browser:active-tab', { tabId }),
+})

@@ -2,8 +2,7 @@ var __defProp = Object.defineProperty;
 var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
 var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
 var _a2;
-import { app, BrowserWindow, ipcMain } from "electron";
-import { createRequire } from "node:module";
+import { app, webContents, BrowserWindow, ipcMain } from "electron";
 import { fileURLToPath } from "node:url";
 import path$2 from "node:path";
 import keytar from "keytar";
@@ -13,7 +12,7 @@ import require$$1 from "path";
 import require$$2 from "os";
 import crypto$3 from "crypto";
 import Database from "better-sqlite3";
-import { chromium } from "playwright";
+import fs$1 from "node:fs/promises";
 class VaultService {
   constructor() {
     __publicField(this, "serviceName", "EnterpriseAgenticBrowser");
@@ -18890,84 +18889,84 @@ __export(core_exports, {
 const JsonPatchError = PatchError;
 const deepClone = _deepClone;
 const objOps = {
-  add: function(obj, key, document2) {
+  add: function(obj, key, document) {
     obj[key] = this.value;
-    return { newDocument: document2 };
+    return { newDocument: document };
   },
-  remove: function(obj, key, document2) {
+  remove: function(obj, key, document) {
     var removed = obj[key];
     delete obj[key];
     return {
-      newDocument: document2,
+      newDocument: document,
       removed
     };
   },
-  replace: function(obj, key, document2) {
+  replace: function(obj, key, document) {
     var removed = obj[key];
     obj[key] = this.value;
     return {
-      newDocument: document2,
+      newDocument: document,
       removed
     };
   },
-  move: function(obj, key, document2) {
-    let removed = getValueByPointer(document2, this.path);
+  move: function(obj, key, document) {
+    let removed = getValueByPointer(document, this.path);
     if (removed) removed = _deepClone(removed);
-    const originalValue = applyOperation(document2, {
+    const originalValue = applyOperation(document, {
       op: "remove",
       path: this.from
     }).removed;
-    applyOperation(document2, {
+    applyOperation(document, {
       op: "add",
       path: this.path,
       value: originalValue
     });
     return {
-      newDocument: document2,
+      newDocument: document,
       removed
     };
   },
-  copy: function(obj, key, document2) {
-    const valueToCopy = getValueByPointer(document2, this.from);
-    applyOperation(document2, {
+  copy: function(obj, key, document) {
+    const valueToCopy = getValueByPointer(document, this.from);
+    applyOperation(document, {
       op: "add",
       path: this.path,
       value: _deepClone(valueToCopy)
     });
-    return { newDocument: document2 };
+    return { newDocument: document };
   },
-  test: function(obj, key, document2) {
+  test: function(obj, key, document) {
     return {
-      newDocument: document2,
+      newDocument: document,
       test: _areEquals(obj[key], this.value)
     };
   },
-  _get: function(obj, key, document2) {
+  _get: function(obj, key, document) {
     this.value = obj[key];
-    return { newDocument: document2 };
+    return { newDocument: document };
   }
 };
 var arrOps = {
-  add: function(arr2, i, document2) {
+  add: function(arr2, i, document) {
     if (isInteger(i)) arr2.splice(i, 0, this.value);
     else arr2[i] = this.value;
     return {
-      newDocument: document2,
+      newDocument: document,
       index: i
     };
   },
-  remove: function(arr2, i, document2) {
+  remove: function(arr2, i, document) {
     var removedList = arr2.splice(i, 1);
     return {
-      newDocument: document2,
+      newDocument: document,
       removed: removedList[0]
     };
   },
-  replace: function(arr2, i, document2) {
+  replace: function(arr2, i, document) {
     var removed = arr2[i];
     arr2[i] = this.value;
     return {
-      newDocument: document2,
+      newDocument: document,
       removed
     };
   },
@@ -18976,50 +18975,50 @@ var arrOps = {
   test: objOps.test,
   _get: objOps._get
 };
-function getValueByPointer(document2, pointer) {
-  if (pointer == "") return document2;
+function getValueByPointer(document, pointer) {
+  if (pointer == "") return document;
   var getOriginalDestination = {
     op: "_get",
     path: pointer
   };
-  applyOperation(document2, getOriginalDestination);
+  applyOperation(document, getOriginalDestination);
   return getOriginalDestination.value;
 }
-function applyOperation(document2, operation, validateOperation = false, mutateDocument = true, banPrototypeModifications = true, index = 0) {
-  if (validateOperation) if (typeof validateOperation == "function") validateOperation(operation, 0, document2, operation.path);
+function applyOperation(document, operation, validateOperation = false, mutateDocument = true, banPrototypeModifications = true, index = 0) {
+  if (validateOperation) if (typeof validateOperation == "function") validateOperation(operation, 0, document, operation.path);
   else validator(operation, 0);
   if (operation.path === "") {
-    let returnValue = { newDocument: document2 };
+    let returnValue = { newDocument: document };
     if (operation.op === "add") {
       returnValue.newDocument = operation.value;
       return returnValue;
     } else if (operation.op === "replace") {
       returnValue.newDocument = operation.value;
-      returnValue.removed = document2;
+      returnValue.removed = document;
       return returnValue;
     } else if (operation.op === "move" || operation.op === "copy") {
-      returnValue.newDocument = getValueByPointer(document2, operation.from);
-      if (operation.op === "move") returnValue.removed = document2;
+      returnValue.newDocument = getValueByPointer(document, operation.from);
+      if (operation.op === "move") returnValue.removed = document;
       return returnValue;
     } else if (operation.op === "test") {
-      returnValue.test = _areEquals(document2, operation.value);
-      if (returnValue.test === false) throw new JsonPatchError("Test operation failed", "TEST_OPERATION_FAILED", index, operation, document2);
-      returnValue.newDocument = document2;
+      returnValue.test = _areEquals(document, operation.value);
+      if (returnValue.test === false) throw new JsonPatchError("Test operation failed", "TEST_OPERATION_FAILED", index, operation, document);
+      returnValue.newDocument = document;
       return returnValue;
     } else if (operation.op === "remove") {
-      returnValue.removed = document2;
+      returnValue.removed = document;
       returnValue.newDocument = null;
       return returnValue;
     } else if (operation.op === "_get") {
-      operation.value = document2;
+      operation.value = document;
       return returnValue;
-    } else if (validateOperation) throw new JsonPatchError("Operation `op` property is not one of operations defined in RFC-6902", "OPERATION_OP_INVALID", index, operation, document2);
+    } else if (validateOperation) throw new JsonPatchError("Operation `op` property is not one of operations defined in RFC-6902", "OPERATION_OP_INVALID", index, operation, document);
     else return returnValue;
   } else {
-    if (!mutateDocument) document2 = _deepClone(document2);
+    if (!mutateDocument) document = _deepClone(document);
     const path2 = operation.path || "";
     const keys = path2.split("/");
-    let obj = document2;
+    let obj = document;
     let t2 = 1;
     let len = keys.length;
     let existingPathFragment = void 0;
@@ -19035,81 +19034,81 @@ function applyOperation(document2, operation, validateOperation = false, mutateD
         if (existingPathFragment === void 0) {
           if (obj[key] === void 0) existingPathFragment = keys.slice(0, t2).join("/");
           else if (t2 == len - 1) existingPathFragment = operation.path;
-          if (existingPathFragment !== void 0) validateFunction(operation, 0, document2, existingPathFragment);
+          if (existingPathFragment !== void 0) validateFunction(operation, 0, document, existingPathFragment);
         }
       }
       t2++;
       if (Array.isArray(obj)) {
         if (key === "-") key = obj.length;
-        else if (validateOperation && !isInteger(key)) throw new JsonPatchError("Expected an unsigned base-10 integer value, making the new referenced value the array element with the zero-based index", "OPERATION_PATH_ILLEGAL_ARRAY_INDEX", index, operation, document2);
+        else if (validateOperation && !isInteger(key)) throw new JsonPatchError("Expected an unsigned base-10 integer value, making the new referenced value the array element with the zero-based index", "OPERATION_PATH_ILLEGAL_ARRAY_INDEX", index, operation, document);
         else if (isInteger(key)) key = ~~key;
         if (t2 >= len) {
-          if (validateOperation && operation.op === "add" && key > obj.length) throw new JsonPatchError("The specified index MUST NOT be greater than the number of elements in the array", "OPERATION_VALUE_OUT_OF_BOUNDS", index, operation, document2);
-          const returnValue = arrOps[operation.op].call(operation, obj, key, document2);
-          if (returnValue.test === false) throw new JsonPatchError("Test operation failed", "TEST_OPERATION_FAILED", index, operation, document2);
+          if (validateOperation && operation.op === "add" && key > obj.length) throw new JsonPatchError("The specified index MUST NOT be greater than the number of elements in the array", "OPERATION_VALUE_OUT_OF_BOUNDS", index, operation, document);
+          const returnValue = arrOps[operation.op].call(operation, obj, key, document);
+          if (returnValue.test === false) throw new JsonPatchError("Test operation failed", "TEST_OPERATION_FAILED", index, operation, document);
           return returnValue;
         }
       } else if (t2 >= len) {
-        const returnValue = objOps[operation.op].call(operation, obj, key, document2);
-        if (returnValue.test === false) throw new JsonPatchError("Test operation failed", "TEST_OPERATION_FAILED", index, operation, document2);
+        const returnValue = objOps[operation.op].call(operation, obj, key, document);
+        if (returnValue.test === false) throw new JsonPatchError("Test operation failed", "TEST_OPERATION_FAILED", index, operation, document);
         return returnValue;
       }
       obj = obj[key];
-      if (validateOperation && t2 < len && (!obj || typeof obj !== "object")) throw new JsonPatchError("Cannot perform operation at the desired path", "OPERATION_PATH_UNRESOLVABLE", index, operation, document2);
+      if (validateOperation && t2 < len && (!obj || typeof obj !== "object")) throw new JsonPatchError("Cannot perform operation at the desired path", "OPERATION_PATH_UNRESOLVABLE", index, operation, document);
     }
   }
 }
-function applyPatch(document2, patch, validateOperation, mutateDocument = true, banPrototypeModifications = true) {
+function applyPatch(document, patch, validateOperation, mutateDocument = true, banPrototypeModifications = true) {
   if (validateOperation) {
     if (!Array.isArray(patch)) throw new JsonPatchError("Patch sequence must be an array", "SEQUENCE_NOT_AN_ARRAY");
   }
-  if (!mutateDocument) document2 = _deepClone(document2);
+  if (!mutateDocument) document = _deepClone(document);
   const results = new Array(patch.length);
   for (let i = 0, length = patch.length; i < length; i++) {
-    results[i] = applyOperation(document2, patch[i], validateOperation, true, banPrototypeModifications, i);
-    document2 = results[i].newDocument;
+    results[i] = applyOperation(document, patch[i], validateOperation, true, banPrototypeModifications, i);
+    document = results[i].newDocument;
   }
-  results.newDocument = document2;
+  results.newDocument = document;
   return results;
 }
-function applyReducer(document2, operation, index) {
-  const operationResult = applyOperation(document2, operation);
-  if (operationResult.test === false) throw new JsonPatchError("Test operation failed", "TEST_OPERATION_FAILED", index, operation, document2);
+function applyReducer(document, operation, index) {
+  const operationResult = applyOperation(document, operation);
+  if (operationResult.test === false) throw new JsonPatchError("Test operation failed", "TEST_OPERATION_FAILED", index, operation, document);
   return operationResult.newDocument;
 }
-function validator(operation, index, document2, existingPathFragment) {
-  if (typeof operation !== "object" || operation === null || Array.isArray(operation)) throw new JsonPatchError("Operation is not an object", "OPERATION_NOT_AN_OBJECT", index, operation, document2);
-  else if (!objOps[operation.op]) throw new JsonPatchError("Operation `op` property is not one of operations defined in RFC-6902", "OPERATION_OP_INVALID", index, operation, document2);
-  else if (typeof operation.path !== "string") throw new JsonPatchError("Operation `path` property is not a string", "OPERATION_PATH_INVALID", index, operation, document2);
-  else if (operation.path.indexOf("/") !== 0 && operation.path.length > 0) throw new JsonPatchError('Operation `path` property must start with "/"', "OPERATION_PATH_INVALID", index, operation, document2);
-  else if ((operation.op === "move" || operation.op === "copy") && typeof operation.from !== "string") throw new JsonPatchError("Operation `from` property is not present (applicable in `move` and `copy` operations)", "OPERATION_FROM_REQUIRED", index, operation, document2);
-  else if ((operation.op === "add" || operation.op === "replace" || operation.op === "test") && operation.value === void 0) throw new JsonPatchError("Operation `value` property is not present (applicable in `add`, `replace` and `test` operations)", "OPERATION_VALUE_REQUIRED", index, operation, document2);
-  else if ((operation.op === "add" || operation.op === "replace" || operation.op === "test") && hasUndefined(operation.value)) throw new JsonPatchError("Operation `value` property is not present (applicable in `add`, `replace` and `test` operations)", "OPERATION_VALUE_CANNOT_CONTAIN_UNDEFINED", index, operation, document2);
-  else if (document2) {
+function validator(operation, index, document, existingPathFragment) {
+  if (typeof operation !== "object" || operation === null || Array.isArray(operation)) throw new JsonPatchError("Operation is not an object", "OPERATION_NOT_AN_OBJECT", index, operation, document);
+  else if (!objOps[operation.op]) throw new JsonPatchError("Operation `op` property is not one of operations defined in RFC-6902", "OPERATION_OP_INVALID", index, operation, document);
+  else if (typeof operation.path !== "string") throw new JsonPatchError("Operation `path` property is not a string", "OPERATION_PATH_INVALID", index, operation, document);
+  else if (operation.path.indexOf("/") !== 0 && operation.path.length > 0) throw new JsonPatchError('Operation `path` property must start with "/"', "OPERATION_PATH_INVALID", index, operation, document);
+  else if ((operation.op === "move" || operation.op === "copy") && typeof operation.from !== "string") throw new JsonPatchError("Operation `from` property is not present (applicable in `move` and `copy` operations)", "OPERATION_FROM_REQUIRED", index, operation, document);
+  else if ((operation.op === "add" || operation.op === "replace" || operation.op === "test") && operation.value === void 0) throw new JsonPatchError("Operation `value` property is not present (applicable in `add`, `replace` and `test` operations)", "OPERATION_VALUE_REQUIRED", index, operation, document);
+  else if ((operation.op === "add" || operation.op === "replace" || operation.op === "test") && hasUndefined(operation.value)) throw new JsonPatchError("Operation `value` property is not present (applicable in `add`, `replace` and `test` operations)", "OPERATION_VALUE_CANNOT_CONTAIN_UNDEFINED", index, operation, document);
+  else if (document) {
     if (operation.op == "add") {
       var pathLen = operation.path.split("/").length;
       var existingPathLen = existingPathFragment.split("/").length;
-      if (pathLen !== existingPathLen + 1 && pathLen !== existingPathLen) throw new JsonPatchError("Cannot perform an `add` operation at the desired path", "OPERATION_PATH_CANNOT_ADD", index, operation, document2);
+      if (pathLen !== existingPathLen + 1 && pathLen !== existingPathLen) throw new JsonPatchError("Cannot perform an `add` operation at the desired path", "OPERATION_PATH_CANNOT_ADD", index, operation, document);
     } else if (operation.op === "replace" || operation.op === "remove" || operation.op === "_get") {
-      if (operation.path !== existingPathFragment) throw new JsonPatchError("Cannot perform the operation at a path that does not exist", "OPERATION_PATH_UNRESOLVABLE", index, operation, document2);
+      if (operation.path !== existingPathFragment) throw new JsonPatchError("Cannot perform the operation at a path that does not exist", "OPERATION_PATH_UNRESOLVABLE", index, operation, document);
     } else if (operation.op === "move" || operation.op === "copy") {
       var existingValue = {
         op: "_get",
         path: operation.from,
         value: void 0
       };
-      var error = validate$1([existingValue], document2);
-      if (error && error.name === "OPERATION_PATH_UNRESOLVABLE") throw new JsonPatchError("Cannot perform the operation from a path that does not exist", "OPERATION_FROM_UNRESOLVABLE", index, operation, document2);
+      var error = validate$1([existingValue], document);
+      if (error && error.name === "OPERATION_PATH_UNRESOLVABLE") throw new JsonPatchError("Cannot perform the operation from a path that does not exist", "OPERATION_FROM_UNRESOLVABLE", index, operation, document);
     }
   }
 }
-function validate$1(sequence, document2, externalValidator) {
+function validate$1(sequence, document, externalValidator) {
   try {
     if (!Array.isArray(sequence)) throw new JsonPatchError("Patch sequence must be an array", "SEQUENCE_NOT_AN_ARRAY");
-    if (document2) applyPatch(_deepClone(document2), _deepClone(sequence), externalValidator || true);
+    if (document) applyPatch(_deepClone(document), _deepClone(sequence), externalValidator || true);
     else {
       externalValidator = externalValidator || validator;
-      for (var i = 0; i < sequence.length; i++) externalValidator(sequence[i], i, document2, void 0);
+      for (var i = 0; i < sequence.length; i++) externalValidator(sequence[i], i, document, void 0);
     }
   } catch (e) {
     if (e instanceof JsonPatchError) return e;
@@ -41078,7 +41077,10 @@ class AgentService {
         new SystemMessage(`You are a helpful enterprise assistant integrated into a browser. 
         
         You have access to the following tools:
-        ${tools.map((t2) => `- ${t2.name}: ${t2.description} (Args: ${JSON.stringify(t2.schema.shape || {})})`).join("\n")}
+        ${tools.map((t2) => {
+          var _a3;
+          return `- ${t2.name}: ${t2.description} (Args: ${JSON.stringify(((_a3 = t2.schema) == null ? void 0 : _a3.shape) || {})})`;
+        }).join("\n")}
 
         CRITICAL INSTRUCTIONS:
         1. You are an agent that MUST use tools to interact with the world.
@@ -41281,6 +41283,45 @@ class AuditService {
   }
 }
 const auditService = new AuditService();
+class BrowserTargetService {
+  constructor() {
+    __publicField(this, "tabIdToWebContentsId", /* @__PURE__ */ new Map());
+    __publicField(this, "activeTabId", null);
+  }
+  registerWebview(tabId, webContentsId) {
+    if (!tabId || !Number.isFinite(webContentsId)) return;
+    this.tabIdToWebContentsId.set(tabId, {
+      tabId,
+      webContentsId,
+      lastSeenAt: Date.now()
+    });
+  }
+  setActiveTab(tabId) {
+    this.activeTabId = tabId;
+  }
+  getActiveWebContents() {
+    const activeTabId = this.activeTabId;
+    if (activeTabId) {
+      const registered = this.tabIdToWebContentsId.get(activeTabId);
+      if (registered) {
+        const wc = webContents.fromId(registered.webContentsId);
+        if (wc && !wc.isDestroyed()) return wc;
+      }
+    }
+    const all = webContents.getAllWebContents();
+    const candidates = all.filter((wc) => !wc.isDestroyed()).filter((wc) => wc.getType() === "webview").filter((wc) => {
+      const url = wc.getURL() || "";
+      return !url.startsWith("devtools://") && !url.includes("localhost:5173") && !url.includes("localhost:5174") && !url.endsWith("index.html");
+    });
+    if (candidates.length === 0) {
+      throw new Error(
+        "No active webview found. Open a tab and ensure the BrowserView is loaded."
+      );
+    }
+    return candidates[candidates.length - 1];
+  }
+}
+const browserTargetService = new BrowserTargetService();
 class MockJiraConnector {
   constructor() {
     __publicField(this, "issues", [
@@ -41539,59 +41580,25 @@ class MockTrelloConnector {
 new MockTrelloConnector();
 class BrowserAutomationService {
   constructor() {
-    __publicField(this, "browser", null);
-    __publicField(this, "page", null);
     this.registerTools();
   }
-  async ensureBrowser() {
-    var _a3;
-    if (!this.browser) {
-      let retries = 5;
-      while (retries > 0) {
-        try {
-          console.log(`Connecting to Electron CDP at http://127.0.0.1:9222... (Attempts left: ${retries})`);
-          this.browser = await chromium.connectOverCDP("http://127.0.0.1:9222");
-          break;
-        } catch (e) {
-          console.warn(`Connection attempt failed: ${e.message}`);
-          retries--;
-          if (retries === 0) {
-            console.error("Failed to connect to Electron CDP after multiple attempts.");
-            throw new Error("Could not connect to the Enterprise Browser. Is the app running with remote debugging enabled? Please restart the app.");
-          }
-          await new Promise((resolve) => setTimeout(resolve, 2e3));
-        }
-      }
-      try {
-        if (!this.browser) throw new Error("Browser not connected");
-        const contexts = this.browser.contexts();
-        const pages = contexts[0].pages();
-        console.log(`Found ${pages.length} pages via CDP.`);
-        pages.forEach((p, i) => console.log(`Page ${i}: ${p.url()}`));
-        const targets = pages.filter((p) => {
-          const url = p.url();
-          return !url.includes("localhost:5173") && !url.includes("app.asar") && !url.endsWith("index.html");
-        });
-        console.log(`Found ${targets.length} valid targets (excluding main window).`);
-        if (targets.length > 0) {
-          this.page = targets[targets.length - 1];
-          console.log(`Attached to page: ${this.page.url()}`);
-        } else {
-          console.warn("No valid pages found in CDP context. Creating a new page (this may open a separate window).");
-          this.page = await this.browser.newPage();
-        }
-      } catch (e) {
-        console.error("Failed to connect to Electron CDP:", e);
-        throw new Error("Could not connect to the Enterprise Browser. Is the app running with remote debugging enabled? Please restart the app.");
-      }
+  async delay(ms) {
+    await new Promise((resolve) => setTimeout(resolve, ms));
+  }
+  async getTarget() {
+    return browserTargetService.getActiveWebContents();
+  }
+  async waitForSelector(target, selector, timeoutMs = 5e3) {
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < timeoutMs) {
+      const found = await target.executeJavaScript(
+        `Boolean(document.querySelector(${JSON.stringify(selector)}))`,
+        true
+      );
+      if (found) return;
+      await this.delay(100);
     }
-    if (this.page && this.page.isClosed()) {
-      const contexts = this.browser.contexts();
-      const pages = contexts[0].pages();
-      this.page = pages[pages.length - 1];
-      console.log(`Re-attached to page: ${(_a3 = this.page) == null ? void 0 : _a3.url()}`);
-    }
-    return this.page;
+    throw new Error(`Timeout waiting for selector: ${selector}`);
   }
   registerTools() {
     const observeTool = {
@@ -41600,34 +41607,42 @@ class BrowserAutomationService {
       schema: object({}),
       execute: async () => {
         try {
-          const page = await this.ensureBrowser();
-          const url = page.url();
-          const title = await page.title();
-          const elements = await page.evaluate(() => {
-            const getSelector = (el) => {
-              if (el.id) return `#${el.id}`;
-              if (el.className && typeof el.className === "string") {
-                const classes = el.className.split(" ").filter((c) => c.trim()).join(".");
-                if (classes) return `${el.tagName.toLowerCase()}.${classes}`;
-              }
-              return el.tagName.toLowerCase();
-            };
-            const interactables = Array.from(document.querySelectorAll('button, input, a, textarea, [role="button"]'));
-            return interactables.slice(0, 50).map((el) => {
-              const tag = el.tagName.toLowerCase();
-              const text = (el.textContent || "").substring(0, 50).trim().replace(/\s+/g, " ");
-              const placeholder = el.getAttribute("placeholder") || "";
-              const type = el.getAttribute("type") || "";
-              const role = el.getAttribute("role") || "";
-              const selector = getSelector(el);
-              return { tag, text, placeholder, type, role, selector };
-            });
-          });
-          return JSON.stringify({
-            url,
-            title,
-            interactiveElements: elements
-          }, null, 2);
+          const target = await this.getTarget();
+          const url = target.getURL();
+          const title = await target.executeJavaScript(`document.title`, true);
+          const elements = await target.executeJavaScript(
+            `(() => {
+                const getSelector = (el) => {
+                  if (!el || el.nodeType !== 1) return '';
+                  if (el.id) return '#' + el.id;
+                  const testId = el.getAttribute && (el.getAttribute('data-testid') || el.getAttribute('data-test-id'));
+                  if (testId) return '[data-testid="' + testId + '"]';
+                  const ariaLabel = el.getAttribute && el.getAttribute('aria-label');
+                  if (ariaLabel) return el.tagName.toLowerCase() + '[aria-label="' + ariaLabel + '"]';
+                  if (el.className && typeof el.className === 'string') {
+                    const classes = el.className.split(' ').filter((c) => c.trim()).slice(0, 3).join('.');
+                    if (classes) return el.tagName.toLowerCase() + '.' + classes;
+                  }
+                  return el.tagName.toLowerCase();
+                };
+
+                const interactables = Array.from(
+                  document.querySelectorAll('button, input, a, textarea, select, [role="button"], [role="link"]')
+                );
+                return interactables.slice(0, 60).map((el) => {
+                  const tag = el.tagName.toLowerCase();
+                  const text = (el.textContent || '').substring(0, 80).trim().replace(/\\s+/g, ' ');
+                  const placeholder = el.getAttribute('placeholder') || '';
+                  const type = el.getAttribute('type') || '';
+                  const role = el.getAttribute('role') || '';
+                  const name = el.getAttribute('name') || '';
+                  const selector = getSelector(el);
+                  return { tag, text, placeholder, type, role, name, selector };
+                });
+              })()`,
+            true
+          );
+          return JSON.stringify({ url, title, interactiveElements: elements }, null, 2);
         } catch (e) {
           return `Failed to observe page: ${e.message}`;
         }
@@ -41641,8 +41656,8 @@ class BrowserAutomationService {
       }),
       execute: async ({ url }) => {
         try {
-          const page = await this.ensureBrowser();
-          await page.goto(url);
+          const target = await this.getTarget();
+          await target.loadURL(url);
           return `Navigated to ${url}`;
         } catch (e) {
           return `Failed to navigate: ${e.message}`;
@@ -41657,9 +41672,20 @@ class BrowserAutomationService {
       }),
       execute: async ({ selector }) => {
         try {
-          const page = await this.ensureBrowser();
-          await page.waitForSelector(selector, { timeout: 5e3 });
-          await page.click(selector);
+          const target = await this.getTarget();
+          await this.waitForSelector(target, selector, 5e3);
+          await target.executeJavaScript(
+            `(() => {
+                const el = document.querySelector(${JSON.stringify(selector)});
+                if (!el) throw new Error('Element not found');
+                el.scrollIntoView({ block: 'center', inline: 'center' });
+                el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+                el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+                el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+                el.click();
+              })()`,
+            true
+          );
           return `Clicked element ${selector}`;
         } catch (e) {
           return `Failed to click ${selector}: ${e.message}`;
@@ -41675,9 +41701,26 @@ class BrowserAutomationService {
       }),
       execute: async ({ selector, text }) => {
         try {
-          const page = await this.ensureBrowser();
-          await page.waitForSelector(selector, { timeout: 5e3 });
-          await page.fill(selector, text);
+          const target = await this.getTarget();
+          await this.waitForSelector(target, selector, 5e3);
+          await target.executeJavaScript(
+            `(() => {
+                const el = document.querySelector(${JSON.stringify(selector)});
+                if (!el) throw new Error('Element not found');
+                el.scrollIntoView({ block: 'center', inline: 'center' });
+                el.focus?.();
+                const setValue = (value) => {
+                  const proto = Object.getPrototypeOf(el);
+                  const descriptor = Object.getOwnPropertyDescriptor(proto, 'value');
+                  if (descriptor && descriptor.set) descriptor.set.call(el, value);
+                  else el.value = value;
+                };
+                setValue(${JSON.stringify(text)});
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+                el.dispatchEvent(new Event('change', { bubbles: true }));
+              })()`,
+            true
+          );
           return `Typed "${text}" into ${selector}`;
         } catch (e) {
           return `Failed to type into ${selector}: ${e.message}`;
@@ -41691,9 +41734,20 @@ class BrowserAutomationService {
         selector: string().describe("CSS selector")
       }),
       execute: async ({ selector }) => {
-        const page = await this.ensureBrowser();
-        const text = await page.textContent(selector);
-        return text || "Element found but has no text.";
+        try {
+          const target = await this.getTarget();
+          await this.waitForSelector(target, selector, 5e3);
+          const text = await target.executeJavaScript(
+            `(() => {
+                    const el = document.querySelector(${JSON.stringify(selector)});
+                    return el ? (el.textContent || '') : null;
+                  })()`,
+            true
+          );
+          return text || "Element found but has no text.";
+        } catch (e) {
+          return `Failed to get text: ${e.message}`;
+        }
       }
     };
     const screenshotTool = {
@@ -41702,10 +41756,16 @@ class BrowserAutomationService {
       schema: object({
         path: string().optional().describe("Path to save the screenshot (optional)")
       }),
-      execute: async () => {
-        const page = await this.ensureBrowser();
-        const buffer = await page.screenshot();
-        return `Screenshot taken (${buffer.byteLength} bytes).`;
+      execute: async ({ path: savePath }) => {
+        const target = await this.getTarget();
+        const image = await target.capturePage();
+        const buffer = image.toPNG();
+        if (savePath) {
+          const resolved = path$2.isAbsolute(savePath) ? savePath : path$2.join(process.cwd(), savePath);
+          await fs$1.writeFile(resolved, buffer);
+          return `Screenshot saved to ${resolved} (${buffer.length} bytes).`;
+        }
+        return `Screenshot taken (${buffer.length} bytes).`;
       }
     };
     toolRegistry.register(observeTool);
@@ -41717,7 +41777,6 @@ class BrowserAutomationService {
   }
 }
 new BrowserAutomationService();
-createRequire(import.meta.url);
 const __dirname$1 = path$2.dirname(fileURLToPath(import.meta.url));
 process.env.APP_ROOT = path$2.join(__dirname$1, "..");
 const VITE_DEV_SERVER_URL = process.env["VITE_DEV_SERVER_URL"];
@@ -41742,7 +41801,9 @@ function createWindow() {
     win.loadFile(path$2.join(RENDERER_DIST, "index.html"));
   }
 }
-app.commandLine.appendSwitch("remote-debugging-port", "9222");
+if (process.env.ENABLE_ELECTRON_REMOTE_DEBUGGING === "true") {
+  app.commandLine.appendSwitch("remote-debugging-port", "9222");
+}
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
     app.quit();
@@ -41755,6 +41816,12 @@ app.on("activate", () => {
   }
 });
 app.whenReady().then(() => {
+  ipcMain.handle("browser:webview-register", async (_, { tabId, webContentsId }) => {
+    browserTargetService.registerWebview(tabId, webContentsId);
+  });
+  ipcMain.handle("browser:active-tab", async (_, { tabId }) => {
+    browserTargetService.setActiveTab(tabId ?? null);
+  });
   ipcMain.handle("vault:set", async (_, account, secret) => {
     return await vaultService.setSecret(account, secret);
   });

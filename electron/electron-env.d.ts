@@ -2,7 +2,7 @@
 
 declare namespace JSX {
   interface IntrinsicElements {
-    webview: React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement> & { src?: string; allowpopups?: string; webpreferences?: string; onDidStartLoading?: any; onDidStopLoading?: any; onPageTitleUpdated?: any }, HTMLElement>;
+    webview: React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement> & { src?: string; allowpopups?: string; webpreferences?: string; onDidStartLoading?: any; onDidStopLoading?: any; onPageTitleUpdated?: any; ref?: any }, HTMLElement>;
   }
 }
 declare namespace NodeJS {
@@ -38,5 +38,10 @@ interface Window {
     chat: (message: string) => Promise<string>
     onApprovalRequest: (callback: (toolName: string, args: any) => void) => void
     respondApproval: (toolName: string, approved: boolean) => void
+    onStep: (callback: (step: any) => void) => void
+  }
+  browser: {
+    registerWebview: (tabId: string, webContentsId: number) => Promise<void>
+    setActiveTab: (tabId: string | null) => Promise<void>
   }
 }

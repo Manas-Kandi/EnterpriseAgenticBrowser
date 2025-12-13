@@ -1,5 +1,5 @@
 import { ChatOpenAI } from "@langchain/openai";
-import { HumanMessage, SystemMessage, BaseMessage, AIMessage, ToolMessage } from "@langchain/core/messages";
+import { HumanMessage, SystemMessage, BaseMessage, AIMessage } from "@langchain/core/messages";
 import { Runnable } from "@langchain/core/runnables";
 import dotenv from 'dotenv';
 
@@ -60,7 +60,7 @@ export class AgentService {
         new SystemMessage(`You are a helpful enterprise assistant integrated into a browser. 
         
         You have access to the following tools:
-        ${tools.map(t => `- ${t.name}: ${t.description} (Args: ${JSON.stringify(t.schema.shape || {})})`).join('\n')}
+        ${tools.map((t: any) => `- ${t.name}: ${t.description} (Args: ${JSON.stringify(t.schema?.shape || {})})`).join('\n')}
 
         CRITICAL INSTRUCTIONS:
         1. You are an agent that MUST use tools to interact with the world.

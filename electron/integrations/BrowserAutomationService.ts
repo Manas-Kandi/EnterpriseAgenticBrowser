@@ -1,78 +1,34 @@
-import { chromium, Browser, Page } from 'playwright';
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import { z } from 'zod';
 import { AgentTool, toolRegistry } from '../services/ToolRegistry';
+import { browserTargetService } from '../services/BrowserTargetService';
+import type { WebContents } from 'electron';
 
 export class BrowserAutomationService {
-  private browser: Browser | null = null;
-  private page: Page | null = null;
-
   constructor() {
     this.registerTools();
   }
 
-  private async ensureBrowser() {
-    if (!this.browser) {
-      let retries = 5;
-      while (retries > 0) {
-        try {
-            console.log(`Connecting to Electron CDP at http://127.0.0.1:9222... (Attempts left: ${retries})`);
-            this.browser = await chromium.connectOverCDP('http://127.0.0.1:9222');
-            break; // Connection successful
-        } catch (e: any) {
-            console.warn(`Connection attempt failed: ${e.message}`);
-            retries--;
-            if (retries === 0) {
-                console.error("Failed to connect to Electron CDP after multiple attempts.");
-                throw new Error("Could not connect to the Enterprise Browser. Is the app running with remote debugging enabled? Please restart the app.");
-            }
-            // Wait 2 seconds before retrying
-            await new Promise(resolve => setTimeout(resolve, 2000));
-        }
-      }
+  private async delay(ms: number) {
+    await new Promise((resolve) => setTimeout(resolve, ms));
+  }
 
-      try {
-        if (!this.browser) throw new Error("Browser not connected");
-        
-        // When connecting to Electron via CDP, we get a browser instance.
-        // We need to find the correct 'page' (target) that corresponds to the active tab's webview.
-        // The contexts[0] usually contains the targets.
-        const contexts = this.browser.contexts();
-        const pages = contexts[0].pages();
-        
-        console.log(`Found ${pages.length} pages via CDP.`);
-        pages.forEach((p, i) => console.log(`Page ${i}: ${p.url()}`));
+  private async getTarget(): Promise<WebContents> {
+    return browserTargetService.getActiveWebContents();
+  }
 
-        // Filter out the main application window to avoid hijacking the UI
-        // Main window usually runs on port 5173 (dev) or is loaded from file:// (prod)
-        const targets = pages.filter(p => {
-            const url = p.url();
-            return !url.includes('localhost:5173') && !url.includes('app.asar') && !url.endsWith('index.html');
-        });
-        
-        console.log(`Found ${targets.length} valid targets (excluding main window).`);
-
-        if (targets.length > 0) {
-            // In many electron apps, the webview is the last attached target
-            this.page = targets[targets.length - 1]; 
-            console.log(`Attached to page: ${this.page.url()}`);
-        } else {
-            console.warn('No valid pages found in CDP context. Creating a new page (this may open a separate window).');
-            this.page = await this.browser.newPage();
-        }
-      } catch (e) {
-        console.error("Failed to connect to Electron CDP:", e);
-        throw new Error("Could not connect to the Enterprise Browser. Is the app running with remote debugging enabled? Please restart the app.");
-      }
+  private async waitForSelector(target: WebContents, selector: string, timeoutMs = 5000) {
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < timeoutMs) {
+      const found = await target.executeJavaScript(
+        `Boolean(document.querySelector(${JSON.stringify(selector)}))`,
+        true
+      );
+      if (found) return;
+      await this.delay(100);
     }
-    
-    if (this.page && this.page.isClosed()) {
-        const contexts = this.browser.contexts();
-        const pages = contexts[0].pages();
-        this.page = pages[pages.length - 1];
-        console.log(`Re-attached to page: ${this.page?.url()}`);
-    }
-
-    return this.page!;
+    throw new Error(`Timeout waiting for selector: ${selector}`);
   }
 
   private registerTools() {
@@ -83,40 +39,44 @@ export class BrowserAutomationService {
       schema: z.object({}),
       execute: async () => {
         try {
-            const page = await this.ensureBrowser();
-            const url = page.url();
-            const title = await page.title();
-            
-            // Heuristic for "interactive elements"
-            // We'll find buttons, inputs, links
-            const elements = await page.evaluate(() => {
-                const getSelector = (el: Element): string => {
-                    if (el.id) return `#${el.id}`;
-                    if (el.className && typeof el.className === 'string') {
-                        const classes = el.className.split(' ').filter(c => c.trim()).join('.');
-                        if (classes) return `${el.tagName.toLowerCase()}.${classes}`;
-                    }
-                    return el.tagName.toLowerCase();
+            const target = await this.getTarget();
+            const url = target.getURL();
+            const title = await target.executeJavaScript(`document.title`, true);
+
+            const elements = await target.executeJavaScript(
+              `(() => {
+                const getSelector = (el) => {
+                  if (!el || el.nodeType !== 1) return '';
+                  if (el.id) return '#' + el.id;
+                  const testId = el.getAttribute && (el.getAttribute('data-testid') || el.getAttribute('data-test-id'));
+                  if (testId) return '[data-testid="' + testId + '"]';
+                  const ariaLabel = el.getAttribute && el.getAttribute('aria-label');
+                  if (ariaLabel) return el.tagName.toLowerCase() + '[aria-label="' + ariaLabel + '"]';
+                  if (el.className && typeof el.className === 'string') {
+                    const classes = el.className.split(' ').filter((c) => c.trim()).slice(0, 3).join('.');
+                    if (classes) return el.tagName.toLowerCase() + '.' + classes;
+                  }
+                  return el.tagName.toLowerCase();
                 };
 
-                const interactables = Array.from(document.querySelectorAll('button, input, a, textarea, [role="button"]'));
-                return interactables.slice(0, 50).map(el => { // Limit to 50 items to avoid token overflow
-                    const tag = el.tagName.toLowerCase();
-                    const text = (el.textContent || '').substring(0, 50).trim().replace(/\s+/g, ' ');
-                    const placeholder = el.getAttribute('placeholder') || '';
-                    const type = el.getAttribute('type') || '';
-                    const role = el.getAttribute('role') || '';
-                    const selector = getSelector(el);
-                    
-                    return { tag, text, placeholder, type, role, selector };
+                const interactables = Array.from(
+                  document.querySelectorAll('button, input, a, textarea, select, [role="button"], [role="link"]')
+                );
+                return interactables.slice(0, 60).map((el) => {
+                  const tag = el.tagName.toLowerCase();
+                  const text = (el.textContent || '').substring(0, 80).trim().replace(/\\s+/g, ' ');
+                  const placeholder = el.getAttribute('placeholder') || '';
+                  const type = el.getAttribute('type') || '';
+                  const role = el.getAttribute('role') || '';
+                  const name = el.getAttribute('name') || '';
+                  const selector = getSelector(el);
+                  return { tag, text, placeholder, type, role, name, selector };
                 });
-            });
+              })()`,
+              true
+            );
 
-            return JSON.stringify({
-                url,
-                title,
-                interactiveElements: elements
-            }, null, 2);
+            return JSON.stringify({ url, title, interactiveElements: elements }, null, 2);
         } catch (e: any) {
             return `Failed to observe page: ${e.message}`;
         }
@@ -132,8 +92,8 @@ export class BrowserAutomationService {
       }),
       execute: async ({ url }: { url: string }) => {
         try {
-            const page = await this.ensureBrowser();
-            await page.goto(url);
+            const target = await this.getTarget();
+            await target.loadURL(url);
             return `Navigated to ${url}`;
         } catch (e: any) {
             return `Failed to navigate: ${e.message}`;
@@ -150,10 +110,20 @@ export class BrowserAutomationService {
       }),
       execute: async ({ selector }: { selector: string }) => {
         try {
-            const page = await this.ensureBrowser();
-            // Wait for element to be visible first
-            await page.waitForSelector(selector, { timeout: 5000 });
-            await page.click(selector);
+            const target = await this.getTarget();
+            await this.waitForSelector(target, selector, 5000);
+            await target.executeJavaScript(
+              `(() => {
+                const el = document.querySelector(${JSON.stringify(selector)});
+                if (!el) throw new Error('Element not found');
+                el.scrollIntoView({ block: 'center', inline: 'center' });
+                el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+                el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+                el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+                el.click();
+              })()`,
+              true
+            );
             return `Clicked element ${selector}`;
         } catch (e: any) {
             return `Failed to click ${selector}: ${e.message}`;
@@ -171,9 +141,26 @@ export class BrowserAutomationService {
       }),
       execute: async ({ selector, text }: { selector: string; text: string }) => {
         try {
-            const page = await this.ensureBrowser();
-            await page.waitForSelector(selector, { timeout: 5000 });
-            await page.fill(selector, text);
+            const target = await this.getTarget();
+            await this.waitForSelector(target, selector, 5000);
+            await target.executeJavaScript(
+              `(() => {
+                const el = document.querySelector(${JSON.stringify(selector)});
+                if (!el) throw new Error('Element not found');
+                el.scrollIntoView({ block: 'center', inline: 'center' });
+                el.focus?.();
+                const setValue = (value) => {
+                  const proto = Object.getPrototypeOf(el);
+                  const descriptor = Object.getOwnPropertyDescriptor(proto, 'value');
+                  if (descriptor && descriptor.set) descriptor.set.call(el, value);
+                  else el.value = value;
+                };
+                setValue(${JSON.stringify(text)});
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+                el.dispatchEvent(new Event('change', { bubbles: true }));
+              })()`,
+              true
+            );
             return `Typed "${text}" into ${selector}`;
         } catch (e: any) {
              return `Failed to type into ${selector}: ${e.message}`;
@@ -189,9 +176,20 @@ export class BrowserAutomationService {
             selector: z.string().describe('CSS selector')
         }),
         execute: async ({ selector }: { selector: string }) => {
-            const page = await this.ensureBrowser();
-            const text = await page.textContent(selector);
-            return text || 'Element found but has no text.';
+            try {
+                const target = await this.getTarget();
+                await this.waitForSelector(target, selector, 5000);
+                const text = await target.executeJavaScript(
+                  `(() => {
+                    const el = document.querySelector(${JSON.stringify(selector)});
+                    return el ? (el.textContent || '') : null;
+                  })()`,
+                  true
+                );
+                return (text as string) || 'Element found but has no text.';
+            } catch (e: any) {
+                return `Failed to get text: ${e.message}`;
+            }
         }
     };
 
@@ -202,11 +200,20 @@ export class BrowserAutomationService {
         schema: z.object({
             path: z.string().optional().describe('Path to save the screenshot (optional)')
         }),
-        execute: async () => {
-             const page = await this.ensureBrowser();
-             const buffer = await page.screenshot();
-             // In a real app, we might return a base64 string or save to the 'downloads' folder
-             return `Screenshot taken (${buffer.byteLength} bytes).`;
+        execute: async ({ path: savePath }: { path?: string }) => {
+             const target = await this.getTarget();
+             const image = await target.capturePage();
+             const buffer = image.toPNG();
+
+             if (savePath) {
+               const resolved = path.isAbsolute(savePath)
+                 ? savePath
+                 : path.join(process.cwd(), savePath);
+               await fs.writeFile(resolved, buffer);
+               return `Screenshot saved to ${resolved} (${buffer.length} bytes).`;
+             }
+
+             return `Screenshot taken (${buffer.length} bytes).`;
         }
     };
 
