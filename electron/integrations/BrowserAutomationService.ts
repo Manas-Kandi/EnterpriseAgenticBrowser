@@ -53,9 +53,16 @@ export class BrowserAutomationService {
 
             const elements = await target.executeJavaScript(
               `(() => {
-                const safeAttr = (value) => {
+                const escapeForSingleQuotes = (value) => {
                   if (typeof value !== 'string') return '';
-                  return value.replace(/"/g, '\\"');
+                  return value.replace(/\\\\/g, '\\\\\\\\').replace(/'/g, "\\\\'");
+                };
+
+                const attrSelectorValue = (value) => {
+                  if (typeof value !== 'string') return "''";
+                  // If value is simple, avoid quotes entirely (JSON-safe and CSS-valid).
+                  if (/^[a-zA-Z0-9_-]+$/.test(value)) return value;
+                  return "'" + escapeForSingleQuotes(value) + "'";
                 };
 
                 const cssPath = (el) => {
@@ -75,7 +82,7 @@ export class BrowserAutomationService {
                       cur.getAttribute &&
                       (cur.getAttribute('data-testid') || cur.getAttribute('data-test-id'));
                     if (testId) {
-                      part += '[data-testid="' + safeAttr(testId) + '"]';
+                      part += '[data-testid=' + attrSelectorValue(testId) + ']';
                       parts.unshift(part);
                       break;
                     }
@@ -105,13 +112,13 @@ export class BrowserAutomationService {
                   if (!el || el.nodeType !== 1) return '';
                   if (el.id) return '#' + el.id;
                   const testId = el.getAttribute && (el.getAttribute('data-testid') || el.getAttribute('data-test-id'));
-                  if (testId) return '[data-testid="' + testId + '"]';
+                  if (testId) return '[data-testid=' + attrSelectorValue(testId) + ']';
                   const name = el.getAttribute && el.getAttribute('name');
-                  if (name) return el.tagName.toLowerCase() + '[name="' + safeAttr(name) + '"]';
+                  if (name) return el.tagName.toLowerCase() + '[name=' + attrSelectorValue(name) + ']';
                   const ariaLabel = el.getAttribute && el.getAttribute('aria-label');
-                  if (ariaLabel) return el.tagName.toLowerCase() + '[aria-label="' + ariaLabel + '"]';
+                  if (ariaLabel) return el.tagName.toLowerCase() + '[aria-label=' + attrSelectorValue(ariaLabel) + ']';
                   const placeholder = el.getAttribute && el.getAttribute('placeholder');
-                  if (placeholder) return el.tagName.toLowerCase() + '[placeholder="' + safeAttr(placeholder) + '"]';
+                  if (placeholder) return el.tagName.toLowerCase() + '[placeholder=' + attrSelectorValue(placeholder) + ']';
                   if (el.className && typeof el.className === 'string') {
                     const classes = el.className.split(' ').filter((c) => c.trim()).slice(0, 3).join('.');
                     if (classes) return el.tagName.toLowerCase() + '.' + classes;
@@ -326,20 +333,26 @@ export class BrowserAutomationService {
             const query = ${JSON.stringify(text)}.toLowerCase();
             const limit = Math.max(1, Math.min(50, ${JSON.stringify(maxMatches ?? 10)}));
 
-            const safeAttr = (value) => {
+            const escapeForSingleQuotes = (value) => {
               if (typeof value !== 'string') return '';
-              return value.replace(/"/g, '\\"');
+              return value.replace(/\\\\/g, '\\\\\\\\').replace(/'/g, "\\\\'");
+            };
+
+            const attrSelectorValue = (value) => {
+              if (typeof value !== 'string') return "''";
+              if (/^[a-zA-Z0-9_-]+$/.test(value)) return value;
+              return "'" + escapeForSingleQuotes(value) + "'";
             };
 
             const selectorFor = (el) => {
               if (!el || el.nodeType !== 1) return '';
               if (el.id) return '#' + el.id;
               const testId = el.getAttribute && (el.getAttribute('data-testid') || el.getAttribute('data-test-id'));
-              if (testId) return '[data-testid="' + safeAttr(testId) + '"]';
+              if (testId) return '[data-testid=' + attrSelectorValue(testId) + ']';
               const ariaLabel = el.getAttribute && el.getAttribute('aria-label');
-              if (ariaLabel) return el.tagName.toLowerCase() + '[aria-label="' + safeAttr(ariaLabel) + '"]';
+              if (ariaLabel) return el.tagName.toLowerCase() + '[aria-label=' + attrSelectorValue(ariaLabel) + ']';
               const placeholder = el.getAttribute && el.getAttribute('placeholder');
-              if (placeholder) return el.tagName.toLowerCase() + '[placeholder="' + safeAttr(placeholder) + '"]';
+              if (placeholder) return el.tagName.toLowerCase() + '[placeholder=' + attrSelectorValue(placeholder) + ']';
               return el.tagName.toLowerCase();
             };
 

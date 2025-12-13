@@ -95,7 +95,7 @@ export function Sidebar() {
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-3 space-y-6">
+      <div className="flex-1 overflow-y-auto p-3 space-y-3">
         {messages.length === 0 && !collapsed ? (
             <div className="flex flex-col items-center justify-center h-full text-muted-foreground/50 pb-10">
                 <Bot className="mb-2 opacity-20" size={32} />
@@ -103,7 +103,7 @@ export function Sidebar() {
             </div>
         ) : (
             messages.map((msg, i) => (
-                <div key={i} className={cn("flex flex-col gap-1 text-xs", msg.role === 'user' ? "items-end" : "items-start")}>
+                <div key={i} className={cn("flex flex-col gap-0.5 text-xs", msg.role === 'user' ? "items-end" : "items-start")}>
                     <div className={cn("flex gap-2 max-w-[95%]", msg.role === 'user' ? "flex-row-reverse" : "")}>
                         {!collapsed && msg.role === 'user' && (
                            <div className="shrink-0 w-6 h-6 rounded-full flex items-center justify-center border bg-primary/10 border-primary/20 text-primary">
@@ -116,22 +116,22 @@ export function Sidebar() {
                             msg.role === 'user' 
                                 ? "bg-secondary text-foreground rounded-md px-3 py-2" 
                                 : msg.type === 'thought'
-                                    ? "text-muted-foreground/70 italic pl-3 border-l-2 border-primary/20 rounded-none bg-transparent py-0"
+                                    ? "text-muted-foreground/70 italic pl-3 border-l-2 border-primary/20 rounded-none bg-transparent py-0.5"
                                     : msg.type === 'action'
-                                        ? "font-mono text-[11px] bg-secondary/30 border border-border/40 text-primary/90 px-2 py-1.5 rounded-sm my-1 w-full"
+                                        ? "font-mono text-[11px] bg-secondary/30 border border-border/40 text-primary/90 px-2 py-1 rounded-sm my-0.5 w-full"
                                         : msg.type === 'observation'
-                                            ? "font-mono text-[11px] bg-secondary/10 border border-border/20 text-muted-foreground px-2 py-1.5 rounded-sm w-full"
+                                            ? "font-mono text-[11px] bg-secondary/10 border border-border/20 text-muted-foreground px-2 py-1 rounded-sm w-full"
                                             : "text-foreground/90 w-full"
                         )}>
                             {msg.role === 'assistant' && (!msg.type || msg.type === 'text') ? (
                                 <ReactMarkdown
                                     components={{
-                                        p: ({children}) => <p className="mb-2 last:mb-0">{children}</p>,
-                                        h1: ({children}) => <h1 className="text-sm font-bold mt-4 mb-2 first:mt-0 text-foreground">{children}</h1>,
-                                        h2: ({children}) => <h2 className="text-xs font-bold mt-3 mb-1 text-foreground/90 uppercase tracking-wide">{children}</h2>,
-                                        h3: ({children}) => <h3 className="text-xs font-semibold mt-2 mb-1 text-foreground/80">{children}</h3>,
-                                        ul: ({children}) => <ul className="list-disc pl-4 mb-2 space-y-1">{children}</ul>,
-                                        ol: ({children}) => <ol className="list-decimal pl-4 mb-2 space-y-1">{children}</ol>,
+                                        p: ({children}) => <p className="mb-1.5 last:mb-0">{children}</p>,
+                                        h1: ({children}) => <h1 className="text-sm font-bold mt-3 mb-1.5 first:mt-0 text-foreground">{children}</h1>,
+                                        h2: ({children}) => <h2 className="text-xs font-bold mt-2.5 mb-1 text-foreground/90 uppercase tracking-wide">{children}</h2>,
+                                        h3: ({children}) => <h3 className="text-xs font-semibold mt-2 mb-0.5 text-foreground/80">{children}</h3>,
+                                        ul: ({children}) => <ul className="list-disc pl-4 mb-1.5 space-y-0.5">{children}</ul>,
+                                        ol: ({children}) => <ol className="list-decimal pl-4 mb-1.5 space-y-0.5">{children}</ol>,
                                         code: ({className, children}) => {
                                             const match = /language-(\w+)/.exec(className || '')
                                             return !match ? (
@@ -140,7 +140,7 @@ export function Sidebar() {
                                                 <code className={className}>{children}</code>
                                             )
                                         },
-                                        pre: ({children}) => <pre className="bg-secondary/30 p-2 rounded-md overflow-x-auto text-[10px] my-2 border border-border/40 font-mono">{children}</pre>
+                                        pre: ({children}) => <pre className="bg-secondary/30 p-2 rounded-md overflow-x-auto text-[10px] my-1.5 border border-border/40 font-mono">{children}</pre>
                                     }}
                                 >
                                     {msg.content}
@@ -151,7 +151,7 @@ export function Sidebar() {
                                         <div className="w-1 h-1 rounded-full bg-current" />
                                         <span>Output</span>
                                     </summary>
-                                    <div className="mt-2 pl-2 border-l border-border/30 whitespace-pre-wrap opacity-90">{msg.content}</div>
+                                    <div className="mt-1 pl-2 border-l border-border/30 whitespace-pre-wrap opacity-90">{msg.content}</div>
                                 </details>
                             ) : msg.content}
                         </div>

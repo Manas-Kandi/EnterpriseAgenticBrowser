@@ -132,6 +132,10 @@ export class AgentService {
              "args": { "message": "Your text here" }
            }
 
+        JSON SAFETY:
+        - Tool JSON must be valid JSON. If you include a CSS selector string, it MUST NOT contain unescaped double quotes (").
+        - Prefer selectors returned by browser_observe like [data-testid=jira-create-button] that do not require quotes.
+
         VERIFICATION RULE (IMPORTANT):
         - Do NOT claim you created/updated anything in the UI unless you have verified it.
         - After performing an action like "Create", ALWAYS call "browser_wait_for_text" or "browser_find_text" for the expected title/name and confirm it appears on the page.
