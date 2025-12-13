@@ -32,11 +32,16 @@ contextBridge.exposeInMainWorld('vault', {
 contextBridge.exposeInMainWorld('agent', {
   chat: (message: string) => ipcRenderer.invoke('agent:chat', message),
   onApprovalRequest: (callback: (toolName: string, args: any) => void) => {
-    ipcRenderer.on('agent:request-approval', (_, { toolName, args }) => callback(toolName, args));
+    const listener = (_: unknown, { toolName, args }: { toolName: string; args: unknown }) =>
+      callback(toolName, args);
+    ipcRenderer.on('agent:request-approval', listener);
+    return () => ipcRenderer.off('agent:request-approval', listener);
   },
   respondApproval: (toolName: string, approved: boolean) => ipcRenderer.send('agent:approval-response', { toolName, approved }),
   onStep: (callback: (step: any) => void) => {
-    ipcRenderer.on('agent:step', (_, step) => callback(step));
+    const listener = (_: unknown, step: unknown) => callback(step);
+    ipcRenderer.on('agent:step', listener);
+    return () => ipcRenderer.off('agent:step', listener);
   },
 })
 

@@ -54,6 +54,7 @@ export class AgentService {
   async chat(userMessage: string): Promise<string> {
     // Fetch tools dynamically to ensure all services have registered their tools
     const tools = toolRegistry.toLangChainTools();
+    let usedBrowserTools = false;
     
     try {
       const messages: BaseMessage[] = [
@@ -75,6 +76,10 @@ export class AgentService {
              "tool": "final_response",
              "args": { "message": "Your text here" }
            }
+
+        VERIFICATION RULE (IMPORTANT):
+        - Do NOT claim you created/updated anything in the UI unless you have verified it.
+        - After performing an action like "Create", ALWAYS call "browser_wait_for_text" or "browser_find_text" for the expected title/name and confirm it appears on the page.
 
         BROWSER AUTOMATION STRATEGY:
         - You have no eyes. You must use "browser_observe" to see the page.
@@ -126,6 +131,20 @@ export class AgentService {
 
         // Handle Final Response
         if (action.tool === "final_response") {
+            if (usedBrowserTools) {
+              const last = messages.slice(-8).map((m) => (m as any).content ?? '').join('\n');
+              const claimedSuccess = typeof action?.args?.message === 'string' &&
+                /\b(created|created a|successfully|done|completed)\b/i.test(action.args.message);
+              if (claimedSuccess && !/\bFound text:\b|\b\"found\":\s*[1-9]\d*\b/i.test(last)) {
+                messages.push(response);
+                messages.push(
+                  new SystemMessage(
+                    'You must verify UI changes before claiming success. Use browser_wait_for_text or browser_find_text for the expected item title, then respond.'
+                  )
+                );
+                continue;
+              }
+            }
             return action.args.message;
         }
 
@@ -139,16 +158,18 @@ export class AgentService {
                 // Execute tool
                 const result = await tool.invoke(action.args);
                 this.emitStep('observation', `Tool Output: ${result}`, { tool: tool.name, result });
+
+                if (tool.name.startsWith('browser_')) usedBrowserTools = true;
                 
                 // Add interaction to history
                 // We add the assistant's JSON response
                 messages.push(new AIMessage(content));
-                // We add the tool output as a generic HumanMessage or SystemMessage because we aren't using native tool calling anymore
-                messages.push(new HumanMessage(`Tool '${action.tool}' Output: ${result}`));
+                // Treat tool output as untrusted system data (reduces prompt-injection risk)
+                messages.push(new SystemMessage(`Tool '${action.tool}' Output:\n${result}`));
             } catch (err: any) {
                 console.error(`Tool execution failed: ${err}`);
                 messages.push(new AIMessage(content));
-                messages.push(new HumanMessage(`Tool Execution Error: ${err.message}`));
+                messages.push(new SystemMessage(`Tool Execution Error: ${err.message}`));
             }
         } else {
             console.error(`Tool not found: ${action.tool}`);

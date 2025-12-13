@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, Search, Filter, MoreHorizontal, CheckCircle2, Circle, Clock } from 'lucide-react';
+import { Plus, Search, CheckCircle2, Circle, Clock } from 'lucide-react';
 
 interface Issue {
   id: string;
@@ -52,6 +52,7 @@ export function JiraPage() {
           <div className="text-sm font-medium text-gray-600">Dashboards</div>
           <button 
             onClick={() => setIsModalOpen(true)}
+            data-testid="jira-create-button"
             className="bg-blue-600 text-white px-3 py-1.5 rounded text-sm font-medium hover:bg-blue-700 transition-colors"
           >
             Create
@@ -83,8 +84,8 @@ export function JiraPage() {
                         {status} <span className="ml-1 bg-gray-200 px-1.5 py-0.5 rounded-full text-gray-600">{issues.filter(i => i.status === status).length}</span>
                     </div>
                     {issues.filter(i => i.status === status).map(issue => (
-                        <div key={issue.id} className="bg-white p-3 rounded shadow-sm border border-gray-200 hover:bg-gray-50 cursor-pointer group">
-                            <div className="text-sm font-medium text-gray-800 mb-2 group-hover:text-blue-600">{issue.summary}</div>
+                        <div key={issue.id} data-testid={`jira-issue-card-${issue.key}`} className="bg-white p-3 rounded shadow-sm border border-gray-200 hover:bg-gray-50 cursor-pointer group">
+                            <div data-testid="jira-issue-summary" className="text-sm font-medium text-gray-800 mb-2 group-hover:text-blue-600">{issue.summary}</div>
                             <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-2">
                                     {status === 'Done' ? <CheckCircle2 size={16} className="text-green-600" /> : 
@@ -100,6 +101,7 @@ export function JiraPage() {
                     ))}
                     <button 
                         onClick={() => setIsModalOpen(true)}
+                        data-testid="jira-create-issue-button"
                         className="flex items-center gap-1 text-gray-500 hover:bg-gray-200 p-2 rounded text-sm transition-colors mt-1"
                     >
                         <Plus size={16} /> Create issue
@@ -133,6 +135,7 @@ export function JiraPage() {
                         <label className="block text-sm font-medium text-gray-700 mb-1">Summary <span className="text-red-500">*</span></label>
                         <input 
                             autoFocus
+                            data-testid="jira-summary-input"
                             className="w-full border rounded px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
                             value={newSummary}
                             onChange={e => setNewSummary(e.target.value)}
@@ -150,6 +153,7 @@ export function JiraPage() {
                         <button 
                             type="submit"
                             disabled={!newSummary}
+                            data-testid="jira-submit-create"
                             className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded disabled:opacity-50"
                         >
                             Create

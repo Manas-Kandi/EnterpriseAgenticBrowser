@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Search, FileText, ChevronRight, Star, Clock, Home, Plus } from 'lucide-react';
+import { Search, FileText, ChevronRight, Star, Clock, Home } from 'lucide-react';
 
 interface Page {
   id: string;
@@ -10,7 +10,7 @@ interface Page {
 }
 
 export function ConfluencePage() {
-  const [pages, setPages] = useState<Page[]>([
+  const [pages] = useState<Page[]>([
     { 
         id: '1', 
         title: 'Project Phoenix Architecture', 

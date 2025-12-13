@@ -36,9 +36,9 @@ interface Window {
   }
   agent: {
     chat: (message: string) => Promise<string>
-    onApprovalRequest: (callback: (toolName: string, args: any) => void) => void
+    onApprovalRequest: (callback: (toolName: string, args: unknown) => void) => (() => void)
     respondApproval: (toolName: string, approved: boolean) => void
-    onStep: (callback: (step: any) => void) => void
+    onStep: (callback: (step: unknown) => void) => (() => void)
   }
   browser: {
     registerWebview: (tabId: string, webContentsId: number) => Promise<void>

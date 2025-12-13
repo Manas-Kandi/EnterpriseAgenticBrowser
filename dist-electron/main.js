@@ -17524,11 +17524,11 @@ ansiStyles.exports;
           if (colorString.length === 3) {
             colorString = colorString.split("").map((character) => character + character).join("");
           }
-          const integer = Number.parseInt(colorString, 16);
+          const integer2 = Number.parseInt(colorString, 16);
           return [
-            integer >> 16 & 255,
-            integer >> 8 & 255,
-            integer & 255
+            integer2 >> 16 & 255,
+            integer2 >> 8 & 255,
+            integer2 & 255
           ];
         },
         enumerable: false
@@ -20242,6 +20242,21 @@ function cleanRegex(source) {
   const end = source.endsWith("$") ? source.length - 1 : source.length;
   return source.slice(start, end);
 }
+function floatSafeRemainder$1(val, step) {
+  const valDecCount = (val.toString().split(".")[1] || "").length;
+  const stepString = step.toString();
+  let stepDecCount = (stepString.split(".")[1] || "").length;
+  if (stepDecCount === 0 && /\d?e-\d?/.test(stepString)) {
+    const match = stepString.match(/\d?e-(\d?)/);
+    if (match == null ? void 0 : match[1]) {
+      stepDecCount = Number.parseInt(match[1]);
+    }
+  }
+  const decCount = valDecCount > stepDecCount ? valDecCount : stepDecCount;
+  const valInt = Number.parseInt(val.toFixed(decCount).replace(".", ""));
+  const stepInt = Number.parseInt(step.toFixed(decCount).replace(".", ""));
+  return valInt % stepInt / 10 ** decCount;
+}
 const EVALUATING = Symbol("evaluating");
 function defineLazy(object2, key, getter) {
   let value = void 0;
@@ -20359,6 +20374,13 @@ function optionalKeys(shape) {
     return shape[k]._zod.optin === "optional" && shape[k]._zod.optout === "optional";
   });
 }
+const NUMBER_FORMAT_RANGES = {
+  safeint: [Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER],
+  int32: [-2147483648, 2147483647],
+  uint32: [0, 4294967295],
+  float32: [-34028234663852886e22, 34028234663852886e22],
+  float64: [-Number.MAX_VALUE, Number.MAX_VALUE]
+};
 function pick(schema, mask) {
   const currDef = schema._zod.def;
   const def = mergeDefs(schema._zod.def, {
@@ -20787,6 +20809,8 @@ const string$1 = (params) => {
   const regex2 = params ? `[\\s\\S]{${(params == null ? void 0 : params.minimum) ?? 0},${(params == null ? void 0 : params.maximum) ?? ""}}` : `[\\s\\S]*`;
   return new RegExp(`^${regex2}$`);
 };
+const integer = /^-?\d+$/;
+const number$1 = /^-?\d+(?:\.\d+)?/;
 const lowercase = /^[^A-Z]*$/;
 const uppercase = /^[^a-z]*$/;
 const $ZodCheck = /* @__PURE__ */ $constructor("$ZodCheck", (inst, def) => {
@@ -20794,6 +20818,165 @@ const $ZodCheck = /* @__PURE__ */ $constructor("$ZodCheck", (inst, def) => {
   inst._zod ?? (inst._zod = {});
   inst._zod.def = def;
   (_a3 = inst._zod).onattach ?? (_a3.onattach = []);
+});
+const numericOriginMap = {
+  number: "number",
+  bigint: "bigint",
+  object: "date"
+};
+const $ZodCheckLessThan = /* @__PURE__ */ $constructor("$ZodCheckLessThan", (inst, def) => {
+  $ZodCheck.init(inst, def);
+  const origin = numericOriginMap[typeof def.value];
+  inst._zod.onattach.push((inst2) => {
+    const bag = inst2._zod.bag;
+    const curr = (def.inclusive ? bag.maximum : bag.exclusiveMaximum) ?? Number.POSITIVE_INFINITY;
+    if (def.value < curr) {
+      if (def.inclusive)
+        bag.maximum = def.value;
+      else
+        bag.exclusiveMaximum = def.value;
+    }
+  });
+  inst._zod.check = (payload) => {
+    if (def.inclusive ? payload.value <= def.value : payload.value < def.value) {
+      return;
+    }
+    payload.issues.push({
+      origin,
+      code: "too_big",
+      maximum: def.value,
+      input: payload.value,
+      inclusive: def.inclusive,
+      inst,
+      continue: !def.abort
+    });
+  };
+});
+const $ZodCheckGreaterThan = /* @__PURE__ */ $constructor("$ZodCheckGreaterThan", (inst, def) => {
+  $ZodCheck.init(inst, def);
+  const origin = numericOriginMap[typeof def.value];
+  inst._zod.onattach.push((inst2) => {
+    const bag = inst2._zod.bag;
+    const curr = (def.inclusive ? bag.minimum : bag.exclusiveMinimum) ?? Number.NEGATIVE_INFINITY;
+    if (def.value > curr) {
+      if (def.inclusive)
+        bag.minimum = def.value;
+      else
+        bag.exclusiveMinimum = def.value;
+    }
+  });
+  inst._zod.check = (payload) => {
+    if (def.inclusive ? payload.value >= def.value : payload.value > def.value) {
+      return;
+    }
+    payload.issues.push({
+      origin,
+      code: "too_small",
+      minimum: def.value,
+      input: payload.value,
+      inclusive: def.inclusive,
+      inst,
+      continue: !def.abort
+    });
+  };
+});
+const $ZodCheckMultipleOf = /* @__PURE__ */ $constructor("$ZodCheckMultipleOf", (inst, def) => {
+  $ZodCheck.init(inst, def);
+  inst._zod.onattach.push((inst2) => {
+    var _a3;
+    (_a3 = inst2._zod.bag).multipleOf ?? (_a3.multipleOf = def.value);
+  });
+  inst._zod.check = (payload) => {
+    if (typeof payload.value !== typeof def.value)
+      throw new Error("Cannot mix number and bigint in multiple_of check.");
+    const isMultiple = typeof payload.value === "bigint" ? payload.value % def.value === BigInt(0) : floatSafeRemainder$1(payload.value, def.value) === 0;
+    if (isMultiple)
+      return;
+    payload.issues.push({
+      origin: typeof payload.value,
+      code: "not_multiple_of",
+      divisor: def.value,
+      input: payload.value,
+      inst,
+      continue: !def.abort
+    });
+  };
+});
+const $ZodCheckNumberFormat = /* @__PURE__ */ $constructor("$ZodCheckNumberFormat", (inst, def) => {
+  var _a3;
+  $ZodCheck.init(inst, def);
+  def.format = def.format || "float64";
+  const isInt = (_a3 = def.format) == null ? void 0 : _a3.includes("int");
+  const origin = isInt ? "int" : "number";
+  const [minimum, maximum] = NUMBER_FORMAT_RANGES[def.format];
+  inst._zod.onattach.push((inst2) => {
+    const bag = inst2._zod.bag;
+    bag.format = def.format;
+    bag.minimum = minimum;
+    bag.maximum = maximum;
+    if (isInt)
+      bag.pattern = integer;
+  });
+  inst._zod.check = (payload) => {
+    const input = payload.value;
+    if (isInt) {
+      if (!Number.isInteger(input)) {
+        payload.issues.push({
+          expected: origin,
+          format: def.format,
+          code: "invalid_type",
+          continue: false,
+          input,
+          inst
+        });
+        return;
+      }
+      if (!Number.isSafeInteger(input)) {
+        if (input > 0) {
+          payload.issues.push({
+            input,
+            code: "too_big",
+            maximum: Number.MAX_SAFE_INTEGER,
+            note: "Integers must be within the safe integer range.",
+            inst,
+            origin,
+            continue: !def.abort
+          });
+        } else {
+          payload.issues.push({
+            input,
+            code: "too_small",
+            minimum: Number.MIN_SAFE_INTEGER,
+            note: "Integers must be within the safe integer range.",
+            inst,
+            origin,
+            continue: !def.abort
+          });
+        }
+        return;
+      }
+    }
+    if (input < minimum) {
+      payload.issues.push({
+        origin: "number",
+        input,
+        code: "too_small",
+        minimum,
+        inclusive: true,
+        inst,
+        continue: !def.abort
+      });
+    }
+    if (input > maximum) {
+      payload.issues.push({
+        origin: "number",
+        input,
+        code: "too_big",
+        maximum,
+        inst
+      });
+    }
+  };
 });
 const $ZodCheckMaxLength = /* @__PURE__ */ $constructor("$ZodCheckMaxLength", (inst, def) => {
   var _a3;
@@ -21459,6 +21642,34 @@ const $ZodJWT = /* @__PURE__ */ $constructor("$ZodJWT", (inst, def) => {
       continue: !def.abort
     });
   };
+});
+const $ZodNumber = /* @__PURE__ */ $constructor("$ZodNumber", (inst, def) => {
+  $ZodType.init(inst, def);
+  inst._zod.pattern = inst._zod.bag.pattern ?? number$1;
+  inst._zod.parse = (payload, _ctx) => {
+    if (def.coerce)
+      try {
+        payload.value = Number(payload.value);
+      } catch (_) {
+      }
+    const input = payload.value;
+    if (typeof input === "number" && !Number.isNaN(input) && Number.isFinite(input)) {
+      return payload;
+    }
+    const received = typeof input === "number" ? Number.isNaN(input) ? "NaN" : !Number.isFinite(input) ? "Infinity" : void 0 : void 0;
+    payload.issues.push({
+      expected: "number",
+      code: "invalid_type",
+      input,
+      inst,
+      ...received ? { received } : {}
+    });
+    return payload;
+  };
+});
+const $ZodNumberFormat = /* @__PURE__ */ $constructor("$ZodNumberFormat", (inst, def) => {
+  $ZodCheckNumberFormat.init(inst, def);
+  $ZodNumber.init(inst, def);
 });
 const $ZodUnknown = /* @__PURE__ */ $constructor("$ZodUnknown", (inst, def) => {
   $ZodType.init(inst, def);
@@ -22428,6 +22639,22 @@ function _isoDuration(Class, params) {
     ...normalizeParams(params)
   });
 }
+function _number(Class, params) {
+  return new Class({
+    type: "number",
+    checks: [],
+    ...normalizeParams(params)
+  });
+}
+function _int(Class, params) {
+  return new Class({
+    type: "number",
+    check: "number_format",
+    abort: false,
+    format: "safeint",
+    ...normalizeParams(params)
+  });
+}
 function _unknown(Class) {
   return new Class({
     type: "unknown"
@@ -22437,6 +22664,45 @@ function _never(Class, params) {
   return new Class({
     type: "never",
     ...normalizeParams(params)
+  });
+}
+function _lt(value, params) {
+  return new $ZodCheckLessThan({
+    check: "less_than",
+    ...normalizeParams(params),
+    value,
+    inclusive: false
+  });
+}
+function _lte(value, params) {
+  return new $ZodCheckLessThan({
+    check: "less_than",
+    ...normalizeParams(params),
+    value,
+    inclusive: true
+  });
+}
+function _gt(value, params) {
+  return new $ZodCheckGreaterThan({
+    check: "greater_than",
+    ...normalizeParams(params),
+    value,
+    inclusive: false
+  });
+}
+function _gte(value, params) {
+  return new $ZodCheckGreaterThan({
+    check: "greater_than",
+    ...normalizeParams(params),
+    value,
+    inclusive: true
+  });
+}
+function _multipleOf(value, params) {
+  return new $ZodCheckMultipleOf({
+    check: "multiple_of",
+    ...normalizeParams(params),
+    value
   });
 }
 function _maxLength(maximum, params) {
@@ -25275,7 +25541,7 @@ function floatSafeRemainder(val, step) {
   const stepInt = Number.parseInt(step.toFixed(decCount).replace(".", ""));
   return valInt % stepInt / 10 ** decCount;
 }
-class ZodNumber extends ZodType$1 {
+let ZodNumber$1 = class ZodNumber extends ZodType$1 {
   constructor() {
     super(...arguments);
     this.min = this.gte;
@@ -25498,9 +25764,9 @@ class ZodNumber extends ZodType$1 {
     }
     return Number.isFinite(min) && Number.isFinite(max);
   }
-}
-ZodNumber.create = (params) => {
-  return new ZodNumber({
+};
+ZodNumber$1.create = (params) => {
+  return new ZodNumber$1({
     checks: [],
     typeName: ZodFirstPartyTypeKind.ZodNumber,
     coerce: (params == null ? void 0 : params.coerce) || false,
@@ -32056,6 +32322,41 @@ const ZodJWT = /* @__PURE__ */ $constructor("ZodJWT", (inst, def) => {
   $ZodJWT.init(inst, def);
   ZodStringFormat.init(inst, def);
 });
+const ZodNumber2 = /* @__PURE__ */ $constructor("ZodNumber", (inst, def) => {
+  $ZodNumber.init(inst, def);
+  ZodType2.init(inst, def);
+  inst.gt = (value, params) => inst.check(_gt(value, params));
+  inst.gte = (value, params) => inst.check(_gte(value, params));
+  inst.min = (value, params) => inst.check(_gte(value, params));
+  inst.lt = (value, params) => inst.check(_lt(value, params));
+  inst.lte = (value, params) => inst.check(_lte(value, params));
+  inst.max = (value, params) => inst.check(_lte(value, params));
+  inst.int = (params) => inst.check(int(params));
+  inst.safe = (params) => inst.check(int(params));
+  inst.positive = (params) => inst.check(_gt(0, params));
+  inst.nonnegative = (params) => inst.check(_gte(0, params));
+  inst.negative = (params) => inst.check(_lt(0, params));
+  inst.nonpositive = (params) => inst.check(_lte(0, params));
+  inst.multipleOf = (value, params) => inst.check(_multipleOf(value, params));
+  inst.step = (value, params) => inst.check(_multipleOf(value, params));
+  inst.finite = () => inst;
+  const bag = inst._zod.bag;
+  inst.minValue = Math.max(bag.minimum ?? Number.NEGATIVE_INFINITY, bag.exclusiveMinimum ?? Number.NEGATIVE_INFINITY) ?? null;
+  inst.maxValue = Math.min(bag.maximum ?? Number.POSITIVE_INFINITY, bag.exclusiveMaximum ?? Number.POSITIVE_INFINITY) ?? null;
+  inst.isInt = (bag.format ?? "").includes("int") || Number.isSafeInteger(bag.multipleOf ?? 0.5);
+  inst.isFinite = true;
+  inst.format = bag.format ?? null;
+});
+function number(params) {
+  return _number(ZodNumber2, params);
+}
+const ZodNumberFormat = /* @__PURE__ */ $constructor("ZodNumberFormat", (inst, def) => {
+  $ZodNumberFormat.init(inst, def);
+  ZodNumber2.init(inst, def);
+});
+function int(params) {
+  return _int(ZodNumberFormat, params);
+}
 const ZodUnknown2 = /* @__PURE__ */ $constructor("ZodUnknown", (inst, def) => {
   $ZodUnknown.init(inst, def);
   ZodType2.init(inst, def);
@@ -41071,15 +41372,17 @@ class AgentService {
     }
   }
   async chat(userMessage) {
+    var _a3;
     const tools = toolRegistry.toLangChainTools();
+    let usedBrowserTools = false;
     try {
       const messages = [
         new SystemMessage(`You are a helpful enterprise assistant integrated into a browser. 
         
         You have access to the following tools:
         ${tools.map((t2) => {
-          var _a3;
-          return `- ${t2.name}: ${t2.description} (Args: ${JSON.stringify(((_a3 = t2.schema) == null ? void 0 : _a3.shape) || {})})`;
+          var _a4;
+          return `- ${t2.name}: ${t2.description} (Args: ${JSON.stringify(((_a4 = t2.schema) == null ? void 0 : _a4.shape) || {})})`;
         }).join("\n")}
 
         CRITICAL INSTRUCTIONS:
@@ -41095,6 +41398,10 @@ class AgentService {
              "tool": "final_response",
              "args": { "message": "Your text here" }
            }
+
+        VERIFICATION RULE (IMPORTANT):
+        - Do NOT claim you created/updated anything in the UI unless you have verified it.
+        - After performing an action like "Create", ALWAYS call "browser_wait_for_text" or "browser_find_text" for the expected title/name and confirm it appears on the page.
 
         BROWSER AUTOMATION STRATEGY:
         - You have no eyes. You must use "browser_observe" to see the page.
@@ -41131,6 +41438,19 @@ class AgentService {
           continue;
         }
         if (action.tool === "final_response") {
+          if (usedBrowserTools) {
+            const last = messages.slice(-8).map((m) => m.content ?? "").join("\n");
+            const claimedSuccess = typeof ((_a3 = action == null ? void 0 : action.args) == null ? void 0 : _a3.message) === "string" && /\b(created|created a|successfully|done|completed)\b/i.test(action.args.message);
+            if (claimedSuccess && !/\bFound text:\b|\b\"found\":\s*[1-9]\d*\b/i.test(last)) {
+              messages.push(response);
+              messages.push(
+                new SystemMessage(
+                  "You must verify UI changes before claiming success. Use browser_wait_for_text or browser_find_text for the expected item title, then respond."
+                )
+              );
+              continue;
+            }
+          }
           return action.args.message;
         }
         const tool2 = tools.find((t2) => t2.name === action.tool);
@@ -41140,12 +41460,14 @@ class AgentService {
           try {
             const result = await tool2.invoke(action.args);
             this.emitStep("observation", `Tool Output: ${result}`, { tool: tool2.name, result });
+            if (tool2.name.startsWith("browser_")) usedBrowserTools = true;
             messages.push(new AIMessage(content));
-            messages.push(new HumanMessage(`Tool '${action.tool}' Output: ${result}`));
+            messages.push(new SystemMessage(`Tool '${action.tool}' Output:
+${result}`));
           } catch (err) {
             console.error(`Tool execution failed: ${err}`);
             messages.push(new AIMessage(content));
-            messages.push(new HumanMessage(`Tool Execution Error: ${err.message}`));
+            messages.push(new SystemMessage(`Tool Execution Error: ${err.message}`));
           }
         } else {
           console.error(`Tool not found: ${action.tool}`);
@@ -41600,6 +41922,13 @@ class BrowserAutomationService {
     }
     throw new Error(`Timeout waiting for selector: ${selector}`);
   }
+  async querySelectorCount(target, selector) {
+    const count = await target.executeJavaScript(
+      `document.querySelectorAll(${JSON.stringify(selector)}).length`,
+      true
+    );
+    return Number(count) || 0;
+  }
   registerTools() {
     const observeTool = {
       name: "browser_observe",
@@ -41612,18 +41941,71 @@ class BrowserAutomationService {
           const title = await target.executeJavaScript(`document.title`, true);
           const elements = await target.executeJavaScript(
             `(() => {
-                const getSelector = (el) => {
+                const safeAttr = (value) => {
+                  if (typeof value !== 'string') return '';
+                  return value.replace(/"/g, '\\"');
+                };
+
+                const cssPath = (el) => {
+                  if (!el || el.nodeType !== 1) return '';
+                  const parts = [];
+                  let cur = el;
+                  let guard = 0;
+                  while (cur && cur.nodeType === 1 && guard++ < 7) {
+                    const tag = cur.tagName.toLowerCase();
+                    if (cur.id) {
+                      parts.unshift(tag + '#' + CSS.escape(cur.id));
+                      break;
+                    }
+
+                    let part = tag;
+                    const testId =
+                      cur.getAttribute &&
+                      (cur.getAttribute('data-testid') || cur.getAttribute('data-test-id'));
+                    if (testId) {
+                      part += '[data-testid="' + safeAttr(testId) + '"]';
+                      parts.unshift(part);
+                      break;
+                    }
+
+                    const classList = cur.classList ? Array.from(cur.classList) : [];
+                    if (classList.length) {
+                      part += '.' + classList.slice(0, 2).map((c) => CSS.escape(c)).join('.');
+                    }
+
+                    const parent = cur.parentElement;
+                    if (parent) {
+                      const sameTagSiblings = Array.from(parent.children).filter(
+                        (sib) => sib.tagName === cur.tagName
+                      );
+                      if (sameTagSiblings.length > 1) {
+                        part += ':nth-of-type(' + (sameTagSiblings.indexOf(cur) + 1) + ')';
+                      }
+                    }
+
+                    parts.unshift(part);
+                    cur = cur.parentElement;
+                  }
+                  return parts.join(' > ');
+                };
+
+                const bestSelector = (el) => {
                   if (!el || el.nodeType !== 1) return '';
                   if (el.id) return '#' + el.id;
                   const testId = el.getAttribute && (el.getAttribute('data-testid') || el.getAttribute('data-test-id'));
                   if (testId) return '[data-testid="' + testId + '"]';
+                  const name = el.getAttribute && el.getAttribute('name');
+                  if (name) return el.tagName.toLowerCase() + '[name="' + safeAttr(name) + '"]';
                   const ariaLabel = el.getAttribute && el.getAttribute('aria-label');
                   if (ariaLabel) return el.tagName.toLowerCase() + '[aria-label="' + ariaLabel + '"]';
+                  const placeholder = el.getAttribute && el.getAttribute('placeholder');
+                  if (placeholder) return el.tagName.toLowerCase() + '[placeholder="' + safeAttr(placeholder) + '"]';
                   if (el.className && typeof el.className === 'string') {
                     const classes = el.className.split(' ').filter((c) => c.trim()).slice(0, 3).join('.');
                     if (classes) return el.tagName.toLowerCase() + '.' + classes;
                   }
-                  return el.tagName.toLowerCase();
+                  const path = cssPath(el);
+                  return path || el.tagName.toLowerCase();
                 };
 
                 const interactables = Array.from(
@@ -41636,8 +42018,11 @@ class BrowserAutomationService {
                   const type = el.getAttribute('type') || '';
                   const role = el.getAttribute('role') || '';
                   const name = el.getAttribute('name') || '';
-                  const selector = getSelector(el);
-                  return { tag, text, placeholder, type, role, name, selector };
+                  const disabled = 'disabled' in el ? Boolean(el.disabled) : el.getAttribute('aria-disabled') === 'true';
+                  const selector = bestSelector(el);
+                  const matches = selector ? document.querySelectorAll(selector).length : 0;
+                  const value = 'value' in el ? String(el.value ?? '') : '';
+                  return { tag, text, placeholder, type, role, name, disabled, value, selector, matches };
                 });
               })()`,
             true
@@ -41673,11 +42058,17 @@ class BrowserAutomationService {
       execute: async ({ selector }) => {
         try {
           const target = await this.getTarget();
+          const matches = await this.querySelectorCount(target, selector);
+          if (matches > 1) {
+            return `Refusing to click non-unique selector (matches=${matches}): ${selector}`;
+          }
           await this.waitForSelector(target, selector, 5e3);
           await target.executeJavaScript(
             `(() => {
                 const el = document.querySelector(${JSON.stringify(selector)});
                 if (!el) throw new Error('Element not found');
+                const isDisabled = ('disabled' in el && Boolean(el.disabled)) || el.getAttribute?.('aria-disabled') === 'true';
+                if (isDisabled) throw new Error('Element is disabled');
                 el.scrollIntoView({ block: 'center', inline: 'center' });
                 el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
                 el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
@@ -41702,26 +42093,51 @@ class BrowserAutomationService {
       execute: async ({ selector, text }) => {
         try {
           const target = await this.getTarget();
+          const matches = await this.querySelectorCount(target, selector);
+          if (matches > 1) {
+            return `Refusing to type into non-unique selector (matches=${matches}): ${selector}`;
+          }
           await this.waitForSelector(target, selector, 5e3);
-          await target.executeJavaScript(
+          const typedValue = await target.executeJavaScript(
             `(() => {
                 const el = document.querySelector(${JSON.stringify(selector)});
                 if (!el) throw new Error('Element not found');
+                const isDisabled = ('disabled' in el && Boolean(el.disabled)) || el.getAttribute?.('aria-disabled') === 'true';
+                if (isDisabled) throw new Error('Element is disabled');
                 el.scrollIntoView({ block: 'center', inline: 'center' });
                 el.focus?.();
-                const setValue = (value) => {
-                  const proto = Object.getPrototypeOf(el);
-                  const descriptor = Object.getOwnPropertyDescriptor(proto, 'value');
-                  if (descriptor && descriptor.set) descriptor.set.call(el, value);
-                  else el.value = value;
+
+                const setNativeValue = (node, value) => {
+                  const tag = node.tagName?.toLowerCase?.() || '';
+                  if (tag === 'input') {
+                    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+                    if (setter) setter.call(node, value);
+                    else node.value = value;
+                    return;
+                  }
+                  if (tag === 'textarea') {
+                    const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set;
+                    if (setter) setter.call(node, value);
+                    else node.value = value;
+                    return;
+                  }
+                  if (node.isContentEditable) {
+                    node.textContent = value;
+                    return;
+                  }
+                  node.value = value;
                 };
-                setValue(${JSON.stringify(text)});
-                el.dispatchEvent(new Event('input', { bubbles: true }));
+
+                setNativeValue(el, '');
+                el.dispatchEvent(new InputEvent('input', { bubbles: true, data: '', inputType: 'deleteContentBackward' }));
+                setNativeValue(el, ${JSON.stringify(text)});
+                el.dispatchEvent(new InputEvent('input', { bubbles: true, data: ${JSON.stringify(text)}, inputType: 'insertText' }));
                 el.dispatchEvent(new Event('change', { bubbles: true }));
+                return ('value' in el) ? String(el.value ?? '') : (el.textContent || '');
               })()`,
             true
           );
-          return `Typed "${text}" into ${selector}`;
+          return `Typed into ${selector}. Current value: ${JSON.stringify(typedValue)}`;
         } catch (e) {
           return `Failed to type into ${selector}: ${e.message}`;
         }
@@ -41768,12 +42184,96 @@ class BrowserAutomationService {
         return `Screenshot taken (${buffer.length} bytes).`;
       }
     };
+    const findTextTool = {
+      name: "browser_find_text",
+      description: "Find text on the current page and return matching elements/selectors.",
+      schema: object({
+        text: string().describe("Text to search for (case-insensitive substring match)"),
+        maxMatches: number().optional().describe("Max results to return (default 10)")
+      }),
+      execute: async ({ text, maxMatches }) => {
+        const target = await this.getTarget();
+        const results = await target.executeJavaScript(
+          `(() => {
+            const query = ${JSON.stringify(text)}.toLowerCase();
+            const limit = Math.max(1, Math.min(50, ${JSON.stringify(maxMatches ?? 10)}));
+
+            const safeAttr = (value) => {
+              if (typeof value !== 'string') return '';
+              return value.replace(/"/g, '\\"');
+            };
+
+            const selectorFor = (el) => {
+              if (!el || el.nodeType !== 1) return '';
+              if (el.id) return '#' + el.id;
+              const testId = el.getAttribute && (el.getAttribute('data-testid') || el.getAttribute('data-test-id'));
+              if (testId) return '[data-testid="' + safeAttr(testId) + '"]';
+              const ariaLabel = el.getAttribute && el.getAttribute('aria-label');
+              if (ariaLabel) return el.tagName.toLowerCase() + '[aria-label="' + safeAttr(ariaLabel) + '"]';
+              const placeholder = el.getAttribute && el.getAttribute('placeholder');
+              if (placeholder) return el.tagName.toLowerCase() + '[placeholder="' + safeAttr(placeholder) + '"]';
+              return el.tagName.toLowerCase();
+            };
+
+            const out = [];
+            const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+            while (walker.nextNode()) {
+              const node = walker.currentNode;
+              const raw = node.nodeValue || '';
+              const normalized = raw.replace(/\\s+/g, ' ').trim();
+              if (!normalized) continue;
+              if (!normalized.toLowerCase().includes(query)) continue;
+
+              const parent = node.parentElement;
+              if (!parent) continue;
+              const el = parent.closest('button, a, [role="button"], [role="link"], input, textarea, select, div, span, p') || parent;
+              const selector = selectorFor(el);
+              out.push({
+                selector,
+                tag: el.tagName.toLowerCase(),
+                text: (el.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 120),
+              });
+              if (out.length >= limit) break;
+            }
+            return out;
+          })()`,
+          true
+        );
+        return JSON.stringify({ found: Array.isArray(results) ? results.length : 0, matches: results }, null, 2);
+      }
+    };
+    const waitForTextTool = {
+      name: "browser_wait_for_text",
+      description: "Wait until text appears on the page (case-insensitive). Useful to verify actions succeeded.",
+      schema: object({
+        text: string().describe("Text to wait for"),
+        timeoutMs: number().optional().describe("Timeout in ms (default 5000)")
+      }),
+      execute: async ({ text, timeoutMs }) => {
+        const target = await this.getTarget();
+        const startedAt = Date.now();
+        const timeout = timeoutMs ?? 5e3;
+        while (Date.now() - startedAt < timeout) {
+          const found = await target.executeJavaScript(
+            `document.body && document.body.innerText && document.body.innerText.toLowerCase().includes(${JSON.stringify(
+              text.toLowerCase()
+            )})`,
+            true
+          );
+          if (found) return `Found text: ${JSON.stringify(text)}`;
+          await this.delay(150);
+        }
+        return `Did not find text within ${timeout}ms: ${JSON.stringify(text)}`;
+      }
+    };
     toolRegistry.register(observeTool);
     toolRegistry.register(navigateTool);
     toolRegistry.register(clickTool);
     toolRegistry.register(typeTool);
     toolRegistry.register(getTextTool);
     toolRegistry.register(screenshotTool);
+    toolRegistry.register(findTextTool);
+    toolRegistry.register(waitForTextTool);
   }
 }
 new BrowserAutomationService();

@@ -28,11 +28,15 @@ electron.contextBridge.exposeInMainWorld("vault", {
 electron.contextBridge.exposeInMainWorld("agent", {
   chat: (message) => electron.ipcRenderer.invoke("agent:chat", message),
   onApprovalRequest: (callback) => {
-    electron.ipcRenderer.on("agent:request-approval", (_, { toolName, args }) => callback(toolName, args));
+    const listener = (_, { toolName, args }) => callback(toolName, args);
+    electron.ipcRenderer.on("agent:request-approval", listener);
+    return () => electron.ipcRenderer.off("agent:request-approval", listener);
   },
   respondApproval: (toolName, approved) => electron.ipcRenderer.send("agent:approval-response", { toolName, approved }),
   onStep: (callback) => {
-    electron.ipcRenderer.on("agent:step", (_, step) => callback(step));
+    const listener = (_, step) => callback(step);
+    electron.ipcRenderer.on("agent:step", listener);
+    return () => electron.ipcRenderer.off("agent:step", listener);
   }
 });
 electron.contextBridge.exposeInMainWorld("browser", {

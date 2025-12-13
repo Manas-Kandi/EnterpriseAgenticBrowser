@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
-import { MessageSquare, ChevronLeft, ChevronRight, Settings, Send, User, Bot, AlertTriangle, Check, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Settings, Send, User, Bot, AlertTriangle, Check, X } from 'lucide-react';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -23,18 +23,26 @@ export function Sidebar() {
 
   useEffect(() => {
     // Listen for approval requests
-    window.agent.onApprovalRequest((toolName, args) => {
+    const offApproval = window.agent.onApprovalRequest((toolName, args) => {
       setApprovalRequest({ toolName, args });
     });
     // Listen for agent steps
-    window.agent.onStep((step: any) => {
-        setMessages(prev => [...prev, { 
-            role: 'assistant', 
-            content: step.content,
-            type: step.type,
-            metadata: step.metadata
-        }]);
+    const offStep = window.agent.onStep((step: any) => {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: step.content,
+          type: step.type,
+          metadata: step.metadata,
+        },
+      ]);
     });
+
+    return () => {
+      offApproval?.();
+      offStep?.();
+    };
   }, []);
 
   const handleApproval = (approved: boolean) => {
@@ -72,114 +80,128 @@ export function Sidebar() {
   return (
     <aside
       className={cn(
-        "h-full bg-secondary/30 backdrop-blur-md border-l border-border transition-all duration-300 flex flex-col",
-        collapsed ? "w-16" : "w-80"
+        "h-full bg-background border-l border-border/50 flex flex-col transition-all duration-300",
+        collapsed ? "w-14" : "w-80"
       )}
     >
-      <div className="p-4 border-b border-border flex items-center justify-between">
-        {!collapsed && <h1 className="font-semibold text-lg">Agent</h1>}
+      <div className="h-12 border-b border-border/50 flex items-center justify-between px-3">
+        {!collapsed && <span className="font-medium text-xs uppercase tracking-wider text-muted-foreground">Agent</span>}
         <button
           onClick={() => setCollapsed(!collapsed)}
-          className="p-2 hover:bg-accent rounded-md transition-colors"
+          className="p-1.5 hover:bg-secondary/80 rounded-md transition-colors text-muted-foreground hover:text-foreground"
         >
-          {collapsed ? <ChevronLeft size={20} /> : <ChevronRight size={20} />}
+          {collapsed ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="flex-1 overflow-y-auto p-3 space-y-4">
         {messages.length === 0 && !collapsed ? (
-            <div className="text-center text-muted-foreground mt-10">
-                <MessageSquare className="mx-auto mb-2 opacity-50" size={48} />
-                <p>How can I help you today?</p>
+            <div className="flex flex-col items-center justify-center h-full text-muted-foreground/50 pb-10">
+                <Bot className="mb-2 opacity-20" size={32} />
+                <p className="text-xs">Ready to assist</p>
             </div>
         ) : (
             messages.map((msg, i) => (
-                <div key={i} className={cn("flex gap-2", msg.role === 'user' ? "flex-row-reverse" : "")}>
-                    <div className={cn("w-8 h-8 rounded-full flex items-center justify-center shrink-0", 
-                        msg.role === 'user' ? "bg-primary text-primary-foreground" : 
-                        msg.type === 'thought' ? "bg-amber-100 text-amber-600" :
-                        msg.type === 'action' ? "bg-blue-100 text-blue-600" :
-                        msg.type === 'observation' ? "bg-slate-100 text-slate-600" :
-                        "bg-muted text-muted-foreground")}>
-                        {msg.role === 'user' ? <User size={16} /> : <Bot size={16} />}
-                    </div>
-                    {!collapsed && (
-                        <div className={cn("rounded-lg p-3 text-sm max-w-[80%] overflow-hidden", 
-                            msg.role === 'user' ? "bg-primary text-primary-foreground" : 
-                            msg.type === 'thought' ? "bg-amber-50 border border-amber-100 text-amber-800 italic" :
-                            msg.type === 'action' ? "bg-blue-50 border border-blue-100 text-blue-800 font-mono text-xs" :
-                            msg.type === 'observation' ? "bg-slate-50 border border-slate-100 text-slate-600 font-mono text-xs" :
-                            "bg-muted")}>
+                <div key={i} className={cn("flex flex-col gap-1 text-xs", msg.role === 'user' ? "items-end" : "items-start")}>
+                    <div className={cn("flex gap-2 max-w-[90%]", msg.role === 'user' ? "flex-row-reverse" : "")}>
+                        {!collapsed && (
+                           <div className={cn(
+                             "shrink-0 w-5 h-5 rounded-full flex items-center justify-center border",
+                             msg.role === 'user' 
+                               ? "bg-primary/10 border-primary/20 text-primary" 
+                               : "bg-secondary/50 border-white/10 text-muted-foreground"
+                           )}>
+                               {msg.role === 'user' ? <User size={10} /> : <Bot size={10} />}
+                           </div>
+                        )}
+                        
+                        <div className={cn(
+                            "rounded-md px-3 py-2 leading-relaxed break-words",
+                            msg.role === 'user' 
+                                ? "bg-secondary text-foreground" 
+                                : msg.type === 'thought'
+                                    ? "text-muted-foreground italic pl-0 border-l-2 border-primary/20 rounded-none bg-transparent py-0"
+                                    : msg.type === 'action'
+                                        ? "font-mono bg-background border border-border/50 text-primary/90 my-1"
+                                        : msg.type === 'observation'
+                                            ? "font-mono bg-background/50 border border-border/30 text-muted-foreground"
+                                            : "text-foreground"
+                        )}>
                             {msg.type === 'observation' ? (
-                                <details>
-                                    <summary className="cursor-pointer hover:underline">View Output</summary>
-                                    <div className="mt-2 whitespace-pre-wrap">{msg.content}</div>
+                                <details className="group">
+                                    <summary className="cursor-pointer hover:text-foreground list-none flex items-center gap-1 select-none opacity-70 hover:opacity-100 transition-opacity">
+                                        <div className="w-1 h-1 rounded-full bg-current" />
+                                        <span>Output</span>
+                                    </summary>
+                                    <div className="mt-2 pl-2 border-l border-border/30 whitespace-pre-wrap opacity-90">{msg.content}</div>
                                 </details>
                             ) : msg.content}
                         </div>
-                    )}
+                    </div>
                 </div>
             ))
         )}
         {approvalRequest && !collapsed && (
-            <div className="bg-amber-500/10 border border-amber-500/50 rounded-lg p-3 space-y-2">
-                <div className="flex items-center gap-2 text-amber-500 font-medium text-sm">
-                    <AlertTriangle size={16} />
+            <div className="bg-background/80 border border-amber-500/20 rounded-md p-3 space-y-2">
+                <div className="flex items-center gap-2 text-amber-500/90 font-medium text-xs">
+                    <AlertTriangle size={14} />
                     Approval Required
                 </div>
-                <div className="text-xs text-muted-foreground">
-                    The agent wants to execute <strong>{approvalRequest.toolName}</strong> with:
+                <div className="text-[10px] text-muted-foreground uppercase tracking-wider">
+                    {approvalRequest.toolName}
                 </div>
-                <pre className="text-xs bg-background p-2 rounded border border-border overflow-x-auto">
+                <pre className="text-[10px] font-mono bg-secondary/30 p-2 rounded border border-border/30 overflow-x-auto text-muted-foreground">
                     {JSON.stringify(approvalRequest.args, null, 2)}
                 </pre>
-                <div className="flex gap-2 pt-2">
+                <div className="flex gap-2 pt-1">
                     <button 
                         onClick={() => handleApproval(false)}
-                        className="flex-1 flex items-center justify-center gap-1 bg-destructive/10 text-destructive hover:bg-destructive/20 text-xs py-1.5 rounded"
+                        className="flex-1 flex items-center justify-center gap-1 bg-secondary hover:bg-destructive/10 text-muted-foreground hover:text-destructive text-xs py-1 rounded transition-colors border border-border/50"
                     >
-                        <X size={14} /> Deny
+                        <X size={12} /> Deny
                     </button>
                     <button 
                         onClick={() => handleApproval(true)}
-                        className="flex-1 flex items-center justify-center gap-1 bg-primary text-primary-foreground hover:bg-primary/90 text-xs py-1.5 rounded"
+                        className="flex-1 flex items-center justify-center gap-1 bg-primary/10 hover:bg-primary/20 text-primary text-xs py-1 rounded transition-colors border border-primary/20"
                     >
-                        <Check size={14} /> Approve
+                        <Check size={12} /> Approve
                     </button>
                 </div>
             </div>
         )}
         {loading && !collapsed && (
-             <div className="flex gap-2">
-                <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center shrink-0">
-                    <Bot size={16} />
-                </div>
-                <div className="bg-muted rounded-lg p-3 text-sm flex items-center gap-1">
-                    <span className="w-2 h-2 bg-foreground/50 rounded-full animate-bounce" />
-                    <span className="w-2 h-2 bg-foreground/50 rounded-full animate-bounce delay-75" />
-                    <span className="w-2 h-2 bg-foreground/50 rounded-full animate-bounce delay-150" />
+             <div className="flex gap-2 items-center text-muted-foreground/50">
+                <Bot size={14} />
+                <div className="flex gap-1">
+                    <span className="w-1 h-1 bg-current rounded-full animate-bounce" />
+                    <span className="w-1 h-1 bg-current rounded-full animate-bounce delay-75" />
+                    <span className="w-1 h-1 bg-current rounded-full animate-bounce delay-150" />
                 </div>
              </div>
         )}
       </div>
 
-      <div className="p-4 border-t border-border">
+      <div className="p-3 border-t border-border/50 bg-background/50">
         {!collapsed ? (
-            <form onSubmit={handleSubmit} className="flex gap-2">
+            <form onSubmit={handleSubmit} className="relative">
                 <input 
-                    className="flex-1 bg-background border border-input rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                    placeholder="Ask anything..."
+                    className="w-full bg-secondary/50 border border-transparent rounded-md pl-3 pr-10 py-2.5 text-xs focus:outline-none focus:border-primary/30 focus:bg-secondary transition-all placeholder:text-muted-foreground/50"
+                    placeholder="Type a message..."
                     value={input}
                     onChange={e => setInput(e.target.value)}
                     disabled={loading}
                 />
-                <button type="submit" disabled={loading || !input.trim()} className="bg-primary text-primary-foreground p-2 rounded-md hover:bg-primary/90 disabled:opacity-50">
-                    <Send size={16} />
+                <button 
+                    type="submit" 
+                    disabled={loading || !input.trim()} 
+                    className="absolute right-1 top-1 p-1.5 text-muted-foreground hover:text-primary disabled:opacity-30 transition-colors"
+                >
+                    <Send size={14} />
                 </button>
             </form>
         ) : (
             <div className="flex justify-center">
-                 <Settings size={20} className="cursor-pointer hover:text-foreground" />
+                 <Settings size={16} className="cursor-pointer text-muted-foreground hover:text-foreground transition-colors" />
             </div>
         )}
          {!collapsed && (

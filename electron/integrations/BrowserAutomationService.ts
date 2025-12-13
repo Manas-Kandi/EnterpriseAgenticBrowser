@@ -31,6 +31,14 @@ export class BrowserAutomationService {
     throw new Error(`Timeout waiting for selector: ${selector}`);
   }
 
+  private async querySelectorCount(target: WebContents, selector: string): Promise<number> {
+    const count = await target.executeJavaScript(
+      `document.querySelectorAll(${JSON.stringify(selector)}).length`,
+      true
+    );
+    return Number(count) || 0;
+  }
+
   private registerTools() {
     // Tool: Observe
     const observeTool: AgentTool<z.ZodObject<{}>> = {
@@ -45,18 +53,71 @@ export class BrowserAutomationService {
 
             const elements = await target.executeJavaScript(
               `(() => {
-                const getSelector = (el) => {
+                const safeAttr = (value) => {
+                  if (typeof value !== 'string') return '';
+                  return value.replace(/"/g, '\\"');
+                };
+
+                const cssPath = (el) => {
+                  if (!el || el.nodeType !== 1) return '';
+                  const parts = [];
+                  let cur = el;
+                  let guard = 0;
+                  while (cur && cur.nodeType === 1 && guard++ < 7) {
+                    const tag = cur.tagName.toLowerCase();
+                    if (cur.id) {
+                      parts.unshift(tag + '#' + CSS.escape(cur.id));
+                      break;
+                    }
+
+                    let part = tag;
+                    const testId =
+                      cur.getAttribute &&
+                      (cur.getAttribute('data-testid') || cur.getAttribute('data-test-id'));
+                    if (testId) {
+                      part += '[data-testid="' + safeAttr(testId) + '"]';
+                      parts.unshift(part);
+                      break;
+                    }
+
+                    const classList = cur.classList ? Array.from(cur.classList) : [];
+                    if (classList.length) {
+                      part += '.' + classList.slice(0, 2).map((c) => CSS.escape(c)).join('.');
+                    }
+
+                    const parent = cur.parentElement;
+                    if (parent) {
+                      const sameTagSiblings = Array.from(parent.children).filter(
+                        (sib) => sib.tagName === cur.tagName
+                      );
+                      if (sameTagSiblings.length > 1) {
+                        part += ':nth-of-type(' + (sameTagSiblings.indexOf(cur) + 1) + ')';
+                      }
+                    }
+
+                    parts.unshift(part);
+                    cur = cur.parentElement;
+                  }
+                  return parts.join(' > ');
+                };
+
+                const bestSelector = (el) => {
                   if (!el || el.nodeType !== 1) return '';
                   if (el.id) return '#' + el.id;
                   const testId = el.getAttribute && (el.getAttribute('data-testid') || el.getAttribute('data-test-id'));
                   if (testId) return '[data-testid="' + testId + '"]';
+                  const name = el.getAttribute && el.getAttribute('name');
+                  if (name) return el.tagName.toLowerCase() + '[name="' + safeAttr(name) + '"]';
                   const ariaLabel = el.getAttribute && el.getAttribute('aria-label');
                   if (ariaLabel) return el.tagName.toLowerCase() + '[aria-label="' + ariaLabel + '"]';
+                  const placeholder = el.getAttribute && el.getAttribute('placeholder');
+                  if (placeholder) return el.tagName.toLowerCase() + '[placeholder="' + safeAttr(placeholder) + '"]';
                   if (el.className && typeof el.className === 'string') {
                     const classes = el.className.split(' ').filter((c) => c.trim()).slice(0, 3).join('.');
                     if (classes) return el.tagName.toLowerCase() + '.' + classes;
                   }
-                  return el.tagName.toLowerCase();
+                  const path = cssPath(el);
+                  return path || el.tagName.toLowerCase();
                 };
 
                 const interactables = Array.from(
@@ -69,8 +130,11 @@ export class BrowserAutomationService {
                   const type = el.getAttribute('type') || '';
                   const role = el.getAttribute('role') || '';
                   const name = el.getAttribute('name') || '';
-                  const selector = getSelector(el);
-                  return { tag, text, placeholder, type, role, name, selector };
+                  const disabled = 'disabled' in el ? Boolean(el.disabled) : el.getAttribute('aria-disabled') === 'true';
+                  const selector = bestSelector(el);
+                  const matches = selector ? document.querySelectorAll(selector).length : 0;
+                  const value = 'value' in el ? String(el.value ?? '') : '';
+                  return { tag, text, placeholder, type, role, name, disabled, value, selector, matches };
                 });
               })()`,
               true
@@ -111,11 +175,17 @@ export class BrowserAutomationService {
       execute: async ({ selector }: { selector: string }) => {
         try {
             const target = await this.getTarget();
+            const matches = await this.querySelectorCount(target, selector);
+            if (matches > 1) {
+              return `Refusing to click non-unique selector (matches=${matches}): ${selector}`;
+            }
             await this.waitForSelector(target, selector, 5000);
             await target.executeJavaScript(
               `(() => {
                 const el = document.querySelector(${JSON.stringify(selector)});
                 if (!el) throw new Error('Element not found');
+                const isDisabled = ('disabled' in el && Boolean(el.disabled)) || el.getAttribute?.('aria-disabled') === 'true';
+                if (isDisabled) throw new Error('Element is disabled');
                 el.scrollIntoView({ block: 'center', inline: 'center' });
                 el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
                 el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
@@ -142,26 +212,51 @@ export class BrowserAutomationService {
       execute: async ({ selector, text }: { selector: string; text: string }) => {
         try {
             const target = await this.getTarget();
+            const matches = await this.querySelectorCount(target, selector);
+            if (matches > 1) {
+              return `Refusing to type into non-unique selector (matches=${matches}): ${selector}`;
+            }
             await this.waitForSelector(target, selector, 5000);
-            await target.executeJavaScript(
+            const typedValue = await target.executeJavaScript(
               `(() => {
                 const el = document.querySelector(${JSON.stringify(selector)});
                 if (!el) throw new Error('Element not found');
+                const isDisabled = ('disabled' in el && Boolean(el.disabled)) || el.getAttribute?.('aria-disabled') === 'true';
+                if (isDisabled) throw new Error('Element is disabled');
                 el.scrollIntoView({ block: 'center', inline: 'center' });
                 el.focus?.();
-                const setValue = (value) => {
-                  const proto = Object.getPrototypeOf(el);
-                  const descriptor = Object.getOwnPropertyDescriptor(proto, 'value');
-                  if (descriptor && descriptor.set) descriptor.set.call(el, value);
-                  else el.value = value;
+
+                const setNativeValue = (node, value) => {
+                  const tag = node.tagName?.toLowerCase?.() || '';
+                  if (tag === 'input') {
+                    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+                    if (setter) setter.call(node, value);
+                    else node.value = value;
+                    return;
+                  }
+                  if (tag === 'textarea') {
+                    const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set;
+                    if (setter) setter.call(node, value);
+                    else node.value = value;
+                    return;
+                  }
+                  if (node.isContentEditable) {
+                    node.textContent = value;
+                    return;
+                  }
+                  node.value = value;
                 };
-                setValue(${JSON.stringify(text)});
-                el.dispatchEvent(new Event('input', { bubbles: true }));
+
+                setNativeValue(el, '');
+                el.dispatchEvent(new InputEvent('input', { bubbles: true, data: '', inputType: 'deleteContentBackward' }));
+                setNativeValue(el, ${JSON.stringify(text)});
+                el.dispatchEvent(new InputEvent('input', { bubbles: true, data: ${JSON.stringify(text)}, inputType: 'insertText' }));
                 el.dispatchEvent(new Event('change', { bubbles: true }));
+                return ('value' in el) ? String(el.value ?? '') : (el.textContent || '');
               })()`,
               true
             );
-            return `Typed "${text}" into ${selector}`;
+            return `Typed into ${selector}. Current value: ${JSON.stringify(typedValue)}`;
         } catch (e: any) {
              return `Failed to type into ${selector}: ${e.message}`;
         }
@@ -217,12 +312,98 @@ export class BrowserAutomationService {
         }
     };
 
+    const findTextTool: AgentTool<z.ZodObject<{ text: z.ZodString; maxMatches: z.ZodOptional<z.ZodNumber> }>> = {
+      name: 'browser_find_text',
+      description: 'Find text on the current page and return matching elements/selectors.',
+      schema: z.object({
+        text: z.string().describe('Text to search for (case-insensitive substring match)'),
+        maxMatches: z.number().optional().describe('Max results to return (default 10)'),
+      }),
+      execute: async ({ text, maxMatches }: { text: string; maxMatches?: number }) => {
+        const target = await this.getTarget();
+        const results = await target.executeJavaScript(
+          `(() => {
+            const query = ${JSON.stringify(text)}.toLowerCase();
+            const limit = Math.max(1, Math.min(50, ${JSON.stringify(maxMatches ?? 10)}));
+
+            const safeAttr = (value) => {
+              if (typeof value !== 'string') return '';
+              return value.replace(/"/g, '\\"');
+            };
+
+            const selectorFor = (el) => {
+              if (!el || el.nodeType !== 1) return '';
+              if (el.id) return '#' + el.id;
+              const testId = el.getAttribute && (el.getAttribute('data-testid') || el.getAttribute('data-test-id'));
+              if (testId) return '[data-testid="' + safeAttr(testId) + '"]';
+              const ariaLabel = el.getAttribute && el.getAttribute('aria-label');
+              if (ariaLabel) return el.tagName.toLowerCase() + '[aria-label="' + safeAttr(ariaLabel) + '"]';
+              const placeholder = el.getAttribute && el.getAttribute('placeholder');
+              if (placeholder) return el.tagName.toLowerCase() + '[placeholder="' + safeAttr(placeholder) + '"]';
+              return el.tagName.toLowerCase();
+            };
+
+            const out = [];
+            const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+            while (walker.nextNode()) {
+              const node = walker.currentNode;
+              const raw = node.nodeValue || '';
+              const normalized = raw.replace(/\\s+/g, ' ').trim();
+              if (!normalized) continue;
+              if (!normalized.toLowerCase().includes(query)) continue;
+
+              const parent = node.parentElement;
+              if (!parent) continue;
+              const el = parent.closest('button, a, [role=\"button\"], [role=\"link\"], input, textarea, select, div, span, p') || parent;
+              const selector = selectorFor(el);
+              out.push({
+                selector,
+                tag: el.tagName.toLowerCase(),
+                text: (el.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 120),
+              });
+              if (out.length >= limit) break;
+            }
+            return out;
+          })()`,
+          true
+        );
+        return JSON.stringify({ found: Array.isArray(results) ? results.length : 0, matches: results }, null, 2);
+      },
+    };
+
+    const waitForTextTool: AgentTool<z.ZodObject<{ text: z.ZodString; timeoutMs: z.ZodOptional<z.ZodNumber> }>> = {
+      name: 'browser_wait_for_text',
+      description: 'Wait until text appears on the page (case-insensitive). Useful to verify actions succeeded.',
+      schema: z.object({
+        text: z.string().describe('Text to wait for'),
+        timeoutMs: z.number().optional().describe('Timeout in ms (default 5000)'),
+      }),
+      execute: async ({ text, timeoutMs }: { text: string; timeoutMs?: number }) => {
+        const target = await this.getTarget();
+        const startedAt = Date.now();
+        const timeout = timeoutMs ?? 5000;
+        while (Date.now() - startedAt < timeout) {
+          const found = await target.executeJavaScript(
+            `document.body && document.body.innerText && document.body.innerText.toLowerCase().includes(${JSON.stringify(
+              text.toLowerCase()
+            )})`,
+            true
+          );
+          if (found) return `Found text: ${JSON.stringify(text)}`;
+          await this.delay(150);
+        }
+        return `Did not find text within ${timeout}ms: ${JSON.stringify(text)}`;
+      },
+    };
+
     toolRegistry.register(observeTool);
     toolRegistry.register(navigateTool);
     toolRegistry.register(clickTool);
     toolRegistry.register(typeTool);
     toolRegistry.register(getTextTool);
     toolRegistry.register(screenshotTool);
+    toolRegistry.register(findTextTool);
+    toolRegistry.register(waitForTextTool);
   }
 }
 

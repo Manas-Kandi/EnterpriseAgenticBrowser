@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { JiraPage } from './pages/jira/JiraPage';
 import { ConfluencePage } from './pages/confluence/ConfluencePage';
 import { TrelloPage } from './pages/trello/TrelloPage';

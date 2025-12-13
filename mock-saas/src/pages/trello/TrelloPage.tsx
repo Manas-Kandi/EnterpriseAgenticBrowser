@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Search, Plus, MoreHorizontal, Bell, Info } from 'lucide-react';
+import { Search, Plus, MoreHorizontal, Bell } from 'lucide-react';
 
 interface Card {
   id: string;
