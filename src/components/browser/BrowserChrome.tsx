@@ -62,13 +62,24 @@ export function BrowserChrome() {
       {/* Omnibar Toolbar */}
       <div className="h-10 flex items-center gap-3 px-3 bg-secondary/50 border-y border-border/40 shadow-sm z-0">
          <div className="flex items-center gap-1">
-             <button className="p-1.5 hover:bg-background/50 rounded-md text-muted-foreground transition-colors disabled:opacity-30">
+             <button 
+                onClick={() => activeTabId && updateTab(activeTabId, { action: 'back' })}
+                disabled={!activeTab?.canGoBack}
+                className="p-1.5 hover:bg-background/50 rounded-md text-muted-foreground transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+             >
                 <ArrowLeft size={14} />
              </button>
-             <button className="p-1.5 hover:bg-background/50 rounded-md text-muted-foreground transition-colors disabled:opacity-30">
+             <button 
+                onClick={() => activeTabId && updateTab(activeTabId, { action: 'forward' })}
+                disabled={!activeTab?.canGoForward}
+                className="p-1.5 hover:bg-background/50 rounded-md text-muted-foreground transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+             >
                 <ArrowRight size={14} />
              </button>
-             <button onClick={() => { if(activeTabId) updateTab(activeTabId, { loading: true }) }} className="p-1.5 hover:bg-background/50 rounded-md text-muted-foreground transition-colors">
+             <button 
+                onClick={() => activeTabId && updateTab(activeTabId, { action: 'reload' })}
+                className="p-1.5 hover:bg-background/50 rounded-md text-muted-foreground transition-colors"
+             >
                 <RotateCw size={14} className={cn(activeTab?.loading ? "animate-spin" : "")} />
              </button>
          </div>

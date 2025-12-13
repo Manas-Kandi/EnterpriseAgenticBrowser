@@ -5,6 +5,9 @@ export interface BrowserTab {
   url: string;
   title: string;
   loading: boolean;
+  action?: 'back' | 'forward' | 'reload' | null;
+  canGoBack?: boolean;
+  canGoForward?: boolean;
 }
 
 interface BrowserState {
@@ -20,7 +23,7 @@ interface BrowserState {
 
 export const useBrowserStore = create<BrowserState>((set) => ({
   tabs: [
-    { id: '1', url: 'https://github.com/Manas-Kandi/EnterpriseAgenticBrowser', title: 'Welcome', loading: false },
+    { id: '1', url: 'https://github.com/Manas-Kandi/EnterpriseAgenticBrowser', title: 'Welcome', loading: false, canGoBack: false, canGoForward: false },
   ],
   activeTabId: '1',
 
