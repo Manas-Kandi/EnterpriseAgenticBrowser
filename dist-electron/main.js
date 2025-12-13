@@ -41546,9 +41546,24 @@ class BrowserAutomationService {
   async ensureBrowser() {
     var _a3;
     if (!this.browser) {
+      let retries = 5;
+      while (retries > 0) {
+        try {
+          console.log(`Connecting to Electron CDP at http://127.0.0.1:9222... (Attempts left: ${retries})`);
+          this.browser = await chromium.connectOverCDP("http://127.0.0.1:9222");
+          break;
+        } catch (e) {
+          console.warn(`Connection attempt failed: ${e.message}`);
+          retries--;
+          if (retries === 0) {
+            console.error("Failed to connect to Electron CDP after multiple attempts.");
+            throw new Error("Could not connect to the Enterprise Browser. Is the app running with remote debugging enabled? Please restart the app.");
+          }
+          await new Promise((resolve) => setTimeout(resolve, 2e3));
+        }
+      }
       try {
-        console.log("Connecting to Electron CDP...");
-        this.browser = await chromium.connectOverCDP("http://localhost:9222");
+        if (!this.browser) throw new Error("Browser not connected");
         const contexts = this.browser.contexts();
         const pages = contexts[0].pages();
         console.log(`Found ${pages.length} pages via CDP.`);

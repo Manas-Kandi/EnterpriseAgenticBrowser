@@ -12,9 +12,26 @@ export class BrowserAutomationService {
 
   private async ensureBrowser() {
     if (!this.browser) {
+      let retries = 5;
+      while (retries > 0) {
+        try {
+            console.log(`Connecting to Electron CDP at http://127.0.0.1:9222... (Attempts left: ${retries})`);
+            this.browser = await chromium.connectOverCDP('http://127.0.0.1:9222');
+            break; // Connection successful
+        } catch (e: any) {
+            console.warn(`Connection attempt failed: ${e.message}`);
+            retries--;
+            if (retries === 0) {
+                console.error("Failed to connect to Electron CDP after multiple attempts.");
+                throw new Error("Could not connect to the Enterprise Browser. Is the app running with remote debugging enabled? Please restart the app.");
+            }
+            // Wait 2 seconds before retrying
+            await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+      }
+
       try {
-        console.log('Connecting to Electron CDP...');
-        this.browser = await chromium.connectOverCDP('http://localhost:9222');
+        if (!this.browser) throw new Error("Browser not connected");
         
         // When connecting to Electron via CDP, we get a browser instance.
         // We need to find the correct 'page' (target) that corresponds to the active tab's webview.
