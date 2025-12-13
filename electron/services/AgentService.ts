@@ -52,7 +52,8 @@ export class AgentService {
   }
 
   private parseToolCall(rawContent: string): { tool: string; args: unknown } | null {
-    const candidate = this.extractJsonObject(rawContent);
+    const cleaned = rawContent.replace(/```json/g, '').replace(/```/g, '').trim();
+    const candidate = this.extractJsonObject(cleaned) ?? (cleaned.startsWith('{') ? cleaned : null);
     if (!candidate) return null;
 
     const tryParse = (s: string) => {
@@ -68,7 +69,18 @@ export class AgentService {
 
     // Best-effort: strip trailing commas.
     const relaxed = candidate.replace(/,\s*([}\]])/g, '$1');
-    return tryParse(relaxed);
+    const parsedRelaxed = tryParse(relaxed);
+    if (parsedRelaxed) return parsedRelaxed;
+
+    // Very loose fallback: if it *looks* like a final_response, salvage a best-effort tool object.
+    // This is intentionally conservative; it exists to avoid burning turns after a verified UI outcome.
+    const toolMatch = cleaned.match(/"tool"\s*:\s*"([^"]+)"/);
+    if (!toolMatch) return null;
+    const tool = toolMatch[1];
+    if (tool !== 'final_response') return null;
+    const messageMatch = cleaned.match(/"message"\s*:\s*"([\s\S]*?)"\s*(?:,|\})/);
+    const message = messageMatch ? messageMatch[1] : '';
+    return { tool, args: { message } };
   }
 
   constructor() {
@@ -110,6 +122,7 @@ export class AgentService {
     const tools = toolRegistry.toLangChainTools();
     let usedBrowserTools = false;
     let parseFailures = 0;
+    let lastVerified: string | null = null;
     
     try {
       const messages: BaseMessage[] = [
@@ -135,6 +148,7 @@ export class AgentService {
         JSON SAFETY:
         - Tool JSON must be valid JSON. If you include a CSS selector string, it MUST NOT contain unescaped double quotes (").
         - Prefer selectors returned by browser_observe like [data-testid=jira-create-button] that do not require quotes.
+        - In final_response.message, do not include unescaped double quotes ("). If you need quotes, use single quotes inside the message, e.g. 'fix alignment'.
 
         VERIFICATION RULE (IMPORTANT):
         - Do NOT claim you created/updated anything in the UI unless you have verified it.
@@ -168,7 +182,12 @@ export class AgentService {
         console.log(`[Agent Turn ${i}] Raw Response:`, content);
         
         const action = this.parseToolCall(content);
-        if (!action || typeof (action as any).tool !== 'string' || typeof (action as any).args !== 'object') {
+        if (
+          !action ||
+          typeof (action as any).tool !== 'string' ||
+          !(action as any).args ||
+          typeof (action as any).args !== 'object'
+        ) {
           parseFailures++;
           const snippet = String(content).slice(0, 600);
           this.emitStep('observation', `Model output was not valid tool JSON (attempt ${parseFailures}).`, {
@@ -183,6 +202,9 @@ export class AgentService {
                 `If you are done:\n{"tool":"final_response","args":{"message":"..."}}`
             )
           );
+          if (lastVerified && parseFailures >= 3) {
+            return `Completed (verified): ${lastVerified}`;
+          }
           if (parseFailures >= 6) {
             return (
               "The model repeatedly returned invalid tool-calling JSON, so I stopped. " +
@@ -241,6 +263,14 @@ export class AgentService {
                 this.emitStep('observation', `Tool Output: ${result}`, { tool: tool.name, result });
 
                 if (tool.name.startsWith('browser_')) usedBrowserTools = true;
+                if (
+                  tool.name === 'browser_wait_for_text' ||
+                  tool.name === 'browser_wait_for_text_in'
+                ) {
+                  if (typeof result === 'string' && result.startsWith('Found text')) {
+                    lastVerified = result;
+                  }
+                }
                 
                 // Add interaction to history
                 // We add the assistant's JSON response

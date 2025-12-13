@@ -41393,7 +41393,8 @@ class AgentService {
     return null;
   }
   parseToolCall(rawContent) {
-    const candidate = this.extractJsonObject(rawContent);
+    const cleaned = rawContent.replace(/```json/g, "").replace(/```/g, "").trim();
+    const candidate = this.extractJsonObject(cleaned) ?? (cleaned.startsWith("{") ? cleaned : null);
     if (!candidate) return null;
     const tryParse = (s) => {
       try {
@@ -41405,7 +41406,15 @@ class AgentService {
     const direct = tryParse(candidate);
     if (direct) return direct;
     const relaxed = candidate.replace(/,\s*([}\]])/g, "$1");
-    return tryParse(relaxed);
+    const parsedRelaxed = tryParse(relaxed);
+    if (parsedRelaxed) return parsedRelaxed;
+    const toolMatch = cleaned.match(/"tool"\s*:\s*"([^"]+)"/);
+    if (!toolMatch) return null;
+    const tool2 = toolMatch[1];
+    if (tool2 !== "final_response") return null;
+    const messageMatch = cleaned.match(/"message"\s*:\s*"([\s\S]*?)"\s*(?:,|\})/);
+    const message = messageMatch ? messageMatch[1] : "";
+    return { tool: tool2, args: { message } };
   }
   setStepHandler(handler) {
     this.onStep = handler;
@@ -41419,6 +41428,7 @@ class AgentService {
     const tools = toolRegistry.toLangChainTools();
     let usedBrowserTools = false;
     let parseFailures = 0;
+    let lastVerified = null;
     try {
       const messages = [
         new SystemMessage(`You are a helpful enterprise assistant integrated into a browser. 
@@ -41446,6 +41456,7 @@ class AgentService {
         JSON SAFETY:
         - Tool JSON must be valid JSON. If you include a CSS selector string, it MUST NOT contain unescaped double quotes (").
         - Prefer selectors returned by browser_observe like [data-testid=jira-create-button] that do not require quotes.
+        - In final_response.message, do not include unescaped double quotes ("). If you need quotes, use single quotes inside the message, e.g. 'fix alignment'.
 
         VERIFICATION RULE (IMPORTANT):
         - Do NOT claim you created/updated anything in the UI unless you have verified it.
@@ -41474,7 +41485,7 @@ class AgentService {
         const content = response.content;
         console.log(`[Agent Turn ${i}] Raw Response:`, content);
         const action = this.parseToolCall(content);
-        if (!action || typeof action.tool !== "string" || typeof action.args !== "object") {
+        if (!action || typeof action.tool !== "string" || !action.args || typeof action.args !== "object") {
           parseFailures++;
           const snippet = String(content).slice(0, 600);
           this.emitStep("observation", `Model output was not valid tool JSON (attempt ${parseFailures}).`, {
@@ -41491,6 +41502,9 @@ If you are done:
 {"tool":"final_response","args":{"message":"..."}}`
             )
           );
+          if (lastVerified && parseFailures >= 3) {
+            return `Completed (verified): ${lastVerified}`;
+          }
           if (parseFailures >= 6) {
             return "The model repeatedly returned invalid tool-calling JSON, so I stopped. Try again; if it persists, switch models or reduce the request. Latest raw model output snippet:\n" + snippet;
           }
@@ -41534,6 +41548,11 @@ If you are done:
             const result = await tool2.invoke(action.args);
             this.emitStep("observation", `Tool Output: ${result}`, { tool: tool2.name, result });
             if (tool2.name.startsWith("browser_")) usedBrowserTools = true;
+            if (tool2.name === "browser_wait_for_text" || tool2.name === "browser_wait_for_text_in") {
+              if (typeof result === "string" && result.startsWith("Found text")) {
+                lastVerified = result;
+              }
+            }
             messages.push(new AIMessage(content));
             messages.push(new SystemMessage(`Tool '${action.tool}' Output:
 ${result}`));
