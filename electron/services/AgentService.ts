@@ -158,15 +158,16 @@ export class AgentService {
         BROWSER AUTOMATION STRATEGY:
         - You have no eyes. You must use "browser_observe" to see the page.
         - Step 1: ALWAYS call "browser_navigate" to the target URL.
-        - Step 2: ALWAYS call "browser_observe" to see what is on the page.
-        - Step 3: Use the selectors returned by "browser_observe" to call "browser_click" or "browser_type".
-        - Step 4: Call "browser_observe" again to confirm the action worked.
+        - Step 2: ALWAYS call "browser_observe" with scope="main" to see relevant page content (not header noise).
+        - Step 3: Prefer "browser_click_text" when you can describe a link/button by visible text (more robust than guessing aria-label/href).
+        - Step 4: Use selectors returned by "browser_observe" (which are JSON-safe) for "browser_click", "browser_type", "browser_select".
+        - Step 5: Verify outcomes using "browser_wait_for_text", "browser_wait_for_text_in", or "browser_extract_main_text".
 
         Example Interaction:
         User: "Go to Jira"
         Assistant: { "tool": "browser_navigate", "args": { "url": "http://localhost:3000/jira" } }
         User: Tool Output: "Navigated to..."
-        Assistant: { "tool": "browser_observe", "args": {} }
+        Assistant: { "tool": "browser_observe", "args": { "scope": "main" } }
         User: Tool Output: { "interactiveElements": [...] }
         Assistant: { "tool": "final_response", "args": { "message": "I have navigated to Jira." } }
         `),

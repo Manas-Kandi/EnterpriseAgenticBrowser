@@ -40,12 +40,19 @@ export class BrowserAutomationService {
   }
 
   private registerTools() {
+    const observeSchema = z.object({
+      scope: z.enum(['main', 'document']).optional().describe('Where to look for elements (default: main)'),
+      maxElements: z.number().optional().describe('Max interactive elements to return (default: 80)'),
+    });
+
     // Tool: Observe
-    const observeTool: AgentTool<z.ZodObject<{}>> = {
+    const observeTool: AgentTool = {
       name: 'browser_observe',
-      description: 'Analyze the current page content, URL, and interactive elements. Use this to find selectors.',
-      schema: z.object({}),
-      execute: async () => {
+      description:
+        'Analyze the current page URL/title and return visible interactive elements. Defaults to main content to avoid header/nav noise.',
+      schema: observeSchema,
+      execute: async (args: unknown) => {
+        const { scope, maxElements } = observeSchema.parse(args ?? {});
         try {
             const target = await this.getTarget();
             const url = target.getURL();
@@ -63,6 +70,25 @@ export class BrowserAutomationService {
                   // If value is simple, avoid quotes entirely (JSON-safe and CSS-valid).
                   if (/^[a-zA-Z0-9_-]+$/.test(value)) return value;
                   return "'" + escapeForSingleQuotes(value) + "'";
+                };
+
+                const isVisible = (el) => {
+                  if (!el || el.nodeType !== 1) return false;
+                  const style = window.getComputedStyle(el);
+                  if (!style) return false;
+                  if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+                  if (style.pointerEvents === 'none') return false;
+                  const rects = el.getClientRects();
+                  if (!rects || rects.length === 0) return false;
+                  const rect = el.getBoundingClientRect();
+                  if (rect.width < 2 || rect.height < 2) return false;
+                  // Prefer in-viewport elements (allow small offscreen buffer)
+                  const vw = window.innerWidth || 0;
+                  const vh = window.innerHeight || 0;
+                  const buffer = 40;
+                  if (rect.bottom < -buffer || rect.top > vh + buffer) return false;
+                  if (rect.right < -buffer || rect.left > vw + buffer) return false;
+                  return true;
                 };
 
                 const cssPath = (el) => {
@@ -127,10 +153,28 @@ export class BrowserAutomationService {
                   return path || el.tagName.toLowerCase();
                 };
 
-                const interactables = Array.from(
-                  document.querySelectorAll('button, input, a, textarea, select, [role="button"], [role="link"]')
-                );
-                return interactables.slice(0, 60).map((el) => {
+                const requestedScope = ${JSON.stringify(scope ?? 'main')};
+                const root =
+                  requestedScope === 'document'
+                    ? document
+                    : (document.querySelector('main, [role="main"]') || document.body);
+
+                const withinRoot = (el) => {
+                  try { return root && root !== document ? root.contains(el) : true; } catch { return true; }
+                };
+
+                const selectorList = 'button, a, input, textarea, select, summary, [role="button"], [role="link"], [role="tab"]';
+                const candidates = Array.from((root && root !== document ? root : document).querySelectorAll(selectorList));
+
+                // Visible + within root + de-duplicate by selector+text+tag.
+                const seen = new Set();
+                const out = [];
+                const limit = Math.max(1, Math.min(200, ${JSON.stringify(maxElements ?? 80)}));
+
+                for (const el of candidates) {
+                  if (!withinRoot(el)) continue;
+                  if (!isVisible(el)) continue;
+
                   const tag = el.tagName.toLowerCase();
                   const text = (el.textContent || '').substring(0, 80).trim().replace(/\\s+/g, ' ');
                   const placeholder = el.getAttribute('placeholder') || '';
@@ -141,13 +185,31 @@ export class BrowserAutomationService {
                   const selector = bestSelector(el);
                   const matches = selector ? document.querySelectorAll(selector).length : 0;
                   const value = 'value' in el ? String(el.value ?? '') : '';
-                  return { tag, text, placeholder, type, role, name, disabled, value, selector, matches };
-                });
+                  const href = tag === 'a' ? (el.getAttribute('href') || '') : '';
+                  const ariaLabel = el.getAttribute('aria-label') || '';
+
+                  const key = [tag, selector, text].join('|');
+                  if (seen.has(key)) continue;
+                  seen.add(key);
+
+                  out.push({ tag, text, placeholder, type, role, name, disabled, value, href, ariaLabel, selector, matches });
+                  if (out.length >= limit) break;
+                }
+
+                // Provide a small main-text snippet so the agent can orient itself.
+                const mainText = (() => {
+                  const node =
+                    (document.querySelector('main, [role="main"]') || document.body);
+                  const raw = (node?.innerText || '').replace(/\\s+/g, ' ').trim();
+                  return raw.slice(0, 1200);
+                })();
+
+                return { interactiveElements: out, mainTextSnippet: mainText, scope: requestedScope };
               })()`,
               true
             );
 
-            return JSON.stringify({ url, title, interactiveElements: elements }, null, 2);
+            return JSON.stringify({ url, title, ...elements }, null, 2);
         } catch (e: any) {
             return `Failed to observe page: ${e.message}`;
         }
@@ -486,6 +548,135 @@ export class BrowserAutomationService {
       },
     };
 
+    const clickTextTool: AgentTool<
+      z.ZodObject<{
+        text: z.ZodString;
+        exact: z.ZodOptional<z.ZodBoolean>;
+        role: z.ZodOptional<z.ZodString>;
+        tag: z.ZodOptional<z.ZodString>;
+        index: z.ZodOptional<z.ZodNumber>;
+        withinSelector: z.ZodOptional<z.ZodString>;
+      }>
+    > = {
+      name: 'browser_click_text',
+      description:
+        'Click a visible element by its text (avoids brittle selectors). Optionally filter by tag/role and choose index.',
+      schema: z.object({
+        text: z.string().describe('Visible text to match'),
+        exact: z.boolean().optional().describe('Exact match (default false = substring match)'),
+        role: z.string().optional().describe('ARIA role to filter (e.g. tab, button, link)'),
+        tag: z.string().optional().describe('Tag name to filter (e.g. a, button)'),
+        index: z.number().optional().describe('Which match to click (0-based, default 0)'),
+        withinSelector: z.string().optional().describe('Limit search to a container selector'),
+      }),
+      execute: async ({
+        text,
+        exact,
+        role,
+        tag,
+        index,
+        withinSelector,
+      }: {
+        text: string;
+        exact?: boolean;
+        role?: string;
+        tag?: string;
+        index?: number;
+        withinSelector?: string;
+      }) => {
+        try {
+          const target = await this.getTarget();
+          const clicked = await target.executeJavaScript(
+            `(() => {
+              const query = ${JSON.stringify(text)}.toLowerCase().trim();
+              const exact = Boolean(${JSON.stringify(exact ?? false)});
+              const role = ${JSON.stringify(role ?? '')}.toLowerCase().trim();
+              const tag = ${JSON.stringify(tag ?? '')}.toLowerCase().trim();
+              const idx = Math.max(0, Math.floor(${JSON.stringify(index ?? 0)}));
+              const root = ${withinSelector ? `document.querySelector(${JSON.stringify(withinSelector)})` : 'document'} || document;
+
+              const isVisible = (el) => {
+                if (!el || el.nodeType !== 1) return false;
+                const style = window.getComputedStyle(el);
+                if (!style) return false;
+                if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+                if (style.pointerEvents === 'none') return false;
+                const rects = el.getClientRects();
+                if (!rects || rects.length === 0) return false;
+                const rect = el.getBoundingClientRect();
+                if (rect.width < 2 || rect.height < 2) return false;
+                const vw = window.innerWidth || 0;
+                const vh = window.innerHeight || 0;
+                const buffer = 40;
+                if (rect.bottom < -buffer || rect.top > vh + buffer) return false;
+                if (rect.right < -buffer || rect.left > vw + buffer) return false;
+                return true;
+              };
+
+              const selector = 'button, a, [role=\"button\"], [role=\"link\"], [role=\"tab\"], summary';
+              const candidates = Array.from((root === document ? document : root).querySelectorAll(selector));
+              const matches = [];
+              for (const el of candidates) {
+                if (!isVisible(el)) continue;
+                if (tag && el.tagName.toLowerCase() !== tag) continue;
+                if (role) {
+                  const r = (el.getAttribute('role') || '').toLowerCase();
+                  if (r !== role) continue;
+                }
+                const t = (el.textContent || '').replace(/\\s+/g, ' ').trim().toLowerCase();
+                if (!t) continue;
+                const ok = exact ? t === query : t.includes(query);
+                if (!ok) continue;
+                const disabled = ('disabled' in el && Boolean(el.disabled)) || el.getAttribute?.('aria-disabled') === 'true';
+                matches.push({ el, text: t, disabled });
+              }
+
+              if (matches.length === 0) {
+                return { ok: false, reason: 'No matching visible elements', matches: 0 };
+              }
+              const chosen = matches[Math.min(idx, matches.length - 1)];
+              if (chosen.disabled) {
+                return { ok: false, reason: 'Matched element is disabled', matches: matches.length };
+              }
+              const el = chosen.el;
+              el.scrollIntoView({ block: 'center', inline: 'center' });
+              el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+              el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+              el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+              el.click();
+              return { ok: true, matches: matches.length, clickedText: chosen.text };
+            })()`,
+            true
+          );
+          return `ClickText result: ${JSON.stringify(clicked)}`;
+        } catch (e: any) {
+          return `Failed to click by text: ${e.message}`;
+        }
+      },
+    };
+
+    const extractMainTextTool: AgentTool<
+      z.ZodObject<{ maxChars: z.ZodOptional<z.ZodNumber> }>
+    > = {
+      name: 'browser_extract_main_text',
+      description: 'Extract visible text from the main content area (role=main/main tag) to support scraping/QA.',
+      schema: z.object({
+        maxChars: z.number().optional().describe('Max characters to return (default 4000)'),
+      }),
+      execute: async ({ maxChars }: { maxChars?: number }) => {
+        const target = await this.getTarget();
+        const text = await target.executeJavaScript(
+          `(() => {
+            const node = document.querySelector('main, [role=\"main\"]') || document.body;
+            const raw = (node?.innerText || '').replace(/\\s+/g, ' ').trim();
+            return raw.slice(0, Math.max(1, Math.min(20000, ${JSON.stringify(maxChars ?? 4000)})));
+          })()`,
+          true
+        );
+        return String(text ?? '');
+      },
+    };
+
     toolRegistry.register(observeTool);
     toolRegistry.register(navigateTool);
     toolRegistry.register(clickTool);
@@ -496,6 +687,8 @@ export class BrowserAutomationService {
     toolRegistry.register(waitForTextTool);
     toolRegistry.register(waitForTextInTool);
     toolRegistry.register(selectTool);
+    toolRegistry.register(clickTextTool);
+    toolRegistry.register(extractMainTextTool);
   }
 }
 

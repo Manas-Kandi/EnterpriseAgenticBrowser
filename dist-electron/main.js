@@ -20811,6 +20811,7 @@ const string$1 = (params) => {
 };
 const integer = /^-?\d+$/;
 const number$1 = /^-?\d+(?:\.\d+)?/;
+const boolean$1 = /^(?:true|false)$/i;
 const lowercase = /^[^A-Z]*$/;
 const uppercase = /^[^a-z]*$/;
 const $ZodCheck = /* @__PURE__ */ $constructor("$ZodCheck", (inst, def) => {
@@ -21670,6 +21671,27 @@ const $ZodNumber = /* @__PURE__ */ $constructor("$ZodNumber", (inst, def) => {
 const $ZodNumberFormat = /* @__PURE__ */ $constructor("$ZodNumberFormat", (inst, def) => {
   $ZodCheckNumberFormat.init(inst, def);
   $ZodNumber.init(inst, def);
+});
+const $ZodBoolean = /* @__PURE__ */ $constructor("$ZodBoolean", (inst, def) => {
+  $ZodType.init(inst, def);
+  inst._zod.pattern = boolean$1;
+  inst._zod.parse = (payload, _ctx) => {
+    if (def.coerce)
+      try {
+        payload.value = Boolean(payload.value);
+      } catch (_) {
+      }
+    const input = payload.value;
+    if (typeof input === "boolean")
+      return payload;
+    payload.issues.push({
+      expected: "boolean",
+      code: "invalid_type",
+      input,
+      inst
+    });
+    return payload;
+  };
 });
 const $ZodUnknown = /* @__PURE__ */ $constructor("$ZodUnknown", (inst, def) => {
   $ZodType.init(inst, def);
@@ -22652,6 +22674,12 @@ function _int(Class, params) {
     check: "number_format",
     abort: false,
     format: "safeint",
+    ...normalizeParams(params)
+  });
+}
+function _boolean(Class, params) {
+  return new Class({
+    type: "boolean",
     ...normalizeParams(params)
   });
 }
@@ -25945,7 +25973,7 @@ ZodBigInt.create = (params) => {
     ...processCreateParams(params)
   });
 };
-class ZodBoolean extends ZodType$1 {
+let ZodBoolean$1 = class ZodBoolean extends ZodType$1 {
   _parse(input) {
     if (this._def.coerce) {
       input.data = Boolean(input.data);
@@ -25962,9 +25990,9 @@ class ZodBoolean extends ZodType$1 {
     }
     return OK(input.data);
   }
-}
-ZodBoolean.create = (params) => {
-  return new ZodBoolean({
+};
+ZodBoolean$1.create = (params) => {
+  return new ZodBoolean$1({
     typeName: ZodFirstPartyTypeKind.ZodBoolean,
     coerce: (params == null ? void 0 : params.coerce) || false,
     ...processCreateParams(params)
@@ -32356,6 +32384,13 @@ const ZodNumberFormat = /* @__PURE__ */ $constructor("ZodNumberFormat", (inst, d
 });
 function int(params) {
   return _int(ZodNumberFormat, params);
+}
+const ZodBoolean2 = /* @__PURE__ */ $constructor("ZodBoolean", (inst, def) => {
+  $ZodBoolean.init(inst, def);
+  ZodType2.init(inst, def);
+});
+function boolean(params) {
+  return _boolean(ZodBoolean2, params);
 }
 const ZodUnknown2 = /* @__PURE__ */ $constructor("ZodUnknown", (inst, def) => {
   $ZodUnknown.init(inst, def);
@@ -41466,15 +41501,16 @@ class AgentService {
         BROWSER AUTOMATION STRATEGY:
         - You have no eyes. You must use "browser_observe" to see the page.
         - Step 1: ALWAYS call "browser_navigate" to the target URL.
-        - Step 2: ALWAYS call "browser_observe" to see what is on the page.
-        - Step 3: Use the selectors returned by "browser_observe" to call "browser_click" or "browser_type".
-        - Step 4: Call "browser_observe" again to confirm the action worked.
+        - Step 2: ALWAYS call "browser_observe" with scope="main" to see relevant page content (not header noise).
+        - Step 3: Prefer "browser_click_text" when you can describe a link/button by visible text (more robust than guessing aria-label/href).
+        - Step 4: Use selectors returned by "browser_observe" (which are JSON-safe) for "browser_click", "browser_type", "browser_select".
+        - Step 5: Verify outcomes using "browser_wait_for_text", "browser_wait_for_text_in", or "browser_extract_main_text".
 
         Example Interaction:
         User: "Go to Jira"
         Assistant: { "tool": "browser_navigate", "args": { "url": "http://localhost:3000/jira" } }
         User: Tool Output: "Navigated to..."
-        Assistant: { "tool": "browser_observe", "args": {} }
+        Assistant: { "tool": "browser_observe", "args": { "scope": "main" } }
         User: Tool Output: { "interactiveElements": [...] }
         Assistant: { "tool": "final_response", "args": { "message": "I have navigated to Jira." } }
         `),
@@ -42022,11 +42058,16 @@ class BrowserAutomationService {
     return Number(count) || 0;
   }
   registerTools() {
+    const observeSchema = object({
+      scope: _enum(["main", "document"]).optional().describe("Where to look for elements (default: main)"),
+      maxElements: number().optional().describe("Max interactive elements to return (default: 80)")
+    });
     const observeTool = {
       name: "browser_observe",
-      description: "Analyze the current page content, URL, and interactive elements. Use this to find selectors.",
-      schema: object({}),
-      execute: async () => {
+      description: "Analyze the current page URL/title and return visible interactive elements. Defaults to main content to avoid header/nav noise.",
+      schema: observeSchema,
+      execute: async (args) => {
+        const { scope, maxElements } = observeSchema.parse(args ?? {});
         try {
           const target = await this.getTarget();
           const url = target.getURL();
@@ -42043,6 +42084,25 @@ class BrowserAutomationService {
                   // If value is simple, avoid quotes entirely (JSON-safe and CSS-valid).
                   if (/^[a-zA-Z0-9_-]+$/.test(value)) return value;
                   return "'" + escapeForSingleQuotes(value) + "'";
+                };
+
+                const isVisible = (el) => {
+                  if (!el || el.nodeType !== 1) return false;
+                  const style = window.getComputedStyle(el);
+                  if (!style) return false;
+                  if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+                  if (style.pointerEvents === 'none') return false;
+                  const rects = el.getClientRects();
+                  if (!rects || rects.length === 0) return false;
+                  const rect = el.getBoundingClientRect();
+                  if (rect.width < 2 || rect.height < 2) return false;
+                  // Prefer in-viewport elements (allow small offscreen buffer)
+                  const vw = window.innerWidth || 0;
+                  const vh = window.innerHeight || 0;
+                  const buffer = 40;
+                  if (rect.bottom < -buffer || rect.top > vh + buffer) return false;
+                  if (rect.right < -buffer || rect.left > vw + buffer) return false;
+                  return true;
                 };
 
                 const cssPath = (el) => {
@@ -42107,10 +42167,28 @@ class BrowserAutomationService {
                   return path || el.tagName.toLowerCase();
                 };
 
-                const interactables = Array.from(
-                  document.querySelectorAll('button, input, a, textarea, select, [role="button"], [role="link"]')
-                );
-                return interactables.slice(0, 60).map((el) => {
+                const requestedScope = ${JSON.stringify(scope ?? "main")};
+                const root =
+                  requestedScope === 'document'
+                    ? document
+                    : (document.querySelector('main, [role="main"]') || document.body);
+
+                const withinRoot = (el) => {
+                  try { return root && root !== document ? root.contains(el) : true; } catch { return true; }
+                };
+
+                const selectorList = 'button, a, input, textarea, select, summary, [role="button"], [role="link"], [role="tab"]';
+                const candidates = Array.from((root && root !== document ? root : document).querySelectorAll(selectorList));
+
+                // Visible + within root + de-duplicate by selector+text+tag.
+                const seen = new Set();
+                const out = [];
+                const limit = Math.max(1, Math.min(200, ${JSON.stringify(maxElements ?? 80)}));
+
+                for (const el of candidates) {
+                  if (!withinRoot(el)) continue;
+                  if (!isVisible(el)) continue;
+
                   const tag = el.tagName.toLowerCase();
                   const text = (el.textContent || '').substring(0, 80).trim().replace(/\\s+/g, ' ');
                   const placeholder = el.getAttribute('placeholder') || '';
@@ -42121,12 +42199,30 @@ class BrowserAutomationService {
                   const selector = bestSelector(el);
                   const matches = selector ? document.querySelectorAll(selector).length : 0;
                   const value = 'value' in el ? String(el.value ?? '') : '';
-                  return { tag, text, placeholder, type, role, name, disabled, value, selector, matches };
-                });
+                  const href = tag === 'a' ? (el.getAttribute('href') || '') : '';
+                  const ariaLabel = el.getAttribute('aria-label') || '';
+
+                  const key = [tag, selector, text].join('|');
+                  if (seen.has(key)) continue;
+                  seen.add(key);
+
+                  out.push({ tag, text, placeholder, type, role, name, disabled, value, href, ariaLabel, selector, matches });
+                  if (out.length >= limit) break;
+                }
+
+                // Provide a small main-text snippet so the agent can orient itself.
+                const mainText = (() => {
+                  const node =
+                    (document.querySelector('main, [role="main"]') || document.body);
+                  const raw = (node?.innerText || '').replace(/\\s+/g, ' ').trim();
+                  return raw.slice(0, 1200);
+                })();
+
+                return { interactiveElements: out, mainTextSnippet: mainText, scope: requestedScope };
               })()`,
             true
           );
-          return JSON.stringify({ url, title, interactiveElements: elements }, null, 2);
+          return JSON.stringify({ url, title, ...elements }, null, 2);
         } catch (e) {
           return `Failed to observe page: ${e.message}`;
         }
@@ -42440,6 +42536,114 @@ class BrowserAutomationService {
         }
       }
     };
+    const clickTextTool = {
+      name: "browser_click_text",
+      description: "Click a visible element by its text (avoids brittle selectors). Optionally filter by tag/role and choose index.",
+      schema: object({
+        text: string().describe("Visible text to match"),
+        exact: boolean().optional().describe("Exact match (default false = substring match)"),
+        role: string().optional().describe("ARIA role to filter (e.g. tab, button, link)"),
+        tag: string().optional().describe("Tag name to filter (e.g. a, button)"),
+        index: number().optional().describe("Which match to click (0-based, default 0)"),
+        withinSelector: string().optional().describe("Limit search to a container selector")
+      }),
+      execute: async ({
+        text,
+        exact,
+        role,
+        tag,
+        index,
+        withinSelector
+      }) => {
+        try {
+          const target = await this.getTarget();
+          const clicked = await target.executeJavaScript(
+            `(() => {
+              const query = ${JSON.stringify(text)}.toLowerCase().trim();
+              const exact = Boolean(${JSON.stringify(exact ?? false)});
+              const role = ${JSON.stringify(role ?? "")}.toLowerCase().trim();
+              const tag = ${JSON.stringify(tag ?? "")}.toLowerCase().trim();
+              const idx = Math.max(0, Math.floor(${JSON.stringify(index ?? 0)}));
+              const root = ${withinSelector ? `document.querySelector(${JSON.stringify(withinSelector)})` : "document"} || document;
+
+              const isVisible = (el) => {
+                if (!el || el.nodeType !== 1) return false;
+                const style = window.getComputedStyle(el);
+                if (!style) return false;
+                if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+                if (style.pointerEvents === 'none') return false;
+                const rects = el.getClientRects();
+                if (!rects || rects.length === 0) return false;
+                const rect = el.getBoundingClientRect();
+                if (rect.width < 2 || rect.height < 2) return false;
+                const vw = window.innerWidth || 0;
+                const vh = window.innerHeight || 0;
+                const buffer = 40;
+                if (rect.bottom < -buffer || rect.top > vh + buffer) return false;
+                if (rect.right < -buffer || rect.left > vw + buffer) return false;
+                return true;
+              };
+
+              const selector = 'button, a, [role="button"], [role="link"], [role="tab"], summary';
+              const candidates = Array.from((root === document ? document : root).querySelectorAll(selector));
+              const matches = [];
+              for (const el of candidates) {
+                if (!isVisible(el)) continue;
+                if (tag && el.tagName.toLowerCase() !== tag) continue;
+                if (role) {
+                  const r = (el.getAttribute('role') || '').toLowerCase();
+                  if (r !== role) continue;
+                }
+                const t = (el.textContent || '').replace(/\\s+/g, ' ').trim().toLowerCase();
+                if (!t) continue;
+                const ok = exact ? t === query : t.includes(query);
+                if (!ok) continue;
+                const disabled = ('disabled' in el && Boolean(el.disabled)) || el.getAttribute?.('aria-disabled') === 'true';
+                matches.push({ el, text: t, disabled });
+              }
+
+              if (matches.length === 0) {
+                return { ok: false, reason: 'No matching visible elements', matches: 0 };
+              }
+              const chosen = matches[Math.min(idx, matches.length - 1)];
+              if (chosen.disabled) {
+                return { ok: false, reason: 'Matched element is disabled', matches: matches.length };
+              }
+              const el = chosen.el;
+              el.scrollIntoView({ block: 'center', inline: 'center' });
+              el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+              el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+              el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+              el.click();
+              return { ok: true, matches: matches.length, clickedText: chosen.text };
+            })()`,
+            true
+          );
+          return `ClickText result: ${JSON.stringify(clicked)}`;
+        } catch (e) {
+          return `Failed to click by text: ${e.message}`;
+        }
+      }
+    };
+    const extractMainTextTool = {
+      name: "browser_extract_main_text",
+      description: "Extract visible text from the main content area (role=main/main tag) to support scraping/QA.",
+      schema: object({
+        maxChars: number().optional().describe("Max characters to return (default 4000)")
+      }),
+      execute: async ({ maxChars }) => {
+        const target = await this.getTarget();
+        const text = await target.executeJavaScript(
+          `(() => {
+            const node = document.querySelector('main, [role="main"]') || document.body;
+            const raw = (node?.innerText || '').replace(/\\s+/g, ' ').trim();
+            return raw.slice(0, Math.max(1, Math.min(20000, ${JSON.stringify(maxChars ?? 4e3)})));
+          })()`,
+          true
+        );
+        return String(text ?? "");
+      }
+    };
     toolRegistry.register(observeTool);
     toolRegistry.register(navigateTool);
     toolRegistry.register(clickTool);
@@ -42450,6 +42654,8 @@ class BrowserAutomationService {
     toolRegistry.register(waitForTextTool);
     toolRegistry.register(waitForTextInTool);
     toolRegistry.register(selectTool);
+    toolRegistry.register(clickTextTool);
+    toolRegistry.register(extractMainTextTool);
   }
 }
 new BrowserAutomationService();
