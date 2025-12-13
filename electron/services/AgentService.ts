@@ -17,6 +17,60 @@ export class AgentService {
   private model: Runnable;
   private onStep?: (step: AgentStep) => void;
 
+  private extractJsonObject(input: string): string | null {
+    const text = input.replace(/```json/g, '').replace(/```/g, '').trim();
+    const start = text.indexOf('{');
+    if (start === -1) return null;
+
+    let inString = false;
+    let escaped = false;
+    let depth = 0;
+    for (let i = start; i < text.length; i++) {
+      const ch = text[i];
+      if (inString) {
+        if (escaped) {
+          escaped = false;
+        } else if (ch === '\\') {
+          escaped = true;
+        } else if (ch === '"') {
+          inString = false;
+        }
+        continue;
+      }
+
+      if (ch === '"') {
+        inString = true;
+        continue;
+      }
+
+      if (ch === '{') depth++;
+      if (ch === '}') depth--;
+      if (depth === 0) return text.slice(start, i + 1);
+    }
+
+    return null;
+  }
+
+  private parseToolCall(rawContent: string): { tool: string; args: unknown } | null {
+    const candidate = this.extractJsonObject(rawContent);
+    if (!candidate) return null;
+
+    const tryParse = (s: string) => {
+      try {
+        return JSON.parse(s);
+      } catch {
+        return null;
+      }
+    };
+
+    const direct = tryParse(candidate);
+    if (direct) return direct;
+
+    // Best-effort: strip trailing commas.
+    const relaxed = candidate.replace(/,\s*([}\]])/g, '$1');
+    return tryParse(relaxed);
+  }
+
   constructor() {
     const apiKey = process.env.NVIDIA_API_KEY;
     if (!apiKey) {
@@ -55,6 +109,7 @@ export class AgentService {
     // Fetch tools dynamically to ensure all services have registered their tools
     const tools = toolRegistry.toLangChainTools();
     let usedBrowserTools = false;
+    let parseFailures = 0;
     
     try {
       const messages: BaseMessage[] = [
@@ -80,6 +135,7 @@ export class AgentService {
         VERIFICATION RULE (IMPORTANT):
         - Do NOT claim you created/updated anything in the UI unless you have verified it.
         - After performing an action like "Create", ALWAYS call "browser_wait_for_text" or "browser_find_text" for the expected title/name and confirm it appears on the page.
+        - If the user asked for a specific status/column (e.g. "In Progress") and you have "browser_wait_for_text_in", verify the item appears inside the correct column container.
 
         BROWSER AUTOMATION STRATEGY:
         - You have no eyes. You must use "browser_observe" to see the page.
@@ -100,41 +156,62 @@ export class AgentService {
       ];
 
       // ReAct Loop (Max 15 turns)
-      for (let i = 0; i < 15; i++) {
+      for (let i = 0; i < 25; i++) {
         const response = await this.model.invoke(messages) as AIMessage;
         const content = response.content as string;
         
         // Log raw response for debugging
         console.log(`[Agent Turn ${i}] Raw Response:`, content);
         
-        let action;
-        try {
-            // Try to parse JSON. Llama might wrap it in markdown ```json ... ```
-            const cleanContent = content.replace(/```json/g, '').replace(/```/g, '').trim();
-            action = JSON.parse(cleanContent);
-            
-            // Emit thought if present in the JSON (optional) or just the raw content as thought
-            // Ideally we'd parse out a "thought" field if we asked for it. 
-            // For now, let's treat the tool call intention as a thought.
-            if (action.tool !== 'final_response') {
-                this.emitStep('thought', `Decided to call ${action.tool}`);
-            }
-        } catch (e) {
-            console.warn("Failed to parse JSON response:", content);
-            // If parse fails, maybe the model is just talking. 
-            // We can push it back as a message, but since we enforced JSON, this is an error.
-            // Let's remind the model to use JSON.
-            messages.push(response);
-            messages.push(new SystemMessage("Error: You must output valid JSON. Please try again using the specified format."));
-            continue;
+        const action = this.parseToolCall(content);
+        if (!action || typeof (action as any).tool !== 'string' || typeof (action as any).args !== 'object') {
+          parseFailures++;
+          const snippet = String(content).slice(0, 600);
+          this.emitStep('observation', `Model output was not valid tool JSON (attempt ${parseFailures}).`, {
+            snippet,
+          });
+          console.warn("Failed to parse JSON response:", content);
+          messages.push(response);
+          messages.push(
+            new SystemMessage(
+              `Error: You must output valid JSON ONLY in the exact format. No prose. No markdown.\n` +
+                `Reminder format:\n{"tool":"tool_name","args":{}}\n` +
+                `If you are done:\n{"tool":"final_response","args":{"message":"..."}}`
+            )
+          );
+          if (parseFailures >= 6) {
+            return (
+              "The model repeatedly returned invalid tool-calling JSON, so I stopped. " +
+              "Try again; if it persists, switch models or reduce the request. " +
+              "Latest raw model output snippet:\n" +
+              snippet
+            );
+          }
+          continue;
+        }
+
+        // Emit thought for tool calls
+        if ((action as any).tool !== 'final_response') {
+          this.emitStep('thought', `Decided to call ${(action as any).tool}`);
         }
 
         // Handle Final Response
-        if (action.tool === "final_response") {
+        if ((action as any).tool === "final_response") {
+            const finalArgs = (action as any).args as { message?: unknown } | undefined;
+            const finalMessage = typeof finalArgs?.message === 'string' ? finalArgs.message : '';
+            if (!finalMessage) {
+              messages.push(response);
+              messages.push(
+                new SystemMessage(
+                  'Error: final_response must include args.message as a string. Example: {"tool":"final_response","args":{"message":"..."}}'
+                )
+              );
+              continue;
+            }
             if (usedBrowserTools) {
               const last = messages.slice(-8).map((m) => (m as any).content ?? '').join('\n');
-              const claimedSuccess = typeof action?.args?.message === 'string' &&
-                /\b(created|created a|successfully|done|completed)\b/i.test(action.args.message);
+              const claimedSuccess =
+                /\b(created|created a|successfully|done|completed)\b/i.test(finalMessage);
               if (claimedSuccess && !/\bFound text:\b|\b\"found\":\s*[1-9]\d*\b/i.test(last)) {
                 messages.push(response);
                 messages.push(
@@ -145,18 +222,18 @@ export class AgentService {
                 continue;
               }
             }
-            return action.args.message;
+            return finalMessage;
         }
 
         // Handle Tool Call
-        const tool = tools.find((t: any) => t.name === action.tool);
+        const tool = tools.find((t: any) => t.name === (action as any).tool);
         if (tool) {
             console.log(`Executing tool: ${tool.name} with args:`, action.args);
             this.emitStep('action', `Executing ${tool.name}`, { tool: tool.name, args: action.args });
             
             try {
                 // Execute tool
-                const result = await tool.invoke(action.args);
+                const result = await tool.invoke((action as any).args);
                 this.emitStep('observation', `Tool Output: ${result}`, { tool: tool.name, result });
 
                 if (tool.name.startsWith('browser_')) usedBrowserTools = true;
@@ -165,20 +242,20 @@ export class AgentService {
                 // We add the assistant's JSON response
                 messages.push(new AIMessage(content));
                 // Treat tool output as untrusted system data (reduces prompt-injection risk)
-                messages.push(new SystemMessage(`Tool '${action.tool}' Output:\n${result}`));
+                messages.push(new SystemMessage(`Tool '${(action as any).tool}' Output:\n${result}`));
             } catch (err: any) {
                 console.error(`Tool execution failed: ${err}`);
                 messages.push(new AIMessage(content));
                 messages.push(new SystemMessage(`Tool Execution Error: ${err.message}`));
             }
         } else {
-            console.error(`Tool not found: ${action.tool}`);
+            console.error(`Tool not found: ${(action as any).tool}`);
             messages.push(new AIMessage(content));
-            messages.push(new SystemMessage(`Error: Tool '${action.tool}' not found. Available tools: ${tools.map((t: any) => t.name).join(', ')}`));
+            messages.push(new SystemMessage(`Error: Tool '${(action as any).tool}' not found. Available tools: ${tools.map((t: any) => t.name).join(', ')}`));
         }
       }
 
-      return "I completed the actions, but reached the maximum number of steps.";
+      return "I could not complete the task within the maximum number of steps. Try simplifying the request or check the browser is in the expected state.";
 
     } catch (error) {
       console.error('Error in AgentService chat:', error);

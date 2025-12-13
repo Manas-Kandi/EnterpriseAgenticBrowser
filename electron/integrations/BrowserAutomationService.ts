@@ -396,6 +396,83 @@ export class BrowserAutomationService {
       },
     };
 
+    const waitForTextInTool: AgentTool<
+      z.ZodObject<{ selector: z.ZodString; text: z.ZodString; timeoutMs: z.ZodOptional<z.ZodNumber> }>
+    > = {
+      name: 'browser_wait_for_text_in',
+      description: 'Wait until text appears within a specific container selector (case-insensitive).',
+      schema: z.object({
+        selector: z.string().describe('CSS selector for the container'),
+        text: z.string().describe('Text to wait for'),
+        timeoutMs: z.number().optional().describe('Timeout in ms (default 5000)'),
+      }),
+      execute: async ({
+        selector,
+        text,
+        timeoutMs,
+      }: {
+        selector: string;
+        text: string;
+        timeoutMs?: number;
+      }) => {
+        const target = await this.getTarget();
+        const startedAt = Date.now();
+        const timeout = timeoutMs ?? 5000;
+        const needle = text.toLowerCase();
+        while (Date.now() - startedAt < timeout) {
+          const found = await target.executeJavaScript(
+            `(() => {
+              const root = document.querySelector(${JSON.stringify(selector)});
+              if (!root) return false;
+              const text = (root.innerText || '').toLowerCase();
+              return text.includes(${JSON.stringify(needle)});
+            })()`,
+            true
+          );
+          if (found) return `Found text in ${selector}: ${JSON.stringify(text)}`;
+          await this.delay(150);
+        }
+        return `Did not find text in ${selector} within ${timeout}ms: ${JSON.stringify(text)}`;
+      },
+    };
+
+    const selectTool: AgentTool<z.ZodObject<{ selector: z.ZodString; value: z.ZodString }>> = {
+      name: 'browser_select',
+      description: 'Set the value of a <select> element.',
+      schema: z.object({
+        selector: z.string().describe('CSS selector of the select element'),
+        value: z.string().describe('Option value to set'),
+      }),
+      execute: async ({ selector, value }: { selector: string; value: string }) => {
+        try {
+          const target = await this.getTarget();
+          const matches = await this.querySelectorCount(target, selector);
+          if (matches > 1) {
+            return `Refusing to select on non-unique selector (matches=${matches}): ${selector}`;
+          }
+          await this.waitForSelector(target, selector, 5000);
+          const selected = await target.executeJavaScript(
+            `(() => {
+              const el = document.querySelector(${JSON.stringify(selector)});
+              if (!el) throw new Error('Element not found');
+              const tag = el.tagName?.toLowerCase?.();
+              if (tag !== 'select') throw new Error('Element is not a <select>');
+              const isDisabled = Boolean(el.disabled) || el.getAttribute?.('aria-disabled') === 'true';
+              if (isDisabled) throw new Error('Element is disabled');
+              el.value = ${JSON.stringify(value)};
+              el.dispatchEvent(new Event('input', { bubbles: true }));
+              el.dispatchEvent(new Event('change', { bubbles: true }));
+              return String(el.value ?? '');
+            })()`,
+            true
+          );
+          return `Selected value ${JSON.stringify(selected)} on ${selector}`;
+        } catch (e: any) {
+          return `Failed to select on ${selector}: ${e.message}`;
+        }
+      },
+    };
+
     toolRegistry.register(observeTool);
     toolRegistry.register(navigateTool);
     toolRegistry.register(clickTool);
@@ -404,6 +481,8 @@ export class BrowserAutomationService {
     toolRegistry.register(screenshotTool);
     toolRegistry.register(findTextTool);
     toolRegistry.register(waitForTextTool);
+    toolRegistry.register(waitForTextInTool);
+    toolRegistry.register(selectTool);
   }
 }
 

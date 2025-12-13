@@ -18,6 +18,7 @@ export function JiraPage() {
   ]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newSummary, setNewSummary] = useState('');
+  const [newStatus, setNewStatus] = useState<Issue['status']>('To Do');
 
   const handleCreate = (e: React.FormEvent) => {
     e.preventDefault();
@@ -29,12 +30,13 @@ export function JiraPage() {
         id: Date.now().toString(),
         key: `PROJ-${prev.length + 1}`,
         summary: newSummary,
-        status: 'To Do',
+        status: newStatus,
         assignee: 'Unassigned',
         priority: 'Medium'
       }
     ]);
     setNewSummary('');
+    setNewStatus('To Do');
     setIsModalOpen(false);
   };
 
@@ -79,7 +81,17 @@ export function JiraPage() {
         {/* Board Columns */}
         <div className="grid grid-cols-3 gap-6 h-[calc(100vh-180px)]">
             {['To Do', 'In Progress', 'Done'].map(status => (
-                <div key={status} className="bg-gray-100 rounded-lg p-2 flex flex-col gap-2">
+                <div
+                  key={status}
+                  data-testid={
+                    status === 'To Do'
+                      ? 'jira-column-todo'
+                      : status === 'In Progress'
+                        ? 'jira-column-in-progress'
+                        : 'jira-column-done'
+                  }
+                  className="bg-gray-100 rounded-lg p-2 flex flex-col gap-2"
+                >
                     <div className="text-xs font-semibold text-gray-500 uppercase px-2 py-1 mb-2">
                         {status} <span className="ml-1 bg-gray-200 px-1.5 py-0.5 rounded-full text-gray-600">{issues.filter(i => i.status === status).length}</span>
                     </div>
@@ -129,6 +141,19 @@ export function JiraPage() {
                             <option>Task</option>
                             <option>Bug</option>
                             <option>Story</option>
+                        </select>
+                    </div>
+                    <div className="mb-4">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                        <select
+                            data-testid="jira-status-select"
+                            className="w-full border rounded px-3 py-2 text-sm bg-gray-50"
+                            value={newStatus}
+                            onChange={(e) => setNewStatus(e.target.value as Issue['status'])}
+                        >
+                            <option value="To Do">To Do</option>
+                            <option value="In Progress">In Progress</option>
+                            <option value="Done">Done</option>
                         </select>
                     </div>
                     <div className="mb-6">

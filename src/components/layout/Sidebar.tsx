@@ -1,3 +1,4 @@
+import ReactMarkdown from 'react-markdown';
 import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { ChevronLeft, ChevronRight, Settings, Send, User, Bot, AlertTriangle, Check, X } from 'lucide-react';
@@ -94,7 +95,7 @@ export function Sidebar() {
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-3 space-y-4">
+      <div className="flex-1 overflow-y-auto p-3 space-y-6">
         {messages.length === 0 && !collapsed ? (
             <div className="flex flex-col items-center justify-center h-full text-muted-foreground/50 pb-10">
                 <Bot className="mb-2 opacity-20" size={32} />
@@ -103,31 +104,48 @@ export function Sidebar() {
         ) : (
             messages.map((msg, i) => (
                 <div key={i} className={cn("flex flex-col gap-1 text-xs", msg.role === 'user' ? "items-end" : "items-start")}>
-                    <div className={cn("flex gap-2 max-w-[90%]", msg.role === 'user' ? "flex-row-reverse" : "")}>
-                        {!collapsed && (
-                           <div className={cn(
-                             "shrink-0 w-5 h-5 rounded-full flex items-center justify-center border",
-                             msg.role === 'user' 
-                               ? "bg-primary/10 border-primary/20 text-primary" 
-                               : "bg-secondary/50 border-white/10 text-muted-foreground"
-                           )}>
-                               {msg.role === 'user' ? <User size={10} /> : <Bot size={10} />}
+                    <div className={cn("flex gap-2 max-w-[95%]", msg.role === 'user' ? "flex-row-reverse" : "")}>
+                        {!collapsed && msg.role === 'user' && (
+                           <div className="shrink-0 w-6 h-6 rounded-full flex items-center justify-center border bg-primary/10 border-primary/20 text-primary">
+                               <User size={12} />
                            </div>
                         )}
                         
                         <div className={cn(
-                            "rounded-md px-3 py-2 leading-relaxed break-words",
+                            "leading-relaxed break-words",
                             msg.role === 'user' 
-                                ? "bg-secondary text-foreground" 
+                                ? "bg-secondary text-foreground rounded-md px-3 py-2" 
                                 : msg.type === 'thought'
-                                    ? "text-muted-foreground italic pl-0 border-l-2 border-primary/20 rounded-none bg-transparent py-0"
+                                    ? "text-muted-foreground/70 italic pl-3 border-l-2 border-primary/20 rounded-none bg-transparent py-0"
                                     : msg.type === 'action'
-                                        ? "font-mono bg-background border border-border/50 text-primary/90 my-1"
+                                        ? "font-mono text-[11px] bg-secondary/30 border border-border/40 text-primary/90 px-2 py-1.5 rounded-sm my-1 w-full"
                                         : msg.type === 'observation'
-                                            ? "font-mono bg-background/50 border border-border/30 text-muted-foreground"
-                                            : "text-foreground"
+                                            ? "font-mono text-[11px] bg-secondary/10 border border-border/20 text-muted-foreground px-2 py-1.5 rounded-sm w-full"
+                                            : "text-foreground/90 w-full"
                         )}>
-                            {msg.type === 'observation' ? (
+                            {msg.role === 'assistant' && (!msg.type || msg.type === 'text') ? (
+                                <ReactMarkdown
+                                    components={{
+                                        p: ({children}) => <p className="mb-2 last:mb-0">{children}</p>,
+                                        h1: ({children}) => <h1 className="text-sm font-bold mt-4 mb-2 first:mt-0 text-foreground">{children}</h1>,
+                                        h2: ({children}) => <h2 className="text-xs font-bold mt-3 mb-1 text-foreground/90 uppercase tracking-wide">{children}</h2>,
+                                        h3: ({children}) => <h3 className="text-xs font-semibold mt-2 mb-1 text-foreground/80">{children}</h3>,
+                                        ul: ({children}) => <ul className="list-disc pl-4 mb-2 space-y-1">{children}</ul>,
+                                        ol: ({children}) => <ol className="list-decimal pl-4 mb-2 space-y-1">{children}</ol>,
+                                        code: ({className, children}) => {
+                                            const match = /language-(\w+)/.exec(className || '')
+                                            return !match ? (
+                                                <code className="bg-secondary/50 px-1 py-0.5 rounded text-[10px] font-mono border border-border/40">{children}</code>
+                                            ) : (
+                                                <code className={className}>{children}</code>
+                                            )
+                                        },
+                                        pre: ({children}) => <pre className="bg-secondary/30 p-2 rounded-md overflow-x-auto text-[10px] my-2 border border-border/40 font-mono">{children}</pre>
+                                    }}
+                                >
+                                    {msg.content}
+                                </ReactMarkdown>
+                            ) : msg.type === 'observation' ? (
                                 <details className="group">
                                     <summary className="cursor-pointer hover:text-foreground list-none flex items-center gap-1 select-none opacity-70 hover:opacity-100 transition-opacity">
                                         <div className="w-1 h-1 rounded-full bg-current" />

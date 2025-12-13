@@ -41363,6 +41363,50 @@ class AgentService {
     });
     this.model = chatModel;
   }
+  extractJsonObject(input) {
+    const text = input.replace(/```json/g, "").replace(/```/g, "").trim();
+    const start = text.indexOf("{");
+    if (start === -1) return null;
+    let inString = false;
+    let escaped = false;
+    let depth = 0;
+    for (let i = start; i < text.length; i++) {
+      const ch = text[i];
+      if (inString) {
+        if (escaped) {
+          escaped = false;
+        } else if (ch === "\\") {
+          escaped = true;
+        } else if (ch === '"') {
+          inString = false;
+        }
+        continue;
+      }
+      if (ch === '"') {
+        inString = true;
+        continue;
+      }
+      if (ch === "{") depth++;
+      if (ch === "}") depth--;
+      if (depth === 0) return text.slice(start, i + 1);
+    }
+    return null;
+  }
+  parseToolCall(rawContent) {
+    const candidate = this.extractJsonObject(rawContent);
+    if (!candidate) return null;
+    const tryParse = (s) => {
+      try {
+        return JSON.parse(s);
+      } catch {
+        return null;
+      }
+    };
+    const direct = tryParse(candidate);
+    if (direct) return direct;
+    const relaxed = candidate.replace(/,\s*([}\]])/g, "$1");
+    return tryParse(relaxed);
+  }
   setStepHandler(handler) {
     this.onStep = handler;
   }
@@ -41372,17 +41416,17 @@ class AgentService {
     }
   }
   async chat(userMessage) {
-    var _a3;
     const tools = toolRegistry.toLangChainTools();
     let usedBrowserTools = false;
+    let parseFailures = 0;
     try {
       const messages = [
         new SystemMessage(`You are a helpful enterprise assistant integrated into a browser. 
         
         You have access to the following tools:
         ${tools.map((t2) => {
-          var _a4;
-          return `- ${t2.name}: ${t2.description} (Args: ${JSON.stringify(((_a4 = t2.schema) == null ? void 0 : _a4.shape) || {})})`;
+          var _a3;
+          return `- ${t2.name}: ${t2.description} (Args: ${JSON.stringify(((_a3 = t2.schema) == null ? void 0 : _a3.shape) || {})})`;
         }).join("\n")}
 
         CRITICAL INSTRUCTIONS:
@@ -41402,6 +41446,7 @@ class AgentService {
         VERIFICATION RULE (IMPORTANT):
         - Do NOT claim you created/updated anything in the UI unless you have verified it.
         - After performing an action like "Create", ALWAYS call "browser_wait_for_text" or "browser_find_text" for the expected title/name and confirm it appears on the page.
+        - If the user asked for a specific status/column (e.g. "In Progress") and you have "browser_wait_for_text_in", verify the item appears inside the correct column container.
 
         BROWSER AUTOMATION STRATEGY:
         - You have no eyes. You must use "browser_observe" to see the page.
@@ -41420,27 +41465,51 @@ class AgentService {
         `),
         new HumanMessage(userMessage)
       ];
-      for (let i = 0; i < 15; i++) {
+      for (let i = 0; i < 25; i++) {
         const response = await this.model.invoke(messages);
         const content = response.content;
         console.log(`[Agent Turn ${i}] Raw Response:`, content);
-        let action;
-        try {
-          const cleanContent = content.replace(/```json/g, "").replace(/```/g, "").trim();
-          action = JSON.parse(cleanContent);
-          if (action.tool !== "final_response") {
-            this.emitStep("thought", `Decided to call ${action.tool}`);
-          }
-        } catch (e) {
+        const action = this.parseToolCall(content);
+        if (!action || typeof action.tool !== "string" || typeof action.args !== "object") {
+          parseFailures++;
+          const snippet = String(content).slice(0, 600);
+          this.emitStep("observation", `Model output was not valid tool JSON (attempt ${parseFailures}).`, {
+            snippet
+          });
           console.warn("Failed to parse JSON response:", content);
           messages.push(response);
-          messages.push(new SystemMessage("Error: You must output valid JSON. Please try again using the specified format."));
+          messages.push(
+            new SystemMessage(
+              `Error: You must output valid JSON ONLY in the exact format. No prose. No markdown.
+Reminder format:
+{"tool":"tool_name","args":{}}
+If you are done:
+{"tool":"final_response","args":{"message":"..."}}`
+            )
+          );
+          if (parseFailures >= 6) {
+            return "The model repeatedly returned invalid tool-calling JSON, so I stopped. Try again; if it persists, switch models or reduce the request. Latest raw model output snippet:\n" + snippet;
+          }
           continue;
         }
+        if (action.tool !== "final_response") {
+          this.emitStep("thought", `Decided to call ${action.tool}`);
+        }
         if (action.tool === "final_response") {
+          const finalArgs = action.args;
+          const finalMessage = typeof (finalArgs == null ? void 0 : finalArgs.message) === "string" ? finalArgs.message : "";
+          if (!finalMessage) {
+            messages.push(response);
+            messages.push(
+              new SystemMessage(
+                'Error: final_response must include args.message as a string. Example: {"tool":"final_response","args":{"message":"..."}}'
+              )
+            );
+            continue;
+          }
           if (usedBrowserTools) {
             const last = messages.slice(-8).map((m) => m.content ?? "").join("\n");
-            const claimedSuccess = typeof ((_a3 = action == null ? void 0 : action.args) == null ? void 0 : _a3.message) === "string" && /\b(created|created a|successfully|done|completed)\b/i.test(action.args.message);
+            const claimedSuccess = /\b(created|created a|successfully|done|completed)\b/i.test(finalMessage);
             if (claimedSuccess && !/\bFound text:\b|\b\"found\":\s*[1-9]\d*\b/i.test(last)) {
               messages.push(response);
               messages.push(
@@ -41451,7 +41520,7 @@ class AgentService {
               continue;
             }
           }
-          return action.args.message;
+          return finalMessage;
         }
         const tool2 = tools.find((t2) => t2.name === action.tool);
         if (tool2) {
@@ -41475,7 +41544,7 @@ ${result}`));
           messages.push(new SystemMessage(`Error: Tool '${action.tool}' not found. Available tools: ${tools.map((t2) => t2.name).join(", ")}`));
         }
       }
-      return "I completed the actions, but reached the maximum number of steps.";
+      return "I could not complete the task within the maximum number of steps. Try simplifying the request or check the browser is in the expected state.";
     } catch (error) {
       console.error("Error in AgentService chat:", error);
       return "Sorry, I encountered an error while processing your request.";
@@ -42266,6 +42335,75 @@ class BrowserAutomationService {
         return `Did not find text within ${timeout}ms: ${JSON.stringify(text)}`;
       }
     };
+    const waitForTextInTool = {
+      name: "browser_wait_for_text_in",
+      description: "Wait until text appears within a specific container selector (case-insensitive).",
+      schema: object({
+        selector: string().describe("CSS selector for the container"),
+        text: string().describe("Text to wait for"),
+        timeoutMs: number().optional().describe("Timeout in ms (default 5000)")
+      }),
+      execute: async ({
+        selector,
+        text,
+        timeoutMs
+      }) => {
+        const target = await this.getTarget();
+        const startedAt = Date.now();
+        const timeout = timeoutMs ?? 5e3;
+        const needle = text.toLowerCase();
+        while (Date.now() - startedAt < timeout) {
+          const found = await target.executeJavaScript(
+            `(() => {
+              const root = document.querySelector(${JSON.stringify(selector)});
+              if (!root) return false;
+              const text = (root.innerText || '').toLowerCase();
+              return text.includes(${JSON.stringify(needle)});
+            })()`,
+            true
+          );
+          if (found) return `Found text in ${selector}: ${JSON.stringify(text)}`;
+          await this.delay(150);
+        }
+        return `Did not find text in ${selector} within ${timeout}ms: ${JSON.stringify(text)}`;
+      }
+    };
+    const selectTool = {
+      name: "browser_select",
+      description: "Set the value of a <select> element.",
+      schema: object({
+        selector: string().describe("CSS selector of the select element"),
+        value: string().describe("Option value to set")
+      }),
+      execute: async ({ selector, value }) => {
+        try {
+          const target = await this.getTarget();
+          const matches = await this.querySelectorCount(target, selector);
+          if (matches > 1) {
+            return `Refusing to select on non-unique selector (matches=${matches}): ${selector}`;
+          }
+          await this.waitForSelector(target, selector, 5e3);
+          const selected = await target.executeJavaScript(
+            `(() => {
+              const el = document.querySelector(${JSON.stringify(selector)});
+              if (!el) throw new Error('Element not found');
+              const tag = el.tagName?.toLowerCase?.();
+              if (tag !== 'select') throw new Error('Element is not a <select>');
+              const isDisabled = Boolean(el.disabled) || el.getAttribute?.('aria-disabled') === 'true';
+              if (isDisabled) throw new Error('Element is disabled');
+              el.value = ${JSON.stringify(value)};
+              el.dispatchEvent(new Event('input', { bubbles: true }));
+              el.dispatchEvent(new Event('change', { bubbles: true }));
+              return String(el.value ?? '');
+            })()`,
+            true
+          );
+          return `Selected value ${JSON.stringify(selected)} on ${selector}`;
+        } catch (e) {
+          return `Failed to select on ${selector}: ${e.message}`;
+        }
+      }
+    };
     toolRegistry.register(observeTool);
     toolRegistry.register(navigateTool);
     toolRegistry.register(clickTool);
@@ -42274,6 +42412,8 @@ class BrowserAutomationService {
     toolRegistry.register(screenshotTool);
     toolRegistry.register(findTextTool);
     toolRegistry.register(waitForTextTool);
+    toolRegistry.register(waitForTextInTool);
+    toolRegistry.register(selectTool);
   }
 }
 new BrowserAutomationService();
