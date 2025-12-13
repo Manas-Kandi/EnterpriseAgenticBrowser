@@ -41498,6 +41498,15 @@ class AgentService {
         - After performing an action like "Create", ALWAYS call "browser_wait_for_text" or "browser_find_text" for the expected title/name and confirm it appears on the page.
         - If the user asked for a specific status/column (e.g. "In Progress") and you have "browser_wait_for_text_in", verify the item appears inside the correct column container.
 
+        WHITE-BOX MOCK SaaS MODE (mock-saas):
+        - When the task targets the local Mock SaaS (e.g. URLs like http://localhost:3000/* or apps like Jira/Confluence/Trello in this repo), you should use code tools to avoid guessing:
+          1) Identify likely page/feature (route/component).
+          2) Search code in mock-saas/src using "code_search" (fastest) or "code_list_files".
+          3) Read the relevant files with "code_read_file" to extract stable selectors (data-testid), required inputs, disabled/validation logic, and which UI elements change.
+          4) Execute precise browser actions using those selectors (prefer data-testid selectors without quotes, e.g. [data-testid=jira-summary-input]).
+          5) Verify via browser_wait_for_text(_in) / browser_observe(main) / browser_extract_main_text.
+        - Code tools are restricted to mock-saas/src. Do not ask for other filesystem access.
+
         BROWSER AUTOMATION STRATEGY:
         - You have no eyes. You must use "browser_observe" to see the page.
         - Step 1: ALWAYS call "browser_navigate" to the target URL.
@@ -41772,6 +41781,235 @@ class BrowserTargetService {
   }
 }
 const browserTargetService = new BrowserTargetService();
+const MAX_FILES_DEFAULT = 2e3;
+const MAX_FILE_BYTES_DEFAULT = 2e5;
+const IGNORE_DIRS = /* @__PURE__ */ new Set([
+  "node_modules",
+  ".git",
+  "dist",
+  "build",
+  ".next",
+  ".turbo",
+  ".cache"
+]);
+const isPathInside = (child, parent) => {
+  const rel = path$2.relative(parent, child);
+  return rel === "" || !rel.startsWith(".." + path$2.sep) && rel !== "..";
+};
+class CodeReaderService {
+  constructor() {
+    __publicField(this, "mockSaasSrcRoot", null);
+    __publicField(this, "mockSaasSrcRootReal", null);
+    this.registerTools();
+  }
+  async pathExists(p) {
+    try {
+      await fs$1.stat(p);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  async getMockSaasSrcRoot() {
+    if (this.mockSaasSrcRoot && this.mockSaasSrcRootReal) {
+      return { root: this.mockSaasSrcRoot, rootReal: this.mockSaasSrcRootReal };
+    }
+    const candidates = [];
+    candidates.push(process.cwd());
+    candidates.push(path$2.dirname(process.cwd()));
+    candidates.push(path$2.dirname(path$2.dirname(process.cwd())));
+    try {
+      candidates.push(app.getAppPath());
+      candidates.push(path$2.dirname(app.getAppPath()));
+      candidates.push(path$2.dirname(path$2.dirname(app.getAppPath())));
+    } catch {
+    }
+    for (const base of candidates) {
+      const p = path$2.resolve(base, "mock-saas", "src");
+      if (await this.pathExists(p)) {
+        const real = await fs$1.realpath(p);
+        this.mockSaasSrcRoot = p;
+        this.mockSaasSrcRootReal = real;
+        return { root: p, rootReal: real };
+      }
+    }
+    throw new Error(
+      "mock-saas/src not found. This white-box tool only works when the repo contains mock-saas/src."
+    );
+  }
+  normalizeUserPath(inputPath) {
+    const p = inputPath.replace(/\\/g, "/").trim();
+    const stripped = p.replace(/^(\.\/)+/, "").replace(/^\/+/, "").replace(/^mock-saas\/src\//, "").replace(/^mock-saas\//, "").replace(/^src\//, "");
+    return stripped;
+  }
+  async resolvePathWithinMockSaasSrc(inputPath) {
+    const { rootReal } = await this.getMockSaasSrcRoot();
+    const rel = this.normalizeUserPath(inputPath);
+    const resolved = path$2.resolve(rootReal, rel);
+    if (!isPathInside(resolved, rootReal)) {
+      throw new Error("Path escapes mock-saas/src. Access denied.");
+    }
+    return resolved;
+  }
+  async listFilesRecursive(dir, maxFiles, out, baseReal) {
+    if (out.length >= maxFiles) return;
+    const entries = await fs$1.readdir(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (out.length >= maxFiles) return;
+      if (entry.name.startsWith(".")) continue;
+      if (IGNORE_DIRS.has(entry.name)) continue;
+      const full = path$2.join(dir, entry.name);
+      let real;
+      try {
+        real = await fs$1.realpath(full);
+      } catch {
+        continue;
+      }
+      if (!isPathInside(real, baseReal)) continue;
+      if (entry.isDirectory()) {
+        await this.listFilesRecursive(real, maxFiles, out, baseReal);
+      } else if (entry.isFile()) {
+        out.push(real);
+      }
+    }
+  }
+  registerTools() {
+    const listSchema = object({
+      dir: string().optional().describe('Directory within mock-saas/src to list (default: ".")'),
+      maxFiles: number().int().min(1).max(5e3).optional().describe("Max files to return (default 500)")
+    });
+    const listTool = {
+      name: "code_list_files",
+      description: "List files under mock-saas/src (white-box access). Ignores node_modules/dist. Returns paths relative to mock-saas/src.",
+      schema: listSchema,
+      execute: async (args) => {
+        const { dir, maxFiles } = listSchema.parse(args ?? {});
+        const { rootReal } = await this.getMockSaasSrcRoot();
+        const resolvedDir = await this.resolvePathWithinMockSaasSrc(dir ?? ".");
+        const filesReal = [];
+        await this.listFilesRecursive(resolvedDir, maxFiles ?? 500, filesReal, rootReal);
+        const files = filesReal.map((p) => path$2.relative(rootReal, p).replace(/\\/g, "/")).sort();
+        return JSON.stringify(
+          {
+            root: "mock-saas/src",
+            dir: (dir ?? ".").replace(/\\/g, "/"),
+            count: files.length,
+            files
+          },
+          null,
+          2
+        );
+      }
+    };
+    const readSchema = object({
+      path: string().describe('File path within mock-saas/src (e.g. "pages/jira/JiraPage.tsx")'),
+      startLine: number().int().min(1).optional().describe("Start line (1-based)"),
+      maxLines: number().int().min(1).max(2e3).optional().describe("Max lines to return (default 200)"),
+      maxBytes: number().int().min(1).max(2e6).optional().describe("Max bytes to read (default 200k)")
+    });
+    const readTool = {
+      name: "code_read_file",
+      description: "Read a file from mock-saas/src (white-box access). Use this to discover data-testid selectors and UI state logic.",
+      schema: readSchema,
+      execute: async (args) => {
+        const { path: filePath, startLine, maxLines, maxBytes } = readSchema.parse(args);
+        const { rootReal } = await this.getMockSaasSrcRoot();
+        const resolved = await this.resolvePathWithinMockSaasSrc(filePath);
+        const stat = await fs$1.stat(resolved);
+        if (!stat.isFile()) throw new Error("Not a file.");
+        if (stat.size > (maxBytes ?? MAX_FILE_BYTES_DEFAULT)) {
+          throw new Error(
+            `File too large (${stat.size} bytes). Increase maxBytes (<=2,000,000) or read a smaller file.`
+          );
+        }
+        const raw = await fs$1.readFile(resolved, "utf8");
+        const lines = raw.split(/\r?\n/);
+        const totalLines = lines.length;
+        const start = Math.max(1, startLine ?? 1);
+        const max = maxLines ?? 200;
+        const end = Math.min(totalLines, start + max - 1);
+        const content = lines.slice(start - 1, end).join("\n");
+        return JSON.stringify(
+          {
+            root: "mock-saas/src",
+            path: path$2.relative(rootReal, resolved).replace(/\\/g, "/"),
+            totalLines,
+            startLine: start,
+            endLine: end,
+            content
+          },
+          null,
+          2
+        );
+      }
+    };
+    const searchSchema = object({
+      query: string().min(1).describe("Text to search for"),
+      dir: string().optional().describe('Directory within mock-saas/src to search (default ".")'),
+      maxResults: number().int().min(1).max(200).optional().describe("Max matches to return (default 20)"),
+      caseSensitive: boolean().optional().describe("Case-sensitive search (default false)"),
+      maxFiles: number().int().min(1).max(5e3).optional().describe("Max files to scan (default 2000)")
+    });
+    const searchTool = {
+      name: "code_search",
+      description: "Search for text within mock-saas/src (white-box access). Returns file/line previews to quickly find relevant components.",
+      schema: searchSchema,
+      execute: async (args) => {
+        const { query, dir, maxResults, caseSensitive, maxFiles } = searchSchema.parse(args);
+        const { rootReal } = await this.getMockSaasSrcRoot();
+        const resolvedDir = await this.resolvePathWithinMockSaasSrc(dir ?? ".");
+        const filesReal = [];
+        await this.listFilesRecursive(resolvedDir, maxFiles ?? MAX_FILES_DEFAULT, filesReal, rootReal);
+        const needle = caseSensitive ? query : query.toLowerCase();
+        const limit2 = maxResults ?? 20;
+        const matches = [];
+        for (const fileReal of filesReal) {
+          if (matches.length >= limit2) break;
+          let stat;
+          try {
+            stat = await fs$1.stat(fileReal);
+          } catch {
+            continue;
+          }
+          if (!stat.isFile()) continue;
+          if (stat.size > MAX_FILE_BYTES_DEFAULT * 2) continue;
+          let raw;
+          try {
+            raw = await fs$1.readFile(fileReal, "utf8");
+          } catch {
+            continue;
+          }
+          const lines = raw.split(/\r?\n/);
+          for (let i = 0; i < lines.length; i++) {
+            if (matches.length >= limit2) break;
+            const hay = caseSensitive ? lines[i] : lines[i].toLowerCase();
+            if (!hay.includes(needle)) continue;
+            matches.push({
+              path: path$2.relative(rootReal, fileReal).replace(/\\/g, "/"),
+              line: i + 1,
+              preview: lines[i].trim().slice(0, 200)
+            });
+          }
+        }
+        return JSON.stringify(
+          {
+            root: "mock-saas/src",
+            dir: (dir ?? ".").replace(/\\/g, "/"),
+            query,
+            count: matches.length,
+            matches
+          },
+          null,
+          2
+        );
+      }
+    };
+    toolRegistry.register(listTool);
+    toolRegistry.register(readTool);
+    toolRegistry.register(searchTool);
+  }
+}
+new CodeReaderService();
 class MockJiraConnector {
   constructor() {
     __publicField(this, "issues", [

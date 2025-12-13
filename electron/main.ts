@@ -6,6 +6,7 @@ import { agentService } from './services/AgentService'
 import { auditService } from './services/AuditService'
 import { toolRegistry } from './services/ToolRegistry'
 import { browserTargetService } from './services/BrowserTargetService'
+import './services/CodeReaderService'
 import './integrations/mock/MockJiraConnector'; // Initialize Mock Jira
 import './integrations/mock/MockConfluenceConnector'; // Initialize Mock Confluence
 import './integrations/mock/MockTrelloConnector'; // Initialize Mock Trello
