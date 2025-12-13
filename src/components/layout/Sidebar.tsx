@@ -5,6 +5,8 @@ import { MessageSquare, ChevronLeft, ChevronRight, Settings, Send, User, Bot, Al
 interface Message {
   role: 'user' | 'assistant';
   content: string;
+  type?: 'text' | 'thought' | 'action' | 'observation';
+  metadata?: any;
 }
 
 interface ApprovalRequest {
@@ -23,6 +25,15 @@ export function Sidebar() {
     // Listen for approval requests
     window.agent.onApprovalRequest((toolName, args) => {
       setApprovalRequest({ toolName, args });
+    });
+    // Listen for agent steps
+    window.agent.onStep((step: any) => {
+        setMessages(prev => [...prev, { 
+            role: 'assistant', 
+            content: step.content,
+            type: step.type,
+            metadata: step.metadata
+        }]);
     });
   }, []);
 
@@ -85,13 +96,26 @@ export function Sidebar() {
             messages.map((msg, i) => (
                 <div key={i} className={cn("flex gap-2", msg.role === 'user' ? "flex-row-reverse" : "")}>
                     <div className={cn("w-8 h-8 rounded-full flex items-center justify-center shrink-0", 
-                        msg.role === 'user' ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground")}>
+                        msg.role === 'user' ? "bg-primary text-primary-foreground" : 
+                        msg.type === 'thought' ? "bg-amber-100 text-amber-600" :
+                        msg.type === 'action' ? "bg-blue-100 text-blue-600" :
+                        msg.type === 'observation' ? "bg-slate-100 text-slate-600" :
+                        "bg-muted text-muted-foreground")}>
                         {msg.role === 'user' ? <User size={16} /> : <Bot size={16} />}
                     </div>
                     {!collapsed && (
-                        <div className={cn("rounded-lg p-3 text-sm max-w-[80%]", 
-                            msg.role === 'user' ? "bg-primary text-primary-foreground" : "bg-muted")}>
-                            {msg.content}
+                        <div className={cn("rounded-lg p-3 text-sm max-w-[80%] overflow-hidden", 
+                            msg.role === 'user' ? "bg-primary text-primary-foreground" : 
+                            msg.type === 'thought' ? "bg-amber-50 border border-amber-100 text-amber-800 italic" :
+                            msg.type === 'action' ? "bg-blue-50 border border-blue-100 text-blue-800 font-mono text-xs" :
+                            msg.type === 'observation' ? "bg-slate-50 border border-slate-100 text-slate-600 font-mono text-xs" :
+                            "bg-muted")}>
+                            {msg.type === 'observation' ? (
+                                <details>
+                                    <summary className="cursor-pointer hover:underline">View Output</summary>
+                                    <div className="mt-2 whitespace-pre-wrap">{msg.content}</div>
+                                </details>
+                            ) : msg.content}
                         </div>
                     )}
                 </div>

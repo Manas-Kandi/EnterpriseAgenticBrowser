@@ -25,17 +25,21 @@ export class BrowserAutomationService {
         console.log(`Found ${pages.length} pages via CDP.`);
         pages.forEach((p, i) => console.log(`Page ${i}: ${p.url()}`));
 
-        // Heuristic: The main window is usually "http://localhost:5173/..." (or file:// in prod)
-        // The webviews will have "about:blank" initially or the actual target URL.
-        // We want the last page that looks like a webview.
-        // For now, let's pick the last page, but log it clearly.
+        // Filter out the main application window to avoid hijacking the UI
+        // Main window usually runs on port 5173 (dev) or is loaded from file:// (prod)
+        const targets = pages.filter(p => {
+            const url = p.url();
+            return !url.includes('localhost:5173') && !url.includes('app.asar') && !url.endsWith('index.html');
+        });
         
-        if (pages.length > 0) {
+        console.log(`Found ${targets.length} valid targets (excluding main window).`);
+
+        if (targets.length > 0) {
             // In many electron apps, the webview is the last attached target
-            this.page = pages[pages.length - 1]; 
+            this.page = targets[targets.length - 1]; 
             console.log(`Attached to page: ${this.page.url()}`);
         } else {
-            console.warn('No pages found in CDP context. Creating a new page (this may open a separate window).');
+            console.warn('No valid pages found in CDP context. Creating a new page (this may open a separate window).');
             this.page = await this.browser.newPage();
         }
       } catch (e) {

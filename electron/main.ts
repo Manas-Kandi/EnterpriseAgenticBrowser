@@ -116,6 +116,11 @@ app.whenReady().then(() => {
         });
     });
 
+    // Set up Step Handler
+    agentService.setStepHandler((step) => {
+        event.sender.send('agent:step', step);
+    });
+
     const response = await agentService.chat(message);
     
     // Log Agent Response

@@ -35,4 +35,7 @@ contextBridge.exposeInMainWorld('agent', {
     ipcRenderer.on('agent:request-approval', (_, { toolName, args }) => callback(toolName, args));
   },
   respondApproval: (toolName: string, approved: boolean) => ipcRenderer.send('agent:approval-response', { toolName, approved }),
+  onStep: (callback: (step: any) => void) => {
+    ipcRenderer.on('agent:step', (_, step) => callback(step));
+  },
 })

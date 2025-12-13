@@ -41045,6 +41045,7 @@ dotenv.config();
 class AgentService {
   constructor() {
     __publicField(this, "model");
+    __publicField(this, "onStep");
     const apiKey = process.env.NVIDIA_API_KEY;
     if (!apiKey) {
       console.warn("NVIDIA_API_KEY is not set in environment variables");
@@ -41061,6 +41062,14 @@ class AgentService {
       modelKwargs: { "response_format": { "type": "json_object" } }
     });
     this.model = chatModel;
+  }
+  setStepHandler(handler) {
+    this.onStep = handler;
+  }
+  emitStep(type, content, metadata) {
+    if (this.onStep) {
+      this.onStep({ type, content, metadata });
+    }
   }
   async chat(userMessage) {
     const tools = toolRegistry.toLangChainTools();
@@ -41110,6 +41119,9 @@ class AgentService {
         try {
           const cleanContent = content.replace(/```json/g, "").replace(/```/g, "").trim();
           action = JSON.parse(cleanContent);
+          if (action.tool !== "final_response") {
+            this.emitStep("thought", `Decided to call ${action.tool}`);
+          }
         } catch (e) {
           console.warn("Failed to parse JSON response:", content);
           messages.push(response);
@@ -41122,8 +41134,10 @@ class AgentService {
         const tool2 = tools.find((t2) => t2.name === action.tool);
         if (tool2) {
           console.log(`Executing tool: ${tool2.name} with args:`, action.args);
+          this.emitStep("action", `Executing ${tool2.name}`, { tool: tool2.name, args: action.args });
           try {
             const result = await tool2.invoke(action.args);
+            this.emitStep("observation", `Tool Output: ${result}`, { tool: tool2.name, result });
             messages.push(new AIMessage(content));
             messages.push(new HumanMessage(`Tool '${action.tool}' Output: ${result}`));
           } catch (err) {
@@ -41539,11 +41553,16 @@ class BrowserAutomationService {
         const pages = contexts[0].pages();
         console.log(`Found ${pages.length} pages via CDP.`);
         pages.forEach((p, i) => console.log(`Page ${i}: ${p.url()}`));
-        if (pages.length > 0) {
-          this.page = pages[pages.length - 1];
+        const targets = pages.filter((p) => {
+          const url = p.url();
+          return !url.includes("localhost:5173") && !url.includes("app.asar") && !url.endsWith("index.html");
+        });
+        console.log(`Found ${targets.length} valid targets (excluding main window).`);
+        if (targets.length > 0) {
+          this.page = targets[targets.length - 1];
           console.log(`Attached to page: ${this.page.url()}`);
         } else {
-          console.warn("No pages found in CDP context. Creating a new page (this may open a separate window).");
+          console.warn("No valid pages found in CDP context. Creating a new page (this may open a separate window).");
           this.page = await this.browser.newPage();
         }
       } catch (e) {
@@ -41746,6 +41765,9 @@ app.whenReady().then(() => {
           }
         });
       });
+    });
+    agentService.setStepHandler((step) => {
+      event.sender.send("agent:step", step);
     });
     const response = await agentService.chat(message);
     await auditService.log({

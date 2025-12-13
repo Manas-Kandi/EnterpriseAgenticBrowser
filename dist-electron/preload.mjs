@@ -30,5 +30,8 @@ electron.contextBridge.exposeInMainWorld("agent", {
   onApprovalRequest: (callback) => {
     electron.ipcRenderer.on("agent:request-approval", (_, { toolName, args }) => callback(toolName, args));
   },
-  respondApproval: (toolName, approved) => electron.ipcRenderer.send("agent:approval-response", { toolName, approved })
+  respondApproval: (toolName, approved) => electron.ipcRenderer.send("agent:approval-response", { toolName, approved }),
+  onStep: (callback) => {
+    electron.ipcRenderer.on("agent:step", (_, step) => callback(step));
+  }
 });

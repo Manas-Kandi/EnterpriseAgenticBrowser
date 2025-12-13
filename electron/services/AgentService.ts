@@ -7,8 +7,15 @@ import { toolRegistry } from './ToolRegistry';
 
 dotenv.config();
 
+export type AgentStep = {
+    type: 'thought' | 'action' | 'observation';
+    content: string;
+    metadata?: any;
+};
+
 export class AgentService {
   private model: Runnable;
+  private onStep?: (step: AgentStep) => void;
 
   constructor() {
     const apiKey = process.env.NVIDIA_API_KEY;
@@ -32,6 +39,16 @@ export class AgentService {
     });
 
     this.model = chatModel;
+  }
+
+  setStepHandler(handler: (step: AgentStep) => void) {
+      this.onStep = handler;
+  }
+
+  private emitStep(type: AgentStep['type'], content: string, metadata?: any) {
+      if (this.onStep) {
+          this.onStep({ type, content, metadata });
+      }
   }
 
   async chat(userMessage: string): Promise<string> {
@@ -84,12 +101,19 @@ export class AgentService {
         
         // Log raw response for debugging
         console.log(`[Agent Turn ${i}] Raw Response:`, content);
-
+        
         let action;
         try {
             // Try to parse JSON. Llama might wrap it in markdown ```json ... ```
             const cleanContent = content.replace(/```json/g, '').replace(/```/g, '').trim();
             action = JSON.parse(cleanContent);
+            
+            // Emit thought if present in the JSON (optional) or just the raw content as thought
+            // Ideally we'd parse out a "thought" field if we asked for it. 
+            // For now, let's treat the tool call intention as a thought.
+            if (action.tool !== 'final_response') {
+                this.emitStep('thought', `Decided to call ${action.tool}`);
+            }
         } catch (e) {
             console.warn("Failed to parse JSON response:", content);
             // If parse fails, maybe the model is just talking. 
@@ -109,9 +133,12 @@ export class AgentService {
         const tool = tools.find((t: any) => t.name === action.tool);
         if (tool) {
             console.log(`Executing tool: ${tool.name} with args:`, action.args);
+            this.emitStep('action', `Executing ${tool.name}`, { tool: tool.name, args: action.args });
+            
             try {
                 // Execute tool
                 const result = await tool.invoke(action.args);
+                this.emitStep('observation', `Tool Output: ${result}`, { tool: tool.name, result });
                 
                 // Add interaction to history
                 // We add the assistant's JSON response
