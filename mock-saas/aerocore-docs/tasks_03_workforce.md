@@ -41,11 +41,11 @@
 - [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 5: Implement "Cert Renewal" Workflow
-- [ ] Add action "Renew Certification" for a user.
-- [ ] Modal: Select Cert, Enter New Expiry Date.
-- [ ] Update user in Global Store.
-- [ ] Run a comprehensive review of the implementation and make sure it is ok.
-- [ ] Write a clear comprehensive commit message, git commit and push.
+- [x] Add action "Renew Certification" for a user.
+- [x] Modal: Select Cert, Enter New Expiry Date.
+- [x] Update user in Global Store.
+- [x] Run a comprehensive review of the implementation and make sure it is ok.
+- [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 6: Implement "On-Duty" Toggle
 - [ ] Add a master switch for each user to mark them "On Duty" or "Off Duty".

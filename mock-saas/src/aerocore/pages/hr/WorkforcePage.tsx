@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { useAero } from '../../lib/store';
-import { Users, UserCheck, Calendar, Clock, Shield, Plane, Radio, Briefcase, Check, AlertTriangle } from 'lucide-react';
+import { Users, UserCheck, Calendar, Clock, Shield, Plane, Radio, Briefcase, Check, AlertTriangle, RefreshCw } from 'lucide-react';
+import { RenewCertModal } from './RenewCertModal';
+import type { User } from '../../lib/types';
 
 export function WorkforcePage() {
   const { state } = useAero();
@@ -8,6 +10,10 @@ export function WorkforcePage() {
   
   // Local state for shift scheduler (overrides mock defaults)
   const [schedule, setSchedule] = useState<Record<string, string>>({});
+
+  // State for Cert Renewal Modal
+  const [renewModalOpen, setRenewModalOpen] = useState(false);
+  const [selectedUser, setSelectedUser] = useState<User | null>(null);
 
   const personnel = users.filter(u => u.role !== 'Admin');
   const pilots = users.filter(u => u.role === 'Pilot');
@@ -38,6 +44,11 @@ export function WorkforcePage() {
   const isCertExpired = (expiry?: string) => {
       if (!expiry) return false;
       return new Date(expiry) < new Date();
+  };
+
+  const handleRenewClick = (user: User) => {
+      setSelectedUser(user);
+      setRenewModalOpen(true);
   };
   
   return (
@@ -165,6 +176,7 @@ export function WorkforcePage() {
                     <tbody className="divide-y divide-slate-800">
                         {personnel.map((user) => {
                             const expired = isCertExpired(user.certExpiry);
+                            const hasCerts = user.certifications && user.certifications.length > 0;
                             return (
                                 <tr key={user.id} className="hover:bg-slate-800/50 transition-colors" data-testid={`hr-user-row-${user.id}`}>
                                     <td className="px-6 py-4">
@@ -213,9 +225,25 @@ export function WorkforcePage() {
                                         </div>
                                     </td>
                                     <td className="px-6 py-4 text-right">
-                                        <button className="text-slate-400 hover:text-white text-xs font-medium transition-colors">
-                                            Manage
-                                        </button>
+                                        <div className="flex items-center justify-end gap-2">
+                                            {hasCerts && (
+                                                <button 
+                                                    onClick={() => handleRenewClick(user)}
+                                                    data-testid={`renew-btn-${user.id}`}
+                                                    className={`text-xs font-medium transition-colors flex items-center gap-1 px-2 py-1 rounded border ${
+                                                        expired 
+                                                            ? "text-emerald-400 hover:text-emerald-300 bg-emerald-500/10 border-emerald-500/20" 
+                                                            : "text-slate-400 hover:text-sky-400 bg-slate-800 border-slate-700"
+                                                    }`}
+                                                >
+                                                    <RefreshCw size={12} />
+                                                    Renew
+                                                </button>
+                                            )}
+                                            <button className="text-slate-400 hover:text-white text-xs font-medium transition-colors">
+                                                Manage
+                                            </button>
+                                        </div>
                                     </td>
                                 </tr>
                             );
@@ -224,6 +252,12 @@ export function WorkforcePage() {
                 </table>
             </div>
         </div>
+
+        <RenewCertModal 
+            isOpen={renewModalOpen} 
+            onClose={() => setRenewModalOpen(false)} 
+            user={selectedUser} 
+        />
     </div>
   );
 }
