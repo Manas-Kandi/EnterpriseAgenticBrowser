@@ -1,4 +1,4 @@
-import { Shield, Camera, AlertTriangle, CheckCircle } from 'lucide-react';
+import { Shield } from 'lucide-react';
 
 export function SecurityPage() {
   return (

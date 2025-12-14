@@ -20,14 +20,15 @@ export function CargoPage() {
         <div>
           <h2 className="text-xl font-bold tracking-tight text-white">CargoFlow Logistics</h2>
           <p className="text-slate-400 text-sm mt-1">Manage global shipments and supply chain.</p>
-                    <Package size={14} /> Systems Online
-                </span>
-            </div>
+          <span className="inline-flex items-center gap-2 text-xs text-green-400 mt-2">
+            <Package size={14} /> Systems Online
+          </span>
         </div>
+      </div>
 
-        <div className="bg-slate-900 border border-slate-800 p-10 rounded-lg text-center">
-            <p className="text-slate-400">CargoFlow Dashboard Initialized</p>
-        </div>
+      <div className="bg-slate-900 border border-slate-800 p-10 rounded-lg text-center">
+        <p className="text-slate-400">CargoFlow Dashboard Initialized</p>
+      </div>
     </div>
   );
 }

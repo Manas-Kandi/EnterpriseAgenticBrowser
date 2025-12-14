@@ -201,10 +201,13 @@ export function ShipmentDetailPanel({ shipment, onClose }: ShipmentDetailPanelPr
             {/* Actions Footer */}
             <div className="p-4 bg-slate-950 border-t border-slate-800">
                  <button 
-                    disabled
-                    className="w-full bg-slate-800 text-slate-500 py-2 rounded font-medium text-sm cursor-not-allowed"
+                    onClick={handleDispatch}
+                    disabled={isDispatching || shipment.status !== 'Pending'}
+                    data-testid="cargo-dispatch-btn"
+                    className="w-full bg-sky-600 hover:bg-sky-500 text-white py-2 rounded font-medium text-sm transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                    <Truck size={16} className="inline mr-2" /> Dispatch Options
+                    {isDispatching ? <Loader2 size={16} className="animate-spin" /> : <Truck size={16} />}
+                    {isDispatching ? 'Dispatching Drone...' : 'Dispatch to Drone'}
                 </button>
             </div>
         </div>
