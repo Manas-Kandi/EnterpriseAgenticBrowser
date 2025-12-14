@@ -1,6 +1,7 @@
 import { useAero } from '../../lib/store';
 import { Radio } from 'lucide-react';
 import { IncidentMap } from './IncidentMap';
+import { IncidentList } from './IncidentList';
 
 export function DispatchPage() {
   const { state } = useAero();
@@ -44,19 +45,29 @@ export function DispatchPage() {
             </div>
         </div>
 
-        <div className="bg-slate-900 border border-slate-800 rounded-lg overflow-hidden">
-            <div className="p-4 border-b border-slate-800 flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-slate-300 uppercase tracking-wide">Sector Map</h3>
-                <div className="flex gap-2">
-                     <span className="flex items-center gap-1.5 text-xs text-slate-500">
-                        <span className="w-2 h-2 rounded-full bg-rose-500"></span> Incident
-                     </span>
-                     <span className="flex items-center gap-1.5 text-xs text-slate-500">
-                        <span className="w-2 h-2 rounded-full bg-emerald-500"></span> Drone
-                     </span>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[600px]">
+            {/* Map Section */}
+            <div className="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-lg overflow-hidden flex flex-col">
+                <div className="p-4 border-b border-slate-800 flex items-center justify-between shrink-0">
+                    <h3 className="text-sm font-semibold text-slate-300 uppercase tracking-wide">Sector Map</h3>
+                    <div className="flex gap-2">
+                        <span className="flex items-center gap-1.5 text-xs text-slate-500">
+                            <span className="w-2 h-2 rounded-full bg-rose-500"></span> Incident
+                        </span>
+                        <span className="flex items-center gap-1.5 text-xs text-slate-500">
+                            <span className="w-2 h-2 rounded-full bg-emerald-500"></span> Drone
+                        </span>
+                    </div>
+                </div>
+                <div className="flex-1 relative min-h-0">
+                    <IncidentMap />
                 </div>
             </div>
-            <IncidentMap />
+
+            {/* Incident List Section */}
+            <div className="lg:col-span-1 h-full min-h-0">
+                <IncidentList />
+            </div>
         </div>
     </div>
   );

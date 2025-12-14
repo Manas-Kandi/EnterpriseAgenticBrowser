@@ -22,7 +22,7 @@ export function IncidentMap() {
     const { state } = useAero();
 
     return (
-        <div className="bg-slate-950 border border-slate-800 rounded-lg overflow-hidden relative h-[500px] w-full group">
+        <div className="relative h-full w-full group bg-slate-950/50">
             {/* Grid Background Pattern */}
             <div className="absolute inset-0 opacity-20" 
                 style={{

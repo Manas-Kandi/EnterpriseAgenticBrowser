@@ -26,12 +26,12 @@
 - [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 3: Implement "Active Incidents" List
-- [ ] Create `IncidentList.tsx` component.
-- [ ] Connect to `GlobalStore` to fetch `state.incidents`.
-- [ ] Render incidents in a `DataGrid` (refer to Design System).
-- [ ] Add `data-testid="dispatch-incident-row-[id]"` for agent accessibility.
-- [ ] Run a comprehensive review of the implementation and make sure it is ok.
-- [ ] Write a clear comprehensive commit message, git commit and push.
+- [x] Create `IncidentList.tsx` component.
+- [x] Connect to `GlobalStore` to fetch `state.incidents`.
+- [x] Render incidents in a `DataGrid` (refer to Design System).
+- [x] Add `data-testid="dispatch-incident-row-[id]"` for agent accessibility.
+- [x] Run a comprehensive review of the implementation and make sure it is ok.
+- [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 4: Implement Incident Detail View
 - [ ] Create a "Slide-over" or "Right Panel" for viewing incident details when a row is clicked.
