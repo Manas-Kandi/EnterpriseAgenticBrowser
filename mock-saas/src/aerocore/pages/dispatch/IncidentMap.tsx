@@ -64,11 +64,12 @@ export function IncidentMap({ onSelectIncident }: IncidentMapProps) {
                             }`}></div>
                         )}
                         
-                        <div className={`relative p-1.5 rounded-full border-2 shadow-lg z-10 ${
-                            isCritical 
-                                ? 'bg-slate-900 border-rose-500 text-rose-500' 
-                                : 'bg-slate-900 border-amber-500 text-amber-500'
-                        }`}>
+                        <div className={`relative p-1.5 rounded-full border-2 shadow-lg z-10 transition-colors ${
+                                incident.status === 'Resolved' ? 'bg-slate-900 border-emerald-500 text-emerald-500' :
+                                isCritical 
+                                    ? 'bg-slate-900 border-rose-500 text-rose-500' 
+                                    : 'bg-slate-900 border-amber-500 text-amber-500'
+                            }`}>
                             {incident.type === 'Medical' ? <AlertCircle size={16} /> : <MapPin size={16} />}
                         </div>
                         

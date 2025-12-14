@@ -54,11 +54,11 @@
 - [ ] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 7: Implement "Add New Drone" Form
-- [ ] Create `AddDroneModal.tsx`.
-- [ ] Inputs: Model (Select), Base Location (Select).
-- [ ] Dispatch `ADD_DRONE` (need to add this action to Store reducer first).
-- [ ] Run a comprehensive review of the implementation and make sure it is ok.
-- [ ] Write a clear comprehensive commit message, git commit and push.
+- [x] Create `AddDroneModal.tsx`.
+- [x] Inputs: Model (Select), Base Location (Select).
+- [x] Dispatch `ADD_DRONE` (need to add this action to Store reducer first).
+- [x] Run a comprehensive review of the implementation and make sure it is ok.
+- [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 8: Implement "Inventory Stats" Dashboard
 - [ ] At top of page, show metric cards: "Total Fleet", "Ready to Fly", "In Maintenance".
