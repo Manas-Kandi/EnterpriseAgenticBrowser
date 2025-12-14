@@ -1,15 +1,25 @@
-import { Package } from 'lucide-react';
+import { useState } from 'react';
+import { Package, Truck, Clock, CheckCircle, AlertTriangle, Plus } from 'lucide-react';
+import { useAero } from '../../lib/store';
+import { CreateShipmentModal } from './CreateShipmentModal';
+import { ShipmentDetailPanel } from './ShipmentDetailPanel';
 
 export function CargoPage() {
+  const { state } = useAero();
+  const { shipments } = state;
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [selectedShipmentId, setSelectedShipmentId] = useState<string | null>(null);
+
+  const getStatusColor = (status: string) => {
+    // implementation of getStatusColor function is missing in the provided code edit
+  }
+
   return (
     <div className="space-y-6">
-        <div className="flex items-center justify-between">
-            <div>
-                <h2 className="text-xl font-bold tracking-tight text-white">CargoFlow Logistics</h2>
-                <p className="text-slate-400 text-sm mt-1">Manage global shipments and supply chain.</p>
-            </div>
-            <div className="flex items-center gap-2">
-                <span className="bg-sky-500/10 text-sky-400 border border-sky-500/20 px-3 py-1 rounded text-xs font-medium flex items-center gap-2">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-bold tracking-tight text-white">CargoFlow Logistics</h2>
+          <p className="text-slate-400 text-sm mt-1">Manage global shipments and supply chain.</p>
                     <Package size={14} /> Systems Online
                 </span>
             </div>
