@@ -26,12 +26,12 @@
 - [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 3: Implement "Shift Scheduler" UI
-- [ ] Create a visual "Calendar" or "Timeline" view (mocked).
-- [ ] Columns: Morning, Afternoon, Night.
-- [ ] Rows: Pilots.
-- [ ] Allow dragging/assigning a pilot to a slot (or clicking slot to assign).
-- [ ] Run a comprehensive review of the implementation and make sure it is ok.
-- [ ] Write a clear comprehensive commit message, git commit and push.
+- [x] Create a visual "Calendar" or "Timeline" view (mocked).
+- [x] Columns: Morning, Afternoon, Night.
+- [x] Rows: Pilots.
+- [x] Allow dragging/assigning a pilot to a slot (or clicking slot to assign).
+- [x] Run a comprehensive review of the implementation and make sure it is ok.
+- [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 4: Implement "Certification Tracker"
 - [ ] Extend `User` type in `types.ts` to include `certifications: string[]` and `certExpiry: string`.
