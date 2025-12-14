@@ -1,5 +1,6 @@
 import { useAero } from '../../lib/store';
-import { Radio, AlertTriangle } from 'lucide-react';
+import { Radio } from 'lucide-react';
+import { IncidentMap } from './IncidentMap';
 
 export function DispatchPage() {
   const { state } = useAero();
@@ -43,13 +44,19 @@ export function DispatchPage() {
             </div>
         </div>
 
-        {/* Content Placeholder */}
-        <div className="bg-slate-900 border border-slate-800 rounded-lg p-10 text-center">
-            <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-slate-800 text-slate-500 mb-4">
-                <AlertTriangle size={24} />
+        <div className="bg-slate-900 border border-slate-800 rounded-lg overflow-hidden">
+            <div className="p-4 border-b border-slate-800 flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-slate-300 uppercase tracking-wide">Sector Map</h3>
+                <div className="flex gap-2">
+                     <span className="flex items-center gap-1.5 text-xs text-slate-500">
+                        <span className="w-2 h-2 rounded-full bg-rose-500"></span> Incident
+                     </span>
+                     <span className="flex items-center gap-1.5 text-xs text-slate-500">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500"></span> Drone
+                     </span>
+                </div>
             </div>
-            <h3 className="text-white font-medium mb-1">Dispatch Map Initializing</h3>
-            <p className="text-slate-400 text-sm">Map visualization and unit controls will be loaded here.</p>
+            <IncidentMap />
         </div>
     </div>
   );

@@ -18,12 +18,12 @@
 - [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 2: Implement "Incident Map" Placeholder
-- [ ] Create `IncidentMap.tsx` component.
-- [ ] Style it as a large grid or canvas area representing a "Sector Map".
-- [ ] Add mock "Drone" and "Incident" markers (using absolute positioning or CSS Grid).
-- [ ] Ensure it fits the "Industrial Futurism" aesthetic (dark map, neon markers).
-- [ ] Run a comprehensive review of the implementation and make sure it is ok.
-- [ ] Write a clear comprehensive commit message, git commit and push.
+- [x] Create `IncidentMap.tsx` component.
+- [x] Style it as a large grid or canvas area representing a "Sector Map".
+- [x] Add mock "Drone" and "Incident" markers (using absolute positioning or CSS Grid).
+- [x] Ensure it fits the "Industrial Futurism" aesthetic (dark map, neon markers).
+- [x] Run a comprehensive review of the implementation and make sure it is ok.
+- [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 3: Implement "Active Incidents" List
 - [ ] Create `IncidentList.tsx` component.
