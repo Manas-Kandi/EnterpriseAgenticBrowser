@@ -73,8 +73,8 @@
 - [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 10: Final Review & Polish
-- [ ] Verify sorting by Battery Level works.
-- [ ] Verify filtering by Model works.
-- [ ] Check accessibility of all buttons for the Agent.
-- [ ] Run a comprehensive review of the implementation and make sure it is ok.
-- [ ] Write a clear comprehensive commit message, git commit and push.
+- [x] Verify sorting by Battery Level works.
+- [x] Verify filtering by Model works.
+- [x] Check accessibility of all buttons for the Agent.
+- [x] Run a comprehensive review of the implementation and make sure it is ok.
+- [x] Write a clear comprehensive commit message, git commit and push.

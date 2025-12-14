@@ -28,11 +28,33 @@ export function FleetPage() {
   const { state } = useAero();
   const navigate = useNavigate();
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [sortConfig, setSortConfig] = useState<{ key: keyof Drone; direction: 'asc' | 'desc' } | null>(null);
+  const [filterModel, setFilterModel] = useState<string>('All');
+
   const drones = state.drones;
   
   const totalCount = drones.length;
   const readyCount = drones.filter(d => d.status === 'Ready').length;
   const maintenanceCount = drones.filter(d => d.status === 'Maintenance').length;
+
+  const filteredDrones = drones.filter(d => filterModel === 'All' || d.model === filterModel);
+  const sortedDrones = [...filteredDrones].sort((a, b) => {
+    if (!sortConfig) return 0;
+    // Handle numeric vs string
+    const valA = a[sortConfig.key];
+    const valB = b[sortConfig.key];
+    
+    if (valA! < valB!) return sortConfig.direction === 'asc' ? -1 : 1;
+    if (valA! > valB!) return sortConfig.direction === 'asc' ? 1 : -1;
+    return 0;
+  });
+
+  const handleSort = (key: keyof Drone) => {
+    setSortConfig(current => ({
+        key,
+        direction: current?.key === key && current.direction === 'asc' ? 'desc' : 'asc'
+    }));
+  };
 
   const getStatusColor = (status: string) => {
     switch (status) {
