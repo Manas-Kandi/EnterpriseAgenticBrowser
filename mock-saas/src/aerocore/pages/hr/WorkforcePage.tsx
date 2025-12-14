@@ -1,15 +1,32 @@
 import { useState } from 'react';
 import { useAero } from '../../lib/store';
-import { Users, UserCheck, Calendar, Clock, Shield, Plane, Radio, Briefcase, Check, AlertTriangle, RefreshCw } from 'lucide-react';
+import { Users, UserCheck, Calendar, Clock, Shield, Plane, Radio, Briefcase, Check, AlertTriangle, RefreshCw, X, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { RenewCertModal } from './RenewCertModal';
 import type { User } from '../../lib/types';
+
+interface LeaveRequest {
+    id: string;
+    userId: string;
+    name: string;
+    type: 'Vacation' | 'Sick Leave' | 'Personal';
+    dates: string;
+    status: 'Pending' | 'Approved' | 'Rejected';
+}
+
+const INITIAL_REQUESTS: LeaveRequest[] = [
+    { id: 'lr1', userId: 'u3', name: 'Maverick', type: 'Vacation', dates: 'Nov 10 - Nov 20', status: 'Pending' },
+    { id: 'lr2', userId: 'u2', name: 'Sarah Connor', type: 'Sick Leave', dates: 'Oct 28', status: 'Pending' },
+];
 
 export function WorkforcePage() {
   const { state, dispatch } = useAero();
   const users = state.users || [];
   
-  // Local state for shift scheduler (overrides mock defaults)
+  // Local state for shift scheduler
   const [schedule, setSchedule] = useState<Record<string, string>>({});
+
+  // Local state for Leave Requests
+  const [requests, setRequests] = useState<LeaveRequest[]>(INITIAL_REQUESTS);
 
   // State for Cert Renewal Modal
   const [renewModalOpen, setRenewModalOpen] = useState(false);
@@ -19,8 +36,8 @@ export function WorkforcePage() {
   const pilots = users.filter(u => u.role === 'Pilot');
   
   const totalCount = personnel.length;
-  // Active Shifts now reflects On-Duty status
   const activeCount = personnel.filter(u => u.dutyStatus === 'On-Duty').length;
+  const pendingLeaveCount = requests.filter(r => r.status === 'Pending').length;
   
   const getShift = (id: string) => {
     if (schedule[id]) return schedule[id];
@@ -51,6 +68,15 @@ export function WorkforcePage() {
   const handleToggleDuty = (user: User) => {
     const newStatus = user.dutyStatus === 'On-Duty' ? 'Off-Duty' : 'On-Duty';
     dispatch({ type: 'UPDATE_USER', payload: { ...user, dutyStatus: newStatus } });
+  };
+
+  const handleLeaveAction = (id: string, action: 'Approve' | 'Reject') => {
+      setRequests(prev => prev.map(req => {
+          if (req.id === id) {
+              return { ...req, status: action === 'Approve' ? 'Approved' : 'Rejected' };
+          }
+          return req;
+      }));
   };
   
   return (
@@ -92,11 +118,67 @@ export function WorkforcePage() {
             <div className="bg-slate-900 border border-slate-800 p-4 rounded-lg flex items-center justify-between">
                 <div>
                     <div className="text-slate-500 text-xs font-semibold uppercase tracking-wider">Pending Leaves</div>
-                    <div className="text-2xl font-mono text-white mt-1">0</div>
+                    <div className="text-2xl font-mono text-white mt-1">{pendingLeaveCount}</div>
                 </div>
                 <div className="bg-amber-500/10 p-2 rounded text-amber-400">
                     <Calendar size={20} />
                 </div>
+            </div>
+        </div>
+
+        {/* Leave Request Queue */}
+        <div className="bg-slate-900 border border-slate-800 rounded-lg overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-white">Pending Leave Requests</h3>
+                <div className="flex items-center gap-2 text-xs text-slate-500">
+                    <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+                    {pendingLeaveCount} pending review
+                </div>
+            </div>
+            <div className="divide-y divide-slate-800">
+                {requests.filter(r => r.status === 'Pending').map(req => (
+                    <div key={req.id} className="p-4 flex items-center justify-between hover:bg-slate-800/30 transition-colors" data-testid={`leave-req-${req.id}`}>
+                        <div className="flex items-center gap-4">
+                            <div className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center text-slate-400">
+                                <Calendar size={18} />
+                            </div>
+                            <div>
+                                <div className="text-sm font-medium text-white flex items-center gap-2">
+                                    {req.name}
+                                    <span className="px-2 py-0.5 rounded text-[10px] bg-slate-800 text-slate-400 border border-slate-700 font-mono uppercase">
+                                        {req.type}
+                                    </span>
+                                </div>
+                                <div className="text-xs text-slate-500 mt-0.5">
+                                    Requested dates: <span className="text-slate-300">{req.dates}</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <button 
+                                onClick={() => handleLeaveAction(req.id, 'Reject')}
+                                className="p-2 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-full transition-colors"
+                                title="Reject"
+                            >
+                                <X size={18} />
+                            </button>
+                            <button 
+                                onClick={() => handleLeaveAction(req.id, 'Approve')}
+                                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium rounded-md flex items-center gap-1.5 transition-colors shadow-lg shadow-emerald-900/20"
+                                title="Approve"
+                            >
+                                <Check size={14} />
+                                Approve
+                            </button>
+                        </div>
+                    </div>
+                ))}
+                {pendingLeaveCount === 0 && (
+                    <div className="p-8 text-center text-slate-500 text-sm">
+                        <Check size={24} className="mx-auto mb-2 text-slate-600" />
+                        All caught up! No pending leave requests.
+                    </div>
+                )}
             </div>
         </div>
 
