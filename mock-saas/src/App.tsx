@@ -11,6 +11,8 @@ import { DispatchPage } from './aerocore/pages/dispatch/DispatchPage';
 import { FleetPage } from './aerocore/pages/fleet/FleetPage';
 import { DroneDetailPage } from './aerocore/pages/fleet/DroneDetailPage';
 import { WorkforcePage } from './aerocore/pages/hr/WorkforcePage';
+import { CargoPage } from './aerocore/pages/cargo/CargoPage';
+import { SecurityPage } from './aerocore/pages/security/SecurityPage';
 
 function App() {
   return (
@@ -29,9 +31,9 @@ function App() {
                         <Route path="dispatch" element={<DispatchPage />} />
                         <Route path="fleet" element={<FleetPage />} />
                         <Route path="fleet/:id" element={<DroneDetailPage />} />
-                        <Route path="security" element={<div className="p-10 text-slate-400">SecurePerimeter (Coming Soon)</div>} />
+                        <Route path="security" element={<SecurityPage />} />
                         <Route path="hr" element={<WorkforcePage />} />
-                        <Route path="cargo" element={<div className="p-10 text-slate-400">CargoFlow (Coming Soon)</div>} />
+                        <Route path="cargo" element={<CargoPage />} />
                         <Route path="data" element={<div className="p-10 text-slate-400">DataLake (Coming Soon)</div>} />
                     </Route>
                 </Routes>

@@ -25,11 +25,11 @@
 - [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 3: Implement "Create Shipment" Form
-- [ ] Modal form.
-- [ ] Fields: Sender, Receiver, Weight (kg), Priority (Standard/Express).
-- [ ] On save, add to `shipments`.
-- [ ] Run a comprehensive review of the implementation and make sure it is ok.
-- [ ] Write a clear comprehensive commit message, git commit and push.
+- [x] Modal form.
+- [x] Fields: Sender, Receiver, Weight (kg), Priority (Standard/Express).
+- [x] On save, add to `shipments`.
+- [x] Run a comprehensive review of the implementation and make sure it is ok.
+- [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 4: Implement "Route Optimizer" Mock
 - [ ] View details of a shipment.
@@ -59,11 +59,11 @@
 - [ ] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 8: Implement "Delivery Exception" Handling
-- [ ] Button on a shipment "Report Issue" (Lost, Damaged).
-- [ ] Updates status to "Exception".
-- [ ] Flags it red in the UI.
-- [ ] Run a comprehensive review of the implementation and make sure it is ok.
-- [ ] Write a clear comprehensive commit message, git commit and push.
+- [x] Button on a shipment "Report Issue" (Lost, Damaged).
+- [x] Updates status to "Exception".
+- [x] Flags it red in the UI.
+- [x] Run a comprehensive review of the implementation and make sure it is ok.
+- [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 9: Implement "Proof of Delivery"
 - [ ] For "Delivered" items, clicking detail shows a mock "Signature" image.
