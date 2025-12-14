@@ -1,5 +1,25 @@
 import { useAero } from '../../lib/store';
-import { Battery, MapPin, Activity, Wrench, Plane } from 'lucide-react';
+import { MapPin, Activity, Wrench, Plane } from 'lucide-react';
+
+function BatteryIndicator({ level }: { level: number }) {
+  let colorClass = 'bg-emerald-500';
+  if (level < 30) colorClass = 'bg-rose-500';
+  else if (level < 70) colorClass = 'bg-amber-500';
+
+  return (
+    <div className="flex items-center gap-2">
+      <div className="w-16 h-1.5 bg-slate-800 rounded-full overflow-hidden">
+        <div 
+          className={`h-full ${colorClass} transition-all duration-500`} 
+          style={{ width: `${level}%` }}
+        />
+      </div>
+      <span className={`text-xs font-mono ${level < 30 ? 'text-rose-400' : 'text-slate-400'}`}>
+        {level}%
+      </span>
+    </div>
+  );
+}
 
 export function FleetPage() {
   const { state } = useAero();
@@ -89,10 +109,7 @@ export function FleetPage() {
                                     </span>
                                 </td>
                                 <td className="px-6 py-4 text-sm text-slate-300">
-                                    <div className="flex items-center gap-2">
-                                        <Battery size={16} className={drone.battery < 20 ? 'text-rose-500' : 'text-slate-400'} />
-                                        <span>{drone.battery}%</span>
-                                    </div>
+                                    <BatteryIndicator level={drone.battery} />
                                 </td>
                                 <td className="px-6 py-4 text-sm text-slate-300">
                                     <div className="flex items-center gap-2">
