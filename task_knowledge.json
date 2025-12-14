@@ -52,5 +52,19 @@
         "text": "Chocolate Cake Shake"
       }
     ]
+  },
+  {
+    "goal": "Open Aerocore Admin Console",
+    "trigger_keywords": [
+      "aerocore",
+      "admin",
+      "console"
+    ],
+    "steps": [
+      {
+        "action": "navigate",
+        "url": "http://localhost:3000/aerocore/admin"
+      }
+    ]
   }
 ]

@@ -158,7 +158,7 @@ export class AgentService {
         - DO NOT guess container selectors (e.g. do not invent [data-testid=jira-issue-list]). Only use selectors you saw in "browser_observe" or the source code.
         
         WHITE-BOX MOCK SaaS MODE (mock-saas):
-        - When the task targets the local Mock SaaS (e.g. URLs like http://localhost:3000/* or apps like Jira/Confluence/Trello in this repo), you MUST operate in this order:
+        - When the task targets the local Mock SaaS (e.g. URLs like http://localhost:3000/* or apps like Jira/Confluence/Trello/AeroCore in this repo), you MUST operate in this order:
 
         PHASE 0: RECALL (Check Memory)
         - Call "knowledge_search_plan" with the user's request.
@@ -168,7 +168,8 @@ export class AgentService {
         - DO NOT touch the browser yet.
         - Use "code_search" or "code_list_files" to find the relevant React components.
         - Read "mock-saas/src/App.tsx" to find the correct route.
-        - Read the page/component source code (e.g. "JiraPage.tsx") to find:
+        - NOTE: AeroCore apps are under "/aerocore/*" (e.g. /aerocore/admin, /aerocore/dispatch).
+        - Read the page/component source code (e.g. "JiraPage.tsx" or "AdminPage.tsx") to find:
           * Stable "data-testid" selectors.
           * WARNING: If a selector is inside a loop (e.g. [data-testid=jira-create-issue-button] inside columns), IT IS NOT UNIQUE. Look for a global alternative (e.g. [data-testid=jira-create-button] in the nav) or use :nth-child in your plan.
           * Validation logic (e.g. allowed values for priority).
