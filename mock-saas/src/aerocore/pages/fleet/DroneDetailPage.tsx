@@ -166,6 +166,20 @@ export function DroneDetailPage() {
                     <button className="w-full py-2 px-4 bg-slate-800 hover:bg-slate-700 text-white rounded text-sm transition-colors border border-slate-700">
                         Recall to Base
                     </button>
+                    
+                    <button 
+                        onClick={toggleMaintenance}
+                        disabled={drone.status === 'In-Flight'}
+                        className={`w-full py-2 px-4 rounded text-sm transition-colors border flex items-center justify-center gap-2 ${
+                            drone.status === 'Maintenance' 
+                                ? 'bg-amber-500/10 border-amber-500/30 text-amber-400 hover:bg-amber-500/20' 
+                                : 'bg-slate-800 border-slate-700 text-slate-300 hover:text-white hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed'
+                        }`}
+                    >
+                        <Wrench size={16} />
+                        {drone.status === 'Maintenance' ? 'Exit Maintenance' : 'Set to Maintenance'}
+                    </button>
+
                     <button className="w-full py-2 px-4 border border-rose-500/30 text-rose-400 hover:bg-rose-500/10 rounded text-sm transition-colors">
                         Emergency Land
                     </button>
