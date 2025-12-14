@@ -1,16 +1,20 @@
-import React from 'react';
+import { useState } from 'react';
 import { useAero } from '../../lib/store';
-import { AlertCircle, Clock, MapPin, Radio, Shield } from 'lucide-react';
+import { AlertCircle, Clock, MapPin, Radio } from 'lucide-react';
 
 interface IncidentListProps {
     onSelectIncident?: (id: string) => void;
 }
 
+type FilterStatus = 'All' | 'New' | 'Dispatched' | 'Resolved';
+
 export function IncidentList({ onSelectIncident }: IncidentListProps) {
     const { state } = useAero();
-    // Sort by priority (Critical first) then timestamp (newest first) could be good, 
-    // but for now just raw list or simple reverse
-    const incidents = [...state.incidents].reverse(); 
+    const [filter, setFilter] = useState<FilterStatus>('All');
+
+    const incidents = [...state.incidents]
+        .filter(i => filter === 'All' ? true : i.status === filter)
+        .reverse(); 
 
     const getPriorityColor = (priority: string) => {
         switch (priority) {
@@ -33,10 +37,30 @@ export function IncidentList({ onSelectIncident }: IncidentListProps) {
     return (
         <div className="bg-slate-900 border border-slate-800 rounded-lg overflow-hidden flex flex-col h-full">
             <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between bg-slate-900/50">
-                <h3 className="text-sm font-semibold text-slate-300 uppercase tracking-wide flex items-center gap-2">
-                    <Radio size={14} className="text-sky-500" />
-                    Incident Feed
-                </h3>
+                <div className="flex items-center gap-4">
+                    <h3 className="text-sm font-semibold text-slate-300 uppercase tracking-wide flex items-center gap-2">
+                        <Radio size={14} className="text-sky-500" />
+                        Incident Feed
+                    </h3>
+                    
+                    {/* Filters */}
+                    <div className="flex bg-slate-950 rounded p-0.5 border border-slate-800">
+                        {(['All', 'New', 'Dispatched', 'Resolved'] as const).map(f => (
+                            <button
+                                key={f}
+                                onClick={() => setFilter(f)}
+                                data-testid={`dispatch-filter-${f.toLowerCase()}`}
+                                className={`px-2 py-0.5 text-[10px] uppercase font-bold rounded transition-colors ${
+                                    filter === f 
+                                        ? 'bg-slate-800 text-white shadow-sm' 
+                                        : 'text-slate-500 hover:text-slate-300'
+                                }`}
+                            >
+                                {f}
+                            </button>
+                        ))}
+                    </div>
+                </div>
                 <span className="text-xs text-slate-500 font-mono">LIVE</span>
             </div>
             

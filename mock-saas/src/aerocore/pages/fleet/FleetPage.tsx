@@ -1,6 +1,8 @@
+import { useState } from 'react';
 import { useAero } from '../../lib/store';
 import { useNavigate } from 'react-router-dom';
-import { MapPin, Activity, Wrench, Plane } from 'lucide-react';
+import { MapPin, Activity, Wrench, Plane, Plus } from 'lucide-react';
+import { AddDroneModal } from './AddDroneModal';
 
 function BatteryIndicator({ level }: { level: number }) {
   let colorClass = 'bg-emerald-500';
@@ -25,6 +27,7 @@ function BatteryIndicator({ level }: { level: number }) {
 export function FleetPage() {
   const { state } = useAero();
   const navigate = useNavigate();
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const drones = state.drones;
   
   const readyCount = drones.filter(d => d.status === 'Ready').length;
@@ -44,9 +47,18 @@ export function FleetPage() {
   return (
     <div className="space-y-6">
         {/* Header */}
-        <div>
-            <h2 className="text-xl font-bold tracking-tight text-white">Fleet Management</h2>
-            <p className="text-slate-400 text-sm mt-1">Real-time status of autonomous drone assets.</p>
+        <div className="flex items-center justify-between">
+            <div>
+                <h2 className="text-xl font-bold tracking-tight text-white">Fleet Management</h2>
+                <p className="text-slate-400 text-sm mt-1">Real-time status of autonomous drone assets.</p>
+            </div>
+            <button 
+                onClick={() => setIsAddModalOpen(true)}
+                className="bg-sky-600 hover:bg-sky-500 text-white px-4 py-2 rounded-md text-sm font-medium flex items-center gap-2 transition-colors"
+            >
+                <Plus size={16} />
+                Deploy Drone
+            </button>
         </div>
 
         {/* Stats Grid */}
@@ -126,6 +138,11 @@ export function FleetPage() {
                 </table>
             </div>
         </div>
+        
+        <AddDroneModal 
+            isOpen={isAddModalOpen} 
+            onClose={() => setIsAddModalOpen(false)} 
+        />
     </div>
   );
 }

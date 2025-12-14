@@ -56,11 +56,11 @@
 - [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 7: Implement Real-time Status Filters
-- [ ] Add filter tabs to the Incident List: "All", "New", "Dispatched", "Resolved".
-- [ ] Implement filtering logic.
-- [ ] Add `data-testid` to filter tabs (e.g., `dispatch-filter-new`).
-- [ ] Run a comprehensive review of the implementation and make sure it is ok.
-- [ ] Write a clear comprehensive commit message, git commit and push.
+- [x] Add filter tabs to the Incident List: "All", "New", "Dispatched", "Resolved".
+- [x] Implement filtering logic.
+- [x] Add `data-testid` to filter tabs (e.g., `dispatch-filter-new`).
+- [x] Run a comprehensive review of the implementation and make sure it is ok.
+- [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 8: Add "Emergency Broadcast" Action
 - [ ] Add a global "Broadcast Alert" button in the header of the Dispatch app.
