@@ -67,13 +67,13 @@
 - [ ] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 9: Implement "New Hire" Onboarding Wizard
-- [ ] Multi-step modal:
+- [x] Multi-step modal:
     1. Personal Info.
     2. Role Selection.
     3. Initial Certifications.
-- [ ] Dispatches `ADD_USER`.
-- [ ] Run a comprehensive review of the implementation and make sure it is ok.
-- [ ] Write a clear comprehensive commit message, git commit and push.
+- [x] Dispatches `ADD_USER`.
+- [x] Run a comprehensive review of the implementation and make sure it is ok.
+- [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 10: Final Review
 - [ ] Ensure Certifications update visually.
