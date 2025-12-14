@@ -1,5 +1,7 @@
+import { useState } from 'react';
+import { useAero } from '../../lib/store';
 import type { Incident } from '../../lib/types';
-import { X, AlertTriangle, MapPin, Clock, Navigation, CheckCircle, ShieldAlert } from 'lucide-react';
+import { X, AlertTriangle, MapPin, Clock, Navigation, CheckCircle, ShieldAlert, Battery } from 'lucide-react';
 
 interface IncidentDetailPanelProps {
     incident: Incident | null;
@@ -7,7 +9,28 @@ interface IncidentDetailPanelProps {
 }
 
 export function IncidentDetailPanel({ incident, onClose }: IncidentDetailPanelProps) {
+    const { state, dispatch } = useAero();
+    const [isAssigning, setIsAssigning] = useState(false);
+
     if (!incident) return null;
+
+    const availableDrones = state.drones.filter(d => d.status === 'Ready');
+
+    const handleAssignDrone = (droneId: string) => {
+        dispatch({
+            type: 'UPDATE_INCIDENT',
+            payload: { ...incident, status: 'Dispatched', assignedDroneId: droneId }
+        });
+        
+        const drone = state.drones.find(d => d.id === droneId);
+        if (drone) {
+            dispatch({
+                type: 'UPDATE_DRONE',
+                payload: { ...drone, status: 'In-Flight', assignedMissionId: incident.id }
+            });
+        }
+        setIsAssigning(false);
+    };
 
     return (
         <div className="absolute inset-y-0 right-0 w-96 bg-slate-900 border-l border-slate-800 shadow-2xl transform transition-transform duration-300 ease-in-out z-50 flex flex-col">
@@ -34,7 +57,47 @@ export function IncidentDetailPanel({ incident, onClose }: IncidentDetailPanelPr
             </div>
 
             {/* Content */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-8">
+            <div className="flex-1 overflow-y-auto p-6 space-y-8 relative">
+                {isAssigning ? (
+                    <div className="absolute inset-0 bg-slate-900 p-6 z-10 animate-in slide-in-from-bottom-4 fade-in">
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-sm font-bold text-white uppercase tracking-wide">Select Unit</h3>
+                            <button 
+                                onClick={() => setIsAssigning(false)}
+                                className="text-xs text-slate-500 hover:text-white"
+                            >
+                                Cancel
+                            </button>
+                        </div>
+                        
+                        <div className="space-y-2">
+                            {availableDrones.length === 0 ? (
+                                <div className="text-center py-8 text-slate-500 text-sm border border-dashed border-slate-800 rounded">
+                                    No drones available.
+                                </div>
+                            ) : availableDrones.map(drone => (
+                                <button
+                                    key={drone.id}
+                                    onClick={() => handleAssignDrone(drone.id)}
+                                    data-testid={`dispatch-assign-drone-${drone.id}`}
+                                    className="w-full text-left bg-slate-950 hover:bg-slate-800 border border-slate-800 p-3 rounded transition-colors group"
+                                >
+                                    <div className="flex items-center justify-between mb-1">
+                                        <span className="font-bold text-white text-sm">{drone.model}</span>
+                                        <span className="text-xs font-mono text-emerald-400 border border-emerald-500/20 bg-emerald-500/10 px-1.5 rounded">Ready</span>
+                                    </div>
+                                    <div className="flex items-center justify-between text-xs text-slate-400">
+                                        <span className="font-mono">ID: {drone.id}</span>
+                                        <span className="flex items-center gap-1">
+                                            <Battery size={10} /> {drone.battery}%
+                                        </span>
+                                    </div>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                ) : null}
+
                 {/* Status Section */}
                 <div>
                     <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Status Report</h3>
@@ -104,12 +167,16 @@ export function IncidentDetailPanel({ incident, onClose }: IncidentDetailPanelPr
 
             {/* Actions Footer */}
             <div className="p-4 bg-slate-950 border-t border-slate-800 space-y-2">
-                <button 
-                    data-testid="dispatch-action-assign"
-                    className="w-full bg-sky-600 hover:bg-sky-500 text-white py-2 rounded font-medium text-sm flex items-center justify-center gap-2 transition-colors"
-                >
-                    <Navigation size={16} /> Assign Drone Unit
-                </button>
+                {!incident.assignedDroneId && incident.status !== 'Resolved' && (
+                    <button 
+                        onClick={() => setIsAssigning(true)}
+                        disabled={isAssigning}
+                        data-testid="dispatch-action-assign"
+                        className="w-full bg-sky-600 hover:bg-sky-500 text-white py-2 rounded font-medium text-sm flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
+                    >
+                        <Navigation size={16} /> Assign Drone Unit
+                    </button>
+                )}
                 <div className="grid grid-cols-2 gap-2">
                     <button 
                          data-testid="dispatch-action-resolve"

@@ -26,6 +26,7 @@ type Action =
   | { type: 'UPDATE_USER'; payload: User }
   | { type: 'ADD_INCIDENT'; payload: Incident }
   | { type: 'UPDATE_INCIDENT'; payload: Incident }
+  | { type: 'ADD_DRONE'; payload: Drone }
   | { type: 'UPDATE_DRONE'; payload: Drone };
 
 function reducer(state: AeroState, action: Action): AeroState {
@@ -38,6 +39,8 @@ function reducer(state: AeroState, action: Action): AeroState {
       return { ...state, incidents: [...state.incidents, action.payload] };
     case 'UPDATE_INCIDENT':
       return { ...state, incidents: state.incidents.map(i => i.id === action.payload.id ? action.payload : i) };
+    case 'ADD_DRONE':
+      return { ...state, drones: [...state.drones, action.payload] };
     case 'UPDATE_DRONE':
       return { ...state, drones: state.drones.map(d => d.id === action.payload.id ? action.payload : d) };
     default:

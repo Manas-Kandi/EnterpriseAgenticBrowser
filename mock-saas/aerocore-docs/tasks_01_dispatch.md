@@ -49,11 +49,11 @@
 - [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 6: Implement Drone Selection Logic
-- [ ] In the Incident Detail view, implement "Assign Drone".
-- [ ] Show a list of available drones (filter `state.drones` where status === 'Ready').
-- [ ] clicking a drone should dispatch `UPDATE_INCIDENT` (assign drone) and `UPDATE_DRONE` (set status to 'In-Flight').
-- [ ] Run a comprehensive review of the implementation and make sure it is ok.
-- [ ] Write a clear comprehensive commit message, git commit and push.
+- [x] In the Incident Detail view, implement "Assign Drone".
+- [x] Show a list of available drones (filter `state.drones` where status === 'Ready').
+- [x] clicking a drone should dispatch `UPDATE_INCIDENT` (assign drone) and `UPDATE_DRONE` (set status to 'In-Flight').
+- [x] Run a comprehensive review of the implementation and make sure it is ok.
+- [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 7: Implement Real-time Status Filters
 - [ ] Add filter tabs to the Incident List: "All", "New", "Dispatched", "Resolved".
