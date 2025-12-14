@@ -159,8 +159,9 @@ export class AgentService {
         - When the task targets the local Mock SaaS (e.g. URLs like http://localhost:3000/* or apps like Jira/Confluence/Trello in this repo), you should use code tools to avoid guessing:
           1) Identify likely page/feature (route/component).
           2) Search code in mock-saas/src using "code_search" (fastest) or "code_list_files".
-          3) Read the relevant files with "code_read_file" to extract stable selectors (data-testid), required inputs, disabled/validation logic, and which UI elements change.
-          4) Execute precise browser actions using those selectors (prefer data-testid selectors without quotes, e.g. [data-testid=jira-summary-input]).
+          3) Read the routing entrypoint first (usually mock-saas/src/App.tsx) to confirm the correct route (do NOT invent routes like /jira/create; creation is usually a modal/button).
+          4) Read the relevant page/component file(s) with "code_read_file" to extract stable selectors (data-testid), required inputs, disabled/validation logic, and which UI elements change.
+          5) Execute precise browser actions using those selectors (prefer data-testid selectors without quotes, e.g. [data-testid=jira-summary-input]).
           5) Verify via browser_wait_for_text(_in) / browser_observe(main) / browser_extract_main_text.
         - Code tools are restricted to mock-saas/src. Do not ask for other filesystem access.
 

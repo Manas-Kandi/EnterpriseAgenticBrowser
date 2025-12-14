@@ -3,7 +3,7 @@ var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { en
 var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
 var _a2;
 import { app, webContents, BrowserWindow, ipcMain } from "electron";
-import { fileURLToPath } from "node:url";
+import { URL as URL$2, fileURLToPath } from "node:url";
 import path$2 from "node:path";
 import keytar from "keytar";
 import crypto$2, { randomFillSync, randomUUID } from "node:crypto";
@@ -41502,8 +41502,9 @@ class AgentService {
         - When the task targets the local Mock SaaS (e.g. URLs like http://localhost:3000/* or apps like Jira/Confluence/Trello in this repo), you should use code tools to avoid guessing:
           1) Identify likely page/feature (route/component).
           2) Search code in mock-saas/src using "code_search" (fastest) or "code_list_files".
-          3) Read the relevant files with "code_read_file" to extract stable selectors (data-testid), required inputs, disabled/validation logic, and which UI elements change.
-          4) Execute precise browser actions using those selectors (prefer data-testid selectors without quotes, e.g. [data-testid=jira-summary-input]).
+          3) Read the routing entrypoint first (usually mock-saas/src/App.tsx) to confirm the correct route (do NOT invent routes like /jira/create; creation is usually a modal/button).
+          4) Read the relevant page/component file(s) with "code_read_file" to extract stable selectors (data-testid), required inputs, disabled/validation logic, and which UI elements change.
+          5) Execute precise browser actions using those selectors (prefer data-testid selectors without quotes, e.g. [data-testid=jira-summary-input]).
           5) Verify via browser_wait_for_text(_in) / browser_observe(main) / browser_extract_main_text.
         - Code tools are restricted to mock-saas/src. Do not ask for other filesystem access.
 
@@ -42268,10 +42269,53 @@ class MockTrelloConnector {
 new MockTrelloConnector();
 class BrowserAutomationService {
   constructor() {
+    __publicField(this, "mockSaasRoutesCache", null);
     this.registerTools();
   }
   async delay(ms) {
     await new Promise((resolve) => setTimeout(resolve, ms));
+  }
+  async getMockSaasRoutes() {
+    const now = Date.now();
+    if (this.mockSaasRoutesCache && now - this.mockSaasRoutesCache.loadedAt < 1e4) {
+      return this.mockSaasRoutesCache.routes;
+    }
+    const defaultRoutes = /* @__PURE__ */ new Set(["/", "/jira", "/confluence", "/trello"]);
+    const candidates = [
+      path$2.resolve(process.cwd(), "mock-saas", "src", "App.tsx"),
+      path$2.resolve(process.cwd(), "..", "mock-saas", "src", "App.tsx"),
+      path$2.resolve(process.cwd(), "..", "..", "mock-saas", "src", "App.tsx")
+    ];
+    let appTsx = null;
+    for (const p of candidates) {
+      try {
+        const stat = await fs$1.stat(p);
+        if (stat.isFile()) {
+          appTsx = p;
+          break;
+        }
+      } catch {
+      }
+    }
+    if (!appTsx) {
+      this.mockSaasRoutesCache = { loadedAt: now, routes: defaultRoutes };
+      return defaultRoutes;
+    }
+    try {
+      const raw = await fs$1.readFile(appTsx, "utf8");
+      const routes = /* @__PURE__ */ new Set();
+      const re2 = /<Route\s+path\s*=\s*["']([^"']+)["']/g;
+      let match;
+      while (match = re2.exec(raw)) {
+        routes.add(match[1]);
+      }
+      const final = routes.size > 0 ? routes : defaultRoutes;
+      this.mockSaasRoutesCache = { loadedAt: now, routes: final };
+      return final;
+    } catch {
+      this.mockSaasRoutesCache = { loadedAt: now, routes: defaultRoutes };
+      return defaultRoutes;
+    }
   }
   async getTarget() {
     return browserTargetService.getActiveWebContents();
@@ -42470,13 +42514,60 @@ class BrowserAutomationService {
       name: "browser_navigate",
       description: "Navigate the browser to a specific URL.",
       schema: object({
-        url: string().describe("The URL to navigate to (must include http/https)")
+        url: string().describe("The URL to navigate to (must include http/https)"),
+        waitForSelector: string().optional().describe("Optional selector to wait for after navigation"),
+        waitForText: string().optional().describe("Optional text to wait for after navigation"),
+        timeoutMs: number().optional().describe("Timeout in ms for optional waits (default 8000)")
       }),
-      execute: async ({ url }) => {
+      execute: async ({
+        url,
+        waitForSelector,
+        waitForText,
+        timeoutMs
+      }) => {
         try {
           const target = await this.getTarget();
-          await target.loadURL(url);
-          return `Navigated to ${url}`;
+          try {
+            const parsed = new URL$2(url);
+            if ((parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1") && parsed.port === "3000") {
+              const routes = await this.getMockSaasRoutes();
+              const pathname = parsed.pathname.replace(/\/+$/, "") || "/";
+              if (!routes.has(pathname)) {
+                return `Failed to navigate: Unknown mock-saas route ${pathname}. Known routes: ${Array.from(
+                  routes
+                ).sort().join(", ")}. Navigate to /jira and use the Create button (it is a modal, not a /create route).`;
+              }
+            }
+          } catch {
+          }
+          const loadTimeout = timeoutMs ?? 8e3;
+          try {
+            await target.loadURL(url);
+          } catch (e) {
+            const msg = String((e == null ? void 0 : e.message) ?? e);
+            if (!msg.includes("ERR_ABORTED")) throw e;
+            await this.delay(250);
+            const current = target.getURL();
+            if (!current) throw e;
+          }
+          if (waitForSelector) {
+            await this.waitForSelector(target, waitForSelector, loadTimeout);
+          }
+          if (waitForText) {
+            const startedAt = Date.now();
+            const needle = waitForText.toLowerCase();
+            while (Date.now() - startedAt < loadTimeout) {
+              const found = await target.executeJavaScript(
+                `document.body && document.body.innerText && document.body.innerText.toLowerCase().includes(${JSON.stringify(
+                  needle
+                )})`,
+                true
+              );
+              if (found) break;
+              await this.delay(150);
+            }
+          }
+          return `Navigated to ${target.getURL()}`;
         } catch (e) {
           return `Failed to navigate: ${e.message}`;
         }

@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { URL } from 'node:url';
 import { z } from 'zod';
 import { AgentTool, toolRegistry } from '../services/ToolRegistry';
 import { browserTargetService } from '../services/BrowserTargetService';
@@ -10,8 +11,61 @@ export class BrowserAutomationService {
     this.registerTools();
   }
 
+  private mockSaasRoutesCache:
+    | { loadedAt: number; routes: Set<string> }
+    | null = null;
+
   private async delay(ms: number) {
     await new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private async getMockSaasRoutes(): Promise<Set<string>> {
+    const now = Date.now();
+    if (this.mockSaasRoutesCache && now - this.mockSaasRoutesCache.loadedAt < 10_000) {
+      return this.mockSaasRoutesCache.routes;
+    }
+
+    const defaultRoutes = new Set<string>(['/', '/jira', '/confluence', '/trello']);
+    const candidates = [
+      path.resolve(process.cwd(), 'mock-saas', 'src', 'App.tsx'),
+      path.resolve(process.cwd(), '..', 'mock-saas', 'src', 'App.tsx'),
+      path.resolve(process.cwd(), '..', '..', 'mock-saas', 'src', 'App.tsx'),
+    ];
+
+    let appTsx: string | null = null;
+    for (const p of candidates) {
+      try {
+        const stat = await fs.stat(p);
+        if (stat.isFile()) {
+          appTsx = p;
+          break;
+        }
+      } catch {
+        // continue
+      }
+    }
+
+    if (!appTsx) {
+      this.mockSaasRoutesCache = { loadedAt: now, routes: defaultRoutes };
+      return defaultRoutes;
+    }
+
+    try {
+      const raw = await fs.readFile(appTsx, 'utf8');
+      const routes = new Set<string>();
+      const re = /<Route\s+path\s*=\s*["']([^"']+)["']/g;
+      let match: RegExpExecArray | null;
+      while ((match = re.exec(raw))) {
+        routes.add(match[1]);
+      }
+
+      const final = routes.size > 0 ? routes : defaultRoutes;
+      this.mockSaasRoutesCache = { loadedAt: now, routes: final };
+      return final;
+    } catch {
+      this.mockSaasRoutesCache = { loadedAt: now, routes: defaultRoutes };
+      return defaultRoutes;
+    }
   }
 
   private async getTarget(): Promise<WebContents> {
@@ -222,12 +276,77 @@ export class BrowserAutomationService {
       description: 'Navigate the browser to a specific URL.',
       schema: z.object({
         url: z.string().describe('The URL to navigate to (must include http/https)'),
+        waitForSelector: z.string().optional().describe('Optional selector to wait for after navigation'),
+        waitForText: z.string().optional().describe('Optional text to wait for after navigation'),
+        timeoutMs: z.number().optional().describe('Timeout in ms for optional waits (default 8000)'),
       }),
-      execute: async ({ url }: { url: string }) => {
+      execute: async ({
+        url,
+        waitForSelector,
+        waitForText,
+        timeoutMs,
+      }: {
+        url: string;
+        waitForSelector?: string;
+        waitForText?: string;
+        timeoutMs?: number;
+      }) => {
         try {
             const target = await this.getTarget();
-            await target.loadURL(url);
-            return `Navigated to ${url}`;
+
+            // Guard against navigating to non-existent mock-saas routes.
+            try {
+              const parsed = new URL(url);
+              if (
+                (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1') &&
+                parsed.port === '3000'
+              ) {
+                const routes = await this.getMockSaasRoutes();
+                const pathname = parsed.pathname.replace(/\/+$/, '') || '/';
+                if (!routes.has(pathname)) {
+                  return `Failed to navigate: Unknown mock-saas route ${pathname}. Known routes: ${Array.from(
+                    routes
+                  )
+                    .sort()
+                    .join(', ')}. Navigate to /jira and use the Create button (it is a modal, not a /create route).`;
+                }
+              }
+            } catch {
+              // ignore URL parse issues; loadURL will handle
+            }
+
+            const loadTimeout = timeoutMs ?? 8000;
+            try {
+              await target.loadURL(url);
+            } catch (e: any) {
+              // ERR_ABORTED often indicates an interrupted navigation; verify where we landed before failing hard.
+              const msg = String(e?.message ?? e);
+              if (!msg.includes('ERR_ABORTED')) throw e;
+
+              await this.delay(250);
+              const current = target.getURL();
+              if (!current) throw e;
+            }
+
+            if (waitForSelector) {
+              await this.waitForSelector(target, waitForSelector, loadTimeout);
+            }
+            if (waitForText) {
+              const startedAt = Date.now();
+              const needle = waitForText.toLowerCase();
+              while (Date.now() - startedAt < loadTimeout) {
+                const found = await target.executeJavaScript(
+                  `document.body && document.body.innerText && document.body.innerText.toLowerCase().includes(${JSON.stringify(
+                    needle
+                  )})`,
+                  true
+                );
+                if (found) break;
+                await this.delay(150);
+              }
+            }
+
+            return `Navigated to ${target.getURL()}`;
         } catch (e: any) {
             return `Failed to navigate: ${e.message}`;
         }
