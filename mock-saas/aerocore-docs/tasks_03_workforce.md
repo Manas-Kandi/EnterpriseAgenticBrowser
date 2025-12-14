@@ -19,11 +19,11 @@
 - [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 2: Implement "Personnel List"
-- [ ] Fetch `state.users` from Global Store.
-- [ ] Filter by roles: Pilot, Dispatcher, Security (Hide 'Admin' maybe, or show differently).
-- [ ] Display in DataGrid: Name, Role, Status, "Current Shift".
-- [ ] Run a comprehensive review of the implementation and make sure it is ok.
-- [ ] Write a clear comprehensive commit message, git commit and push.
+- [x] Fetch `state.users` from Global Store.
+- [x] Filter by roles: Pilot, Dispatcher, Security (Hide 'Admin' maybe, or show differently).
+- [x] Display in DataGrid: Name, Role, Status, "Current Shift".
+- [x] Run a comprehensive review of the implementation and make sure it is ok.
+- [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 3: Implement "Shift Scheduler" UI
 - [ ] Create a visual "Calendar" or "Timeline" view (mocked).

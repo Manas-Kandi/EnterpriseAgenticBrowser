@@ -1,14 +1,30 @@
 import { useAero } from '../../lib/store';
-import { Users, UserCheck, Calendar, Clock } from 'lucide-react';
+import { Users, UserCheck, Calendar, Clock, Shield, Plane, Radio, Briefcase } from 'lucide-react';
 
 export function WorkforcePage() {
   const { state } = useAero();
   const users = state.users || [];
   
-  const totalCount = users.length;
-  // Assuming roles are available on user objects, or we'll filter by what we have.
-  // For now just basic stats
-  const activeCount = users.filter(u => u.status === 'Active').length;
+  const personnel = users.filter(u => u.role !== 'Admin');
+  const totalCount = personnel.length;
+  const activeCount = personnel.filter(u => u.status === 'Active').length;
+  
+  const getShift = (id: string) => {
+    // Mock deterministic shift assignment
+    const shifts = ['Morning (06:00 - 14:00)', 'Afternoon (14:00 - 22:00)', 'Night (22:00 - 06:00)', 'Off Duty'];
+    // Use last char of ID or similar to pick
+    const idx = (id.charCodeAt(id.length - 1) || 0) % shifts.length;
+    return shifts[idx];
+  };
+
+  const getRoleIcon = (role: string) => {
+    switch (role) {
+        case 'Pilot': return <Plane size={14} className="mr-1" />;
+        case 'Dispatcher': return <Radio size={14} className="mr-1" />;
+        case 'Security': return <Shield size={14} className="mr-1" />;
+        default: return <Briefcase size={14} className="mr-1" />;
+    }
+  };
   
   return (
     <div className="space-y-6">
@@ -57,11 +73,70 @@ export function WorkforcePage() {
             </div>
         </div>
 
-        {/* Placeholder Content */}
-        <div className="bg-slate-900 border border-slate-800 rounded-lg p-8 text-center">
-            <Clock className="mx-auto h-12 w-12 text-slate-500 mb-4" />
-            <h3 className="text-lg font-medium text-white">Workforce Management Module</h3>
-            <p className="text-slate-400 mt-2">Personnel list, scheduling, and certification tracking coming soon.</p>
+        {/* Personnel List DataGrid */}
+        <div className="bg-slate-900 border border-slate-800 rounded-lg overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-white">Personnel Roster</h3>
+                <div className="text-xs text-slate-500">
+                    Showing {personnel.length} records
+                </div>
+            </div>
+            <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                    <thead>
+                        <tr className="bg-slate-950 border-b border-slate-800">
+                            <th className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Name / ID</th>
+                            <th className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Role</th>
+                            <th className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
+                            <th className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Current Shift</th>
+                            <th className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider text-right">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800">
+                        {personnel.map((user) => (
+                            <tr key={user.id} className="hover:bg-slate-800/50 transition-colors" data-testid={`hr-user-row-${user.id}`}>
+                                <td className="px-6 py-4">
+                                    <div className="text-sm font-medium text-white">{user.name}</div>
+                                    <div className="text-xs text-slate-500 font-mono">{user.email}</div>
+                                </td>
+                                <td className="px-6 py-4">
+                                    <div className="flex items-center text-sm text-slate-300">
+                                        {getRoleIcon(user.role)}
+                                        {user.role}
+                                    </div>
+                                </td>
+                                <td className="px-6 py-4">
+                                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${
+                                        user.status === 'Active' 
+                                            ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' 
+                                            : 'text-slate-400 bg-slate-500/10 border-slate-500/20'
+                                    }`}>
+                                        {user.status}
+                                    </span>
+                                </td>
+                                <td className="px-6 py-4">
+                                    <div className="flex items-center gap-2 text-sm text-slate-300">
+                                        <Clock size={14} className="text-slate-500" />
+                                        {getShift(user.id)}
+                                    </div>
+                                </td>
+                                <td className="px-6 py-4 text-right">
+                                    <button className="text-slate-400 hover:text-white text-xs font-medium transition-colors">
+                                        Manage
+                                    </button>
+                                </td>
+                            </tr>
+                        ))}
+                        {personnel.length === 0 && (
+                            <tr>
+                                <td colSpan={5} className="px-6 py-12 text-center text-slate-500">
+                                    No personnel found.
+                                </td>
+                            </tr>
+                        )}
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
   );
