@@ -4,6 +4,8 @@ export type User = {
   role: 'Admin' | 'Dispatcher' | 'Pilot' | 'Manager' | 'Security';
   email: string;
   status: 'Active' | 'Inactive';
+  certifications?: string[];
+  certExpiry?: string; // ISO date string
 };
 
 export type Drone = {

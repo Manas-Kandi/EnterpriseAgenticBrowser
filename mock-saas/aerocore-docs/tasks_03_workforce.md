@@ -34,11 +34,11 @@
 - [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 4: Implement "Certification Tracker"
-- [ ] Extend `User` type in `types.ts` to include `certifications: string[]` and `certExpiry: string`.
-- [ ] Display certifications in the Personnel List (e.g., "Drone License A", "Security Clearance").
-- [ ] Highlight expired certs in Red.
-- [ ] Run a comprehensive review of the implementation and make sure it is ok.
-- [ ] Write a clear comprehensive commit message, git commit and push.
+- [x] Extend `User` type in `types.ts` to include `certifications: string[]` and `certExpiry: string`.
+- [x] Display certifications in the Personnel List (e.g., "Drone License A", "Security Clearance").
+- [x] Highlight expired certs in Red.
+- [x] Run a comprehensive review of the implementation and make sure it is ok.
+- [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 5: Implement "Cert Renewal" Workflow
 - [ ] Add action "Renew Certification" for a user.

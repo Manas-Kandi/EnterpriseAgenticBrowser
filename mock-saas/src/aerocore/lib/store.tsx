@@ -6,8 +6,8 @@ const initialState: AeroState = {
   currentUser: { id: 'u1', name: 'Admin User', role: 'Admin', email: 'admin@aerocore.com', status: 'Active' },
   users: [
     { id: 'u1', name: 'Admin User', role: 'Admin', email: 'admin@aerocore.com', status: 'Active' },
-    { id: 'u2', name: 'Sarah Connor', role: 'Dispatcher', email: 's.connor@aerocore.com', status: 'Active' },
-    { id: 'u3', name: 'Maverick', role: 'Pilot', email: 'mav@aerocore.com', status: 'Active' },
+    { id: 'u2', name: 'Sarah Connor', role: 'Dispatcher', email: 's.connor@aerocore.com', status: 'Active', certifications: ['Dispatcher L1', 'Crisis Mgmt'], certExpiry: '2025-01-15' },
+    { id: 'u3', name: 'Maverick', role: 'Pilot', email: 'mav@aerocore.com', status: 'Active', certifications: ['Pilot License A', 'Night Flight'], certExpiry: '2023-11-01' },
   ],
   drones: [
     { id: 'd1', model: 'Sentinel-X', status: 'Ready', battery: 98, location: 'Base Alpha', maxSpeed: 120, payloadCapacity: '2kg', firmwareVersion: 'v2.4.1' },
