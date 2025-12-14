@@ -44,6 +44,43 @@ export function DroneDetailPage() {
     });
   };
 
+  const handleUpdateFirmware = () => {
+    if (!drone || updateStatus !== 'idle') return;
+    
+    setUpdateStatus('checking');
+    
+    // Simulate check delay
+    setTimeout(() => {
+        setUpdateStatus('updating');
+        setProgress(0);
+        
+        // Simulate download/install progress
+        const interval = setInterval(() => {
+            setProgress(prev => {
+                if (prev >= 100) {
+                    clearInterval(interval);
+                    
+                    // Update complete
+                    dispatch({
+                        type: 'UPDATE_DRONE',
+                        payload: { ...drone, firmwareVersion: 'v3.5.0-stable' }
+                    });
+                    setUpdateStatus('complete');
+                    
+                    // Reset after delay
+                    setTimeout(() => {
+                        setUpdateStatus('idle');
+                        setProgress(0);
+                    }, 3000);
+                    
+                    return 100;
+                }
+                return prev + 10;
+            });
+        }, 500);
+    }, 1500);
+  };
+
   if (!drone) {
     return (
       <div className="p-10 text-center">
