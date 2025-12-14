@@ -7,6 +7,7 @@ import { TrelloPage } from './pages/trello/TrelloPage';
 import { AeroProvider } from './aerocore/lib/store';
 import { AeroShell } from './aerocore/components/AeroShell';
 import { AdminPage } from './aerocore/pages/admin/AdminPage';
+import { DispatchPage } from './aerocore/pages/dispatch/DispatchPage';
 
 function App() {
   return (
@@ -22,7 +23,7 @@ function App() {
                 <Routes>
                     <Route element={<AeroShell />}>
                         <Route path="admin" element={<AdminPage />} />
-                        <Route path="dispatch" element={<div className="p-10 text-slate-400">Dispatch Application (Coming Soon)</div>} />
+                        <Route path="dispatch" element={<DispatchPage />} />
                         <Route path="fleet" element={<div className="p-10 text-slate-400">Fleet Management (Coming Soon)</div>} />
                         <Route path="security" element={<div className="p-10 text-slate-400">SecurePerimeter (Coming Soon)</div>} />
                         <Route path="hr" element={<div className="p-10 text-slate-400">WorkforceHub (Coming Soon)</div>} />

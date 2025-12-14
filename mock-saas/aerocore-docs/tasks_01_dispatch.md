@@ -11,11 +11,11 @@
 ## Tasks
 
 ### Task 1: Initialize Dispatch Structure
-- [ ] Create directory `src/aerocore/pages/dispatch`.
-- [ ] Create `DispatchPage.tsx` with a basic layout skeleton using `AeroShell` context.
-- [ ] Register route in `App.tsx` (if not already properly linked).
-- [ ] Run a comprehensive review of the implementation and make sure it is ok.
-- [ ] Write a clear comprehensive commit message, git commit and push.
+- [x] Create directory `src/aerocore/pages/dispatch`.
+- [x] Create `DispatchPage.tsx` with a basic layout skeleton using `AeroShell` context.
+- [x] Register route in `App.tsx` (if not already properly linked).
+- [x] Run a comprehensive review of the implementation and make sure it is ok.
+- [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 2: Implement "Incident Map" Placeholder
 - [ ] Create `IncidentMap.tsx` component.
