@@ -152,10 +152,11 @@ export class AgentService {
         - In final_response.message, do not include unescaped double quotes ("). If you need quotes, use single quotes inside the message, e.g. 'fix alignment'.
 
         VERIFICATION RULE (IMPORTANT):
-        - Do NOT claim you created/updated anything in the UI unless you have verified it.
-        - After performing an action like "Create", ALWAYS call "browser_wait_for_text" or "browser_find_text" for the expected title/name and confirm it appears on the page.
-        - If the user asked for a specific status/column (e.g. "In Progress") and you have "browser_wait_for_text_in", verify the item appears inside the correct column container.
-
+        - Verify ONCE. Do not verify multiple times.
+        - If you included a "wait" step in your execution plan and it passed, THAT IS YOUR VERIFICATION. You do not need to verify again.
+        - If you must verify manually, use "browser_wait_for_text".
+        - DO NOT guess container selectors (e.g. do not invent [data-testid=jira-issue-list]). Only use selectors you saw in "browser_observe" or the source code.
+        
         WHITE-BOX MOCK SaaS MODE (mock-saas):
         - When the task targets the local Mock SaaS (e.g. URLs like http://localhost:3000/* or apps like Jira/Confluence/Trello in this repo), you MUST operate in this order:
 
@@ -174,6 +175,7 @@ export class AgentService {
           
         PHASE 2: EXECUTE (Run Plan)
         - Call "browser_execute_plan" with the full sequence.
+        - Include a "wait" step at the end of your plan to verify the outcome automatically (e.g. wait for the text you just created).
         - Example plan:
           [
             { "action": "navigate", "url": "http://localhost:3000/jira" },
@@ -185,7 +187,8 @@ export class AgentService {
           ]
 
         PHASE 3: LEARN (Save Memory)
-        - After successful verification (and ONLY after verification), call "knowledge_save_plan" to save the sequence for future use.
+        - If the execution (and its built-in wait) succeeded, call "knowledge_save_plan" IMMEDIATELY.
+        - Then IMMEDIATELY send "final_response". Do not perform extra verifications.
         
         BROWSER AUTOMATION STRATEGY:
         - You have no eyes. You must use "browser_observe" to see the page.
