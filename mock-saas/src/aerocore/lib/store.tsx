@@ -10,9 +10,9 @@ const initialState: AeroState = {
     { id: 'u3', name: 'Maverick', role: 'Pilot', email: 'mav@aerocore.com', status: 'Active' },
   ],
   drones: [
-    { id: 'd1', model: 'Sentinel-X', status: 'Ready', battery: 98, location: 'Base Alpha' },
-    { id: 'd2', model: 'CargoLifter-9', status: 'Maintenance', battery: 45, location: 'Hangar B' },
-    { id: 'd3', model: 'Scout-Mini', status: 'In-Flight', battery: 72, location: 'Sector 4', assignedMissionId: 'inc1' },
+    { id: 'd1', model: 'Sentinel-X', status: 'Ready', battery: 98, location: 'Base Alpha', maxSpeed: 120, payloadCapacity: '2kg', firmwareVersion: 'v2.4.1' },
+    { id: 'd2', model: 'CargoLifter-9', status: 'Maintenance', battery: 45, location: 'Hangar B', maxSpeed: 80, payloadCapacity: '15kg', firmwareVersion: 'v2.3.9' },
+    { id: 'd3', model: 'Scout-Mini', status: 'In-Flight', battery: 72, location: 'Sector 4', assignedMissionId: 'inc1', maxSpeed: 150, payloadCapacity: '0.5kg', firmwareVersion: 'v3.0.0-beta' },
   ],
   incidents: [
     { id: 'inc1', type: 'Security', priority: 'High', status: 'Dispatched', location: 'Sector 4', description: 'Perimeter breach detected', assignedDroneId: 'd3', timestamp: '2023-10-27 14:30' },

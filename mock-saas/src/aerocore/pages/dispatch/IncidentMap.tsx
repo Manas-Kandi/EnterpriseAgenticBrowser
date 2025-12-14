@@ -18,7 +18,11 @@ function getCoordinates(location: string) {
     return LOCATION_MAP[location] || { x: 50, y: 50 }; // Default to center
 }
 
-export function IncidentMap() {
+interface IncidentMapProps {
+    onSelectIncident?: (id: string) => void;
+}
+
+export function IncidentMap({ onSelectIncident }: IncidentMapProps) {
     const { state } = useAero();
 
     return (
@@ -48,6 +52,7 @@ export function IncidentMap() {
                 return (
                     <div 
                         key={incident.id}
+                        onClick={() => onSelectIncident?.(incident.id)}
                         className="absolute transform -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-1 hover:z-20 transition-all cursor-pointer"
                         style={{ left: `${coords.x}%`, top: `${coords.y}%` }}
                         data-testid={`map-incident-${incident.id}`}

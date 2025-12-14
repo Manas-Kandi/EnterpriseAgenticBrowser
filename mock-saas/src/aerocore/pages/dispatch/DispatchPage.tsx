@@ -1,15 +1,25 @@
+import { useState } from 'react';
 import { useAero } from '../../lib/store';
 import { Radio } from 'lucide-react';
 import { IncidentMap } from './IncidentMap';
 import { IncidentList } from './IncidentList';
+import { IncidentDetailPanel } from './IncidentDetailPanel';
 
 export function DispatchPage() {
   const { state } = useAero();
+  const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(null);
+
   const activeIncidents = state.incidents.filter(i => i.status !== 'Resolved');
   const availableDrones = state.drones.filter(d => d.status === 'Ready');
 
+  const selectedIncident = state.incidents.find(i => i.id === selectedIncidentId) || null;
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 relative">
+        <IncidentDetailPanel 
+            incident={selectedIncident} 
+            onClose={() => setSelectedIncidentId(null)} 
+        />
         <div className="flex items-center justify-between">
             <div>
                 <h2 className="text-xl font-bold tracking-tight text-white">Dispatch Command</h2>
@@ -60,13 +70,13 @@ export function DispatchPage() {
                     </div>
                 </div>
                 <div className="flex-1 relative min-h-0">
-                    <IncidentMap />
+                    <IncidentMap onSelectIncident={setSelectedIncidentId} />
                 </div>
             </div>
 
             {/* Incident List Section */}
             <div className="lg:col-span-1 h-full min-h-0">
-                <IncidentList />
+                <IncidentList onSelectIncident={setSelectedIncidentId} />
             </div>
         </div>
     </div>

@@ -13,6 +13,9 @@ export type Drone = {
   battery: number; // 0-100
   location: string; // "Base", "Sector 7", etc.
   assignedMissionId?: string;
+  maxSpeed: number; // km/h
+  payloadCapacity: string; // e.g. "5kg"
+  firmwareVersion: string; // e.g. "v2.1.0"
 };
 
 export type Incident = {

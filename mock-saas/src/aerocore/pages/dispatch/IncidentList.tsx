@@ -2,7 +2,11 @@ import React from 'react';
 import { useAero } from '../../lib/store';
 import { AlertCircle, Clock, MapPin, Radio, Shield } from 'lucide-react';
 
-export function IncidentList() {
+interface IncidentListProps {
+    onSelectIncident?: (id: string) => void;
+}
+
+export function IncidentList({ onSelectIncident }: IncidentListProps) {
     const { state } = useAero();
     // Sort by priority (Critical first) then timestamp (newest first) could be good, 
     // but for now just raw list or simple reverse
@@ -57,6 +61,7 @@ export function IncidentList() {
                         ) : incidents.map(incident => (
                             <tr 
                                 key={incident.id} 
+                                onClick={() => onSelectIncident?.(incident.id)}
                                 className="hover:bg-slate-800/50 transition-colors cursor-pointer group"
                                 data-testid={`dispatch-incident-row-${incident.id}`}
                             >

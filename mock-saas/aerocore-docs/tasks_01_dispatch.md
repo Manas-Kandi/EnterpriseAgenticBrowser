@@ -34,11 +34,11 @@
 - [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 4: Implement Incident Detail View
-- [ ] Create a "Slide-over" or "Right Panel" for viewing incident details when a row is clicked.
-- [ ] Display fields: ID, Type, Priority, Location, Description, Assigned Drone.
-- [ ] Add action buttons: "Assign Drone", "Resolve Incident", "Escalate".
-- [ ] Run a comprehensive review of the implementation and make sure it is ok.
-- [ ] Write a clear comprehensive commit message, git commit and push.
+- [x] Create a "Slide-over" or "Right Panel" for viewing incident details when a row is clicked.
+- [x] Display fields: ID, Type, Priority, Location, Description, Assigned Drone.
+- [x] Add action buttons: "Assign Drone", "Resolve Incident", "Escalate".
+- [x] Run a comprehensive review of the implementation and make sure it is ok.
+- [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 5: Implement "Create Incident" Workflow
 - [ ] Create a modal `CreateIncidentModal.tsx`.
