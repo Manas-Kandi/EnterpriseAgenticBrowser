@@ -54,11 +54,11 @@
 - [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 7: Implement "Leave Request" Queue
-- [ ] Create a mock list of "Pending Leave Requests".
-- [ ] Agent Task: "Approve vacation for Pilot X".
-- [ ] Actions: Approve / Reject.
-- [ ] Run a comprehensive review of the implementation and make sure it is ok.
-- [ ] Write a clear comprehensive commit message, git commit and push.
+- [x] Create a mock list of "Pending Leave Requests".
+- [x] Agent Task: "Approve vacation for Pilot X".
+- [x] Actions: Approve / Reject.
+- [x] Run a comprehensive review of the implementation and make sure it is ok.
+- [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 8: Implement "Payroll" Preview
 - [ ] Read-only view of "Hours Worked" and "Estimated Payout".
