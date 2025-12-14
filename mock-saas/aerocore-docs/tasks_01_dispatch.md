@@ -77,8 +77,8 @@
 - [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 10: Final Integration Review
-- [ ] Verify navigation from AeroAdmin to AeroDispatch.
-- [ ] Verify that creating an incident updates the Global Store correctly.
-- [ ] Verify Agent can "See" the incidents using `browser_observe`.
-- [ ] Run a comprehensive review of the implementation and make sure it is ok.
-- [ ] Write a clear comprehensive commit message, git commit and push.
+- [x] Verify navigation from AeroAdmin to AeroDispatch.
+- [x] Verify that creating an incident updates the Global Store correctly.
+- [x] Verify Agent can "See" the incidents using `browser_observe`.
+- [x] Run a comprehensive review of the implementation and make sure it is ok.
+- [x] Write a clear comprehensive commit message, git commit and push.

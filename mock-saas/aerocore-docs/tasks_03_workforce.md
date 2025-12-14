@@ -61,10 +61,10 @@
 - [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 8: Implement "Payroll" Preview
-- [ ] Read-only view of "Hours Worked" and "Estimated Payout".
-- [ ] Simple table.
-- [ ] Run a comprehensive review of the implementation and make sure it is ok.
-- [ ] Write a clear comprehensive commit message, git commit and push.
+- [x] Read-only view of "Hours Worked" and "Estimated Payout".
+- [x] Simple table.
+- [x] Run a comprehensive review of the implementation and make sure it is ok.
+- [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 9: Implement "New Hire" Onboarding Wizard
 - [x] Multi-step modal:

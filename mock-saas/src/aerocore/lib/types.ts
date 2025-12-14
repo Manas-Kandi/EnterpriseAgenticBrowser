@@ -30,11 +30,22 @@ export type Incident = {
   description: string;
   assignedDroneId?: string;
   timestamp: string;
+  estimatedDelivery?: string;
+};
+
+export type InventoryItem = {
+  id: string; // SKU
+  name: string;
+  quantity: number;
+  zone: string; // e.g. "Zone A-12"
+  category: 'Medical' | 'Parts' | 'Supplies' | 'Hazardous';
 };
 
 export type AeroState = {
   users: User[];
   drones: Drone[];
   incidents: Incident[];
+  shipments: any[];
+  inventory: InventoryItem[];
   currentUser: User | null;
 };
