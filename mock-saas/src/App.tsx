@@ -8,6 +8,7 @@ import { AeroProvider } from './aerocore/lib/store';
 import { AeroShell } from './aerocore/components/AeroShell';
 import { AdminPage } from './aerocore/pages/admin/AdminPage';
 import { DispatchPage } from './aerocore/pages/dispatch/DispatchPage';
+import { FleetPage } from './aerocore/pages/fleet/FleetPage';
 
 function App() {
   return (
@@ -24,7 +25,7 @@ function App() {
                     <Route element={<AeroShell />}>
                         <Route path="admin" element={<AdminPage />} />
                         <Route path="dispatch" element={<DispatchPage />} />
-                        <Route path="fleet" element={<div className="p-10 text-slate-400">Fleet Management (Coming Soon)</div>} />
+                        <Route path="fleet" element={<FleetPage />} />
                         <Route path="security" element={<div className="p-10 text-slate-400">SecurePerimeter (Coming Soon)</div>} />
                         <Route path="hr" element={<div className="p-10 text-slate-400">WorkforceHub (Coming Soon)</div>} />
                         <Route path="cargo" element={<div className="p-10 text-slate-400">CargoFlow (Coming Soon)</div>} />
@@ -56,6 +57,7 @@ function App() {
                         <ul className="grid grid-cols-2 gap-4">
                             <li><a href="/aerocore/admin" className="block p-3 bg-slate-800 rounded hover:bg-slate-700 hover:text-sky-300 transition-colors">Admin Console</a></li>
                             <li><a href="/aerocore/dispatch" className="block p-3 bg-slate-800 rounded hover:bg-slate-700 hover:text-sky-300 transition-colors">Dispatch (Beta)</a></li>
+                            <li><a href="/aerocore/fleet" className="block p-3 bg-slate-800 rounded hover:bg-slate-700 hover:text-sky-300 transition-colors">FleetForge</a></li>
                         </ul>
                     </div>
                 </div>
