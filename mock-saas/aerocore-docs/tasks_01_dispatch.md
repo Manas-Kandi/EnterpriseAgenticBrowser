@@ -63,11 +63,11 @@
 - [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 8: Add "Emergency Broadcast" Action
-- [ ] Add a global "Broadcast Alert" button in the header of the Dispatch app.
-- [ ] This simulates sending a message to all pilots (visual toast or mock notification).
-- [ ] Good for testing Agent's ability to find "Critical" actions.
-- [ ] Run a comprehensive review of the implementation and make sure it is ok.
-- [ ] Write a clear comprehensive commit message, git commit and push.
+- [x] Add a global "Broadcast Alert" button in the header of the Dispatch app.
+- [x] This simulates sending a message to all pilots (visual toast or mock notification).
+- [x] Good for testing Agent's ability to find "Critical" actions.
+- [x] Run a comprehensive review of the implementation and make sure it is ok.
+- [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 9: Polish & Data Integration
 - [ ] Ensure the Map updates visually when an incident status changes (e.g., red marker turns green).

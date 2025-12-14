@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useAero } from '../../lib/store';
-import { Radio, Plus } from 'lucide-react';
+import { Radio, Plus, Megaphone } from 'lucide-react';
 import { IncidentMap } from './IncidentMap';
 import { IncidentList } from './IncidentList';
 import { IncidentDetailPanel } from './IncidentDetailPanel';
@@ -10,12 +10,26 @@ export function DispatchPage() {
   const { state } = useAero();
   const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [broadcastMessage, setBroadcastMessage] = useState<string | null>(null);
 
   const activeIncidents = state.incidents.filter(i => i.status !== 'Resolved');
   const availableDrones = state.drones.filter(d => d.status === 'Ready');
 
+  const handleBroadcast = () => {
+    setBroadcastMessage("ALERT: ALL UNITS REPORT STATUS IMMEDIATELY");
+    setTimeout(() => setBroadcastMessage(null), 3000);
+  };
+
   return (
     <div className="space-y-6 relative">
+        {/* Broadcast Toast */}
+        {broadcastMessage && (
+             <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[100] bg-rose-600 text-white px-6 py-3 rounded-md shadow-2xl flex items-center gap-3 animate-in slide-in-from-top-4 fade-in">
+                <Megaphone size={20} className="animate-pulse" />
+                <span className="font-bold tracking-wide">{broadcastMessage}</span>
+            </div>
+        )}
+
         <CreateIncidentModal 
             isOpen={isCreateModalOpen} 
             onClose={() => setIsCreateModalOpen(false)} 
@@ -30,6 +44,13 @@ export function DispatchPage() {
                 <p className="text-slate-400 text-sm mt-1">Monitor active incidents and fleet status.</p>
             </div>
             <div className="flex items-center gap-2">
+                <button 
+                    onClick={handleBroadcast}
+                    data-testid="dispatch-broadcast-btn"
+                    className="bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 border border-amber-500/20 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wide flex items-center gap-2 transition-colors mr-2"
+                >
+                    <Megaphone size={14} /> Broadcast Alert
+                </button>
                 <button 
                     onClick={() => setIsCreateModalOpen(true)}
                     data-testid="dispatch-create-btn"
