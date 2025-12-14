@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useAero } from '../../lib/store';
-import { Users, UserCheck, Calendar, Clock, Shield, Plane, Radio, Briefcase, Check, AlertTriangle, RefreshCw, X, ThumbsUp, ThumbsDown } from 'lucide-react';
+import { Users, UserCheck, Calendar, Clock, Shield, Plane, Radio, Briefcase, Check, AlertTriangle, RefreshCw, X, ThumbsUp, ThumbsDown, DollarSign } from 'lucide-react';
 import { RenewCertModal } from './RenewCertModal';
 import type { User } from '../../lib/types';
 
@@ -342,6 +342,51 @@ export function WorkforcePage() {
                                                 Manage
                                             </button>
                                         </div>
+                                    </td>
+                                </tr>
+                            );
+                        })}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        {/* Payroll Preview */}
+        <div className="bg-slate-900 border border-slate-800 rounded-lg overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-white">Payroll Preview (Current Period)</h3>
+                <div className="flex items-center gap-2 text-xs text-slate-500 font-mono">
+                    <DollarSign size={12} />
+                    Oct 01 - Oct 31
+                </div>
+            </div>
+            <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                    <thead>
+                        <tr className="bg-slate-950 border-b border-slate-800">
+                            <th className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Employee</th>
+                            <th className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Role</th>
+                            <th className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider text-right">Hours</th>
+                            <th className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider text-right">Rate</th>
+                            <th className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider text-right">Estimated Payout</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800">
+                        {personnel.map(user => {
+                            // Mock payroll data based on user ID for consistency
+                            const seed = user.id.charCodeAt(user.id.length - 1);
+                            const hours = 140 + (seed % 40); // 140-180 hours
+                            const rate = user.role === 'Pilot' ? 85 : user.role === 'Dispatcher' ? 45 : 35;
+                            const payout = hours * rate;
+                            
+                            return (
+                                <tr key={user.id} className="hover:bg-slate-800/50 transition-colors">
+                                    <td className="px-6 py-4 text-sm font-medium text-white">{user.name}</td>
+                                    <td className="px-6 py-4 text-sm text-slate-400">{user.role}</td>
+                                    <td className="px-6 py-4 text-sm text-slate-300 text-right font-mono">{hours}</td>
+                                    <td className="px-6 py-4 text-sm text-slate-300 text-right font-mono">${rate}/hr</td>
+                                    <td className="px-6 py-4 text-sm text-emerald-400 text-right font-mono font-medium">
+                                        ${payout.toLocaleString()}
                                     </td>
                                 </tr>
                             );
