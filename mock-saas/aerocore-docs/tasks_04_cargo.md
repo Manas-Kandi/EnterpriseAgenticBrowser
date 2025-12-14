@@ -46,11 +46,11 @@
 - [ ] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 6: Implement "Warehouse Inventory" View
-- [ ] Simple table of items in stock at the hub.
-- [ ] Columns: SKU, Name, Quantity, Zone.
-- [ ] Agent Task: "Check stock of Medical Kits".
-- [ ] Run a comprehensive review of the implementation and make sure it is ok.
-- [ ] Write a clear comprehensive commit message, git commit and push.
+- [x] Simple table of items in stock at the hub.
+- [x] Columns: SKU, Name, Quantity, Zone.
+- [x] Agent Task: "Check stock of Medical Kits".
+- [x] Run a comprehensive review of the implementation and make sure it is ok.
+- [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 7: Implement "Customer Manifest" Search
 - [ ] Global search bar specific to Cargo.
