@@ -7,15 +7,16 @@
 ## References
 - [Overview](./00_OVERVIEW.md)
 - [Design System](./01_DESIGN_SYSTEM.md)
+- Git commit and push to workforce-features branch ONLY!
 
 ## Tasks
 
 ### Task 1: Initialize WorkforceHub Structure
-- [ ] Create directory `src/aerocore/pages/hr`.
-- [ ] Create `WorkforcePage.tsx`.
-- [ ] Register route in `App.tsx`.
-- [ ] Run a comprehensive review of the implementation and make sure it is ok.
-- [ ] Write a clear comprehensive commit message, git commit and push.
+- [x] Create directory `src/aerocore/pages/hr`.
+- [x] Create `WorkforcePage.tsx`.
+- [x] Register route in `App.tsx`.
+- [x] Run a comprehensive review of the implementation and make sure it is ok.
+- [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 2: Implement "Personnel List"
 - [ ] Fetch `state.users` from Global Store.

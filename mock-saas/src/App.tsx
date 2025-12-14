@@ -10,6 +10,7 @@ import { AdminPage } from './aerocore/pages/admin/AdminPage';
 import { DispatchPage } from './aerocore/pages/dispatch/DispatchPage';
 import { FleetPage } from './aerocore/pages/fleet/FleetPage';
 import { DroneDetailPage } from './aerocore/pages/fleet/DroneDetailPage';
+import { WorkforcePage } from './aerocore/pages/hr/WorkforcePage';
 
 function App() {
   return (
@@ -29,7 +30,7 @@ function App() {
                         <Route path="fleet" element={<FleetPage />} />
                         <Route path="fleet/:id" element={<DroneDetailPage />} />
                         <Route path="security" element={<div className="p-10 text-slate-400">SecurePerimeter (Coming Soon)</div>} />
-                        <Route path="hr" element={<div className="p-10 text-slate-400">WorkforceHub (Coming Soon)</div>} />
+                        <Route path="hr" element={<WorkforcePage />} />
                         <Route path="cargo" element={<div className="p-10 text-slate-400">CargoFlow (Coming Soon)</div>} />
                         <Route path="data" element={<div className="p-10 text-slate-400">DataLake (Coming Soon)</div>} />
                     </Route>
