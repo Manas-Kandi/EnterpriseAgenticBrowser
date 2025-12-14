@@ -81,6 +81,19 @@ export function DroneDetailPage() {
     }, 1500);
   };
 
+  const handleRecall = () => {
+    if (!drone) return;
+    dispatch({
+        type: 'UPDATE_DRONE',
+        payload: { 
+            ...drone, 
+            status: 'Ready',
+            location: 'Base Alpha',
+            assignedMissionId: undefined
+        }
+    });
+  };
+
   if (!drone) {
     return (
       <div className="p-10 text-center">
@@ -255,7 +268,15 @@ export function DroneDetailPage() {
                     <button className="w-full py-2 px-4 bg-slate-800 hover:bg-slate-700 text-white rounded text-sm transition-colors border border-slate-700">
                         Initiate Diagnostics
                     </button>
-                    <button className="w-full py-2 px-4 bg-slate-800 hover:bg-slate-700 text-white rounded text-sm transition-colors border border-slate-700">
+                    <button 
+                        onClick={handleRecall}
+                        disabled={drone.status !== 'In-Flight'}
+                        className={`w-full py-2 px-4 rounded text-sm transition-colors border ${
+                            drone.status === 'In-Flight'
+                                ? 'bg-sky-600 hover:bg-sky-500 text-white border-sky-600'
+                                : 'bg-slate-800 border-slate-700 text-slate-500 cursor-not-allowed'
+                        }`}
+                    >
                         Recall to Base
                     </button>
                     

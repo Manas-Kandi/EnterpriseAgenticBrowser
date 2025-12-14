@@ -70,11 +70,11 @@
 - [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 9: Polish & Data Integration
-- [ ] Ensure the Map updates visually when an incident status changes (e.g., red marker turns green).
-- [ ] Add empty states for the list if no incidents exist.
-- [ ] Verify all colors match `01_DESIGN_SYSTEM.md`.
-- [ ] Run a comprehensive review of the implementation and make sure it is ok.
-- [ ] Write a clear comprehensive commit message, git commit and push.
+- [x] Ensure the Map updates visually when an incident status changes (e.g., red marker turns green).
+- [x] Add empty states for the list if no incidents exist.
+- [x] Verify all colors match `01_DESIGN_SYSTEM.md`.
+- [x] Run a comprehensive review of the implementation and make sure it is ok.
+- [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 10: Final Integration Review
 - [x] Verify navigation from AeroAdmin to AeroDispatch.

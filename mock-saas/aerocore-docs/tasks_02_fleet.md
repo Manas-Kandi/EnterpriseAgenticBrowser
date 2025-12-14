@@ -61,20 +61,20 @@
 - [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 8: Implement "Inventory Stats" Dashboard
-- [ ] At top of page, show metric cards: "Total Fleet", "Ready to Fly", "In Maintenance".
-- [ ] Calculate these live from `state.drones`.
-- [ ] Run a comprehensive review of the implementation and make sure it is ok.
-- [ ] Write a clear comprehensive commit message, git commit and push.
+- [x] At top of page, show metric cards: "Total Fleet", "Ready to Fly", "In Maintenance".
+- [x] Calculate these live from `state.drones`.
+- [x] Run a comprehensive review of the implementation and make sure it is ok.
+- [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 9: Implement "Return to Base" Command
-- [ ] For drones with status 'In-Flight', add a "Recall" button.
-- [ ] Updates status to 'Ready' and Location to 'Base Alpha' (simulated).
-- [ ] Run a comprehensive review of the implementation and make sure it is ok.
-- [ ] Write a clear comprehensive commit message, git commit and push.
+- [x] For drones with status 'In-Flight', add a "Recall" button.
+- [x] Updates status to 'Ready' and Location to 'Base Alpha' (simulated).
+- [x] Run a comprehensive review of the implementation and make sure it is ok.
+- [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 10: Final Review & Polish
-- [ ] Verify sorting by Battery Level works.
-- [ ] Verify filtering by Model works.
-- [ ] Check accessibility of all buttons for the Agent.
-- [ ] Run a comprehensive review of the implementation and make sure it is ok.
-- [ ] Write a clear comprehensive commit message, git commit and push.
+- [x] Verify sorting by Battery Level works.
+- [x] Verify filtering by Model works.
+- [x] Check accessibility of all buttons for the Agent.
+- [x] Run a comprehensive review of the implementation and make sure it is ok.
+- [x] Write a clear comprehensive commit message, git commit and push.
