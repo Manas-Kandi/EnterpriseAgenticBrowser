@@ -4,6 +4,7 @@ import { Runnable } from "@langchain/core/runnables";
 import dotenv from 'dotenv';
 
 import { toolRegistry } from './ToolRegistry';
+import './TaskKnowledgeService';
 
 dotenv.config();
 
@@ -156,32 +157,36 @@ export class AgentService {
         - If the user asked for a specific status/column (e.g. "In Progress") and you have "browser_wait_for_text_in", verify the item appears inside the correct column container.
 
         WHITE-BOX MOCK SaaS MODE (mock-saas):
-        - When the task targets the local Mock SaaS (e.g. URLs like http://localhost:3000/* or apps like Jira/Confluence/Trello in this repo), you MUST operate in two distinct phases: PLAN then EXECUTE.
-        
-        PHASE 1: PLAN (Read Code)
+        - When the task targets the local Mock SaaS (e.g. URLs like http://localhost:3000/* or apps like Jira/Confluence/Trello in this repo), you MUST operate in this order:
+
+        PHASE 0: RECALL (Check Memory)
+        - Call "knowledge_search_plan" with the user's request.
+        - If a plan is found, verify it briefly, then execute it using "browser_execute_plan".
+
+        PHASE 1: PLAN (Read Code) - if no plan found
         - DO NOT touch the browser yet.
         - Use "code_search" or "code_list_files" to find the relevant React components.
         - Read "mock-saas/src/App.tsx" to find the correct route.
-        - Read the page/component source code (e.g. "TicketCreate.tsx") to find:
-          * Stable "data-testid" selectors (e.g. [data-testid="submit-btn"]).
+        - Read the page/component source code (e.g. "JiraPage.tsx") to find:
+          * Stable "data-testid" selectors.
+          * WARNING: If a selector is inside a loop (e.g. [data-testid=jira-create-issue-button] inside columns), IT IS NOT UNIQUE. Look for a global alternative (e.g. [data-testid=jira-create-button] in the nav) or use :nth-child in your plan.
           * Validation logic (e.g. allowed values for priority).
-          * Navigation flows (modals vs new pages).
           
         PHASE 2: EXECUTE (Run Plan)
-        - Once you have the route and selectors, create a LINEAR PLAN.
-        - Call the "browser_execute_plan" tool with the full sequence of actions.
+        - Call "browser_execute_plan" with the full sequence.
         - Example plan:
           [
             { "action": "navigate", "url": "http://localhost:3000/jira" },
-            { "action": "click", "selector": "[data-testid=create-ticket-btn]" },
-            { "action": "type", "selector": "[data-testid=ticket-title]", "value": "Bug Report" },
-            { "action": "select", "selector": "[data-testid=priority]", "value": "High" },
-            { "action": "click", "selector": "[data-testid=submit]" },
-            { "action": "wait", "text": "Ticket created" }
+            { "action": "click", "selector": "[data-testid=jira-create-button]" },
+            { "action": "type", "selector": "[data-testid=jira-summary-input]", "value": "Bug Report" },
+            { "action": "select", "selector": "[data-testid=jira-status-select]", "value": "To Do" },
+            { "action": "click", "selector": "[data-testid=jira-submit-create]" },
+            { "action": "wait", "text": "Bug Report" }
           ]
-        - This is faster and more reliable than step-by-step execution.
-        - Code tools are restricted to mock-saas/src. Do not ask for other filesystem access.
 
+        PHASE 3: LEARN (Save Memory)
+        - After successful verification (and ONLY after verification), call "knowledge_save_plan" to save the sequence for future use.
+        
         BROWSER AUTOMATION STRATEGY:
         - You have no eyes. You must use "browser_observe" to see the page.
         - Step 1: ALWAYS call "browser_navigate" to the target URL.

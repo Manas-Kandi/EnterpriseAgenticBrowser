@@ -11,8 +11,8 @@ import require$$0 from "fs";
 import require$$1 from "path";
 import require$$2 from "os";
 import crypto$3 from "crypto";
-import Database from "better-sqlite3";
 import fs$1 from "node:fs/promises";
+import Database from "better-sqlite3";
 class VaultService {
   constructor() {
     __publicField(this, "serviceName", "EnterpriseAgenticBrowser");
@@ -41376,6 +41376,84 @@ class ToolRegistry {
   }
 }
 const toolRegistry = new ToolRegistry();
+class TaskKnowledgeService {
+  constructor() {
+    __publicField(this, "storageFile");
+    __publicField(this, "plans", []);
+    this.storageFile = path$2.resolve(process.cwd(), "task_knowledge.json");
+    this.load();
+    this.registerTools();
+  }
+  async load() {
+    try {
+      const data = await fs$1.readFile(this.storageFile, "utf8");
+      this.plans = JSON.parse(data);
+    } catch {
+      this.plans = [];
+    }
+  }
+  async save() {
+    try {
+      await fs$1.writeFile(this.storageFile, JSON.stringify(this.plans, null, 2));
+    } catch (err) {
+      console.error("Failed to save task knowledge:", err);
+    }
+  }
+  findPlan(query) {
+    const q = query.toLowerCase();
+    return this.plans.find(
+      (p) => p.trigger_keywords.some((k) => q.includes(k.toLowerCase()))
+    ) || null;
+  }
+  addPlan(plan) {
+    this.plans = this.plans.filter((p) => p.goal !== plan.goal);
+    this.plans.push(plan);
+    this.save();
+  }
+  registerTools() {
+    const savePlanSchema = object({
+      goal: string().describe('Short description of the task (e.g. "Create Jira Ticket")'),
+      keywords: array(string()).describe('Keywords that trigger this plan (e.g. ["jira", "ticket", "create"])'),
+      steps: array(
+        object({
+          action: _enum(["navigate", "click", "type", "select", "wait"]),
+          url: string().optional(),
+          selector: string().optional(),
+          value: string().optional(),
+          text: string().optional()
+        })
+      ).describe("The successful sequence of actions")
+    });
+    const savePlanTool = {
+      name: "knowledge_save_plan",
+      description: "Save a successful execution plan for future reuse. Call this AFTER you have verified the task was completed successfully.",
+      schema: savePlanSchema,
+      execute: async (args) => {
+        const { goal, keywords, steps } = savePlanSchema.parse(args);
+        this.addPlan({ goal, trigger_keywords: keywords, steps });
+        return `Saved plan for "${goal}". I will remember how to do this next time.`;
+      }
+    };
+    const searchPlanTool = {
+      name: "knowledge_search_plan",
+      description: "Search for a saved plan that matches the user request. Use this BEFORE planning from scratch.",
+      schema: object({
+        query: string().describe("User request string")
+      }),
+      execute: async (args) => {
+        const { query } = args;
+        const plan = this.findPlan(query);
+        if (plan) {
+          return JSON.stringify({ found: true, plan });
+        }
+        return JSON.stringify({ found: false });
+      }
+    };
+    toolRegistry.register(savePlanTool);
+    toolRegistry.register(searchPlanTool);
+  }
+}
+new TaskKnowledgeService();
 dotenv.config();
 class AgentService {
   constructor() {
@@ -41499,32 +41577,36 @@ class AgentService {
         - If the user asked for a specific status/column (e.g. "In Progress") and you have "browser_wait_for_text_in", verify the item appears inside the correct column container.
 
         WHITE-BOX MOCK SaaS MODE (mock-saas):
-        - When the task targets the local Mock SaaS (e.g. URLs like http://localhost:3000/* or apps like Jira/Confluence/Trello in this repo), you MUST operate in two distinct phases: PLAN then EXECUTE.
-        
-        PHASE 1: PLAN (Read Code)
+        - When the task targets the local Mock SaaS (e.g. URLs like http://localhost:3000/* or apps like Jira/Confluence/Trello in this repo), you MUST operate in this order:
+
+        PHASE 0: RECALL (Check Memory)
+        - Call "knowledge_search_plan" with the user's request.
+        - If a plan is found, verify it briefly, then execute it using "browser_execute_plan".
+
+        PHASE 1: PLAN (Read Code) - if no plan found
         - DO NOT touch the browser yet.
         - Use "code_search" or "code_list_files" to find the relevant React components.
         - Read "mock-saas/src/App.tsx" to find the correct route.
-        - Read the page/component source code (e.g. "TicketCreate.tsx") to find:
-          * Stable "data-testid" selectors (e.g. [data-testid="submit-btn"]).
+        - Read the page/component source code (e.g. "JiraPage.tsx") to find:
+          * Stable "data-testid" selectors.
+          * WARNING: If a selector is inside a loop (e.g. [data-testid=jira-create-issue-button] inside columns), IT IS NOT UNIQUE. Look for a global alternative (e.g. [data-testid=jira-create-button] in the nav) or use :nth-child in your plan.
           * Validation logic (e.g. allowed values for priority).
-          * Navigation flows (modals vs new pages).
           
         PHASE 2: EXECUTE (Run Plan)
-        - Once you have the route and selectors, create a LINEAR PLAN.
-        - Call the "browser_execute_plan" tool with the full sequence of actions.
+        - Call "browser_execute_plan" with the full sequence.
         - Example plan:
           [
             { "action": "navigate", "url": "http://localhost:3000/jira" },
-            { "action": "click", "selector": "[data-testid=create-ticket-btn]" },
-            { "action": "type", "selector": "[data-testid=ticket-title]", "value": "Bug Report" },
-            { "action": "select", "selector": "[data-testid=priority]", "value": "High" },
-            { "action": "click", "selector": "[data-testid=submit]" },
-            { "action": "wait", "text": "Ticket created" }
+            { "action": "click", "selector": "[data-testid=jira-create-button]" },
+            { "action": "type", "selector": "[data-testid=jira-summary-input]", "value": "Bug Report" },
+            { "action": "select", "selector": "[data-testid=jira-status-select]", "value": "To Do" },
+            { "action": "click", "selector": "[data-testid=jira-submit-create]" },
+            { "action": "wait", "text": "Bug Report" }
           ]
-        - This is faster and more reliable than step-by-step execution.
-        - Code tools are restricted to mock-saas/src. Do not ask for other filesystem access.
 
+        PHASE 3: LEARN (Save Memory)
+        - After successful verification (and ONLY after verification), call "knowledge_save_plan" to save the sequence for future use.
+        
         BROWSER AUTOMATION STRATEGY:
         - You have no eyes. You must use "browser_observe" to see the page.
         - Step 1: ALWAYS call "browser_navigate" to the target URL.
