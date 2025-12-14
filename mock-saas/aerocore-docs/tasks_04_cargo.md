@@ -71,7 +71,7 @@
 - [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 10: Final Review
-- [ ] Test the Create -> Dispatch -> Delivered flow.
-- [ ] Verify `data-testid` on all inputs and buttons.
-- [ ] Run a comprehensive review of the implementation and make sure it is ok.
-- [ ] Write a clear comprehensive commit message, git commit and push.
+- [x] Test the Create -> Dispatch -> Delivered flow.
+- [x] Verify `data-testid` on all inputs and buttons.
+- [x] Run a comprehensive review of the implementation and make sure it is ok.
+- [x] Write a clear comprehensive commit message, git commit and push.
