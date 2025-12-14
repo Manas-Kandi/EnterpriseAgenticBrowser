@@ -61,6 +61,7 @@ function App() {
                             <li><a href="/aerocore/admin" className="block p-3 bg-slate-800 rounded hover:bg-slate-700 hover:text-sky-300 transition-colors">Admin Console</a></li>
                             <li><a href="/aerocore/dispatch" className="block p-3 bg-slate-800 rounded hover:bg-slate-700 hover:text-sky-300 transition-colors">Dispatch (Beta)</a></li>
                             <li><a href="/aerocore/fleet" className="block p-3 bg-slate-800 rounded hover:bg-slate-700 hover:text-sky-300 transition-colors">FleetForge</a></li>
+                            <li><a href="/aerocore/hr" className="block p-3 bg-slate-800 rounded hover:bg-slate-700 hover:text-sky-300 transition-colors">WorkforceHub</a></li>
                         </ul>
                     </div>
                 </div>
