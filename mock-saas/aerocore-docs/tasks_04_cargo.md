@@ -46,17 +46,17 @@
 - [ ] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 6: Implement "Warehouse Inventory" View
-- [ ] Simple table of items in stock at the hub.
-- [ ] Columns: SKU, Name, Quantity, Zone.
-- [ ] Agent Task: "Check stock of Medical Kits".
-- [ ] Run a comprehensive review of the implementation and make sure it is ok.
-- [ ] Write a clear comprehensive commit message, git commit and push.
+- [x] Simple table of items in stock at the hub.
+- [x] Columns: SKU, Name, Quantity, Zone.
+- [x] Agent Task: "Check stock of Medical Kits".
+- [x] Run a comprehensive review of the implementation and make sure it is ok.
+- [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 7: Implement "Customer Manifest" Search
-- [ ] Global search bar specific to Cargo.
-- [ ] Enter "Customer Name" -> Filter shipments.
-- [ ] Run a comprehensive review of the implementation and make sure it is ok.
-- [ ] Write a clear comprehensive commit message, git commit and push.
+- [x] Global search bar specific to Cargo.
+- [x] Enter "Customer Name" -> Filter shipments.
+- [x] Run a comprehensive review of the implementation and make sure it is ok.
+- [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 8: Implement "Delivery Exception" Handling
 - [x] Button on a shipment "Report Issue" (Lost, Damaged).
@@ -66,12 +66,12 @@
 - [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 9: Implement "Proof of Delivery"
-- [ ] For "Delivered" items, clicking detail shows a mock "Signature" image.
-- [ ] Run a comprehensive review of the implementation and make sure it is ok.
-- [ ] Write a clear comprehensive commit message, git commit and push.
+- [x] For "Delivered" items, clicking detail shows a mock "Signature" image.
+- [x] Run a comprehensive review of the implementation and make sure it is ok.
+- [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 10: Final Review
-- [ ] Test the Create -> Dispatch -> Delivered flow.
-- [ ] Verify `data-testid` on all inputs and buttons.
-- [ ] Run a comprehensive review of the implementation and make sure it is ok.
-- [ ] Write a clear comprehensive commit message, git commit and push.
+- [x] Test the Create -> Dispatch -> Delivered flow.
+- [x] Verify `data-testid` on all inputs and buttons.
+- [x] Run a comprehensive review of the implementation and make sure it is ok.
+- [x] Write a clear comprehensive commit message, git commit and push.

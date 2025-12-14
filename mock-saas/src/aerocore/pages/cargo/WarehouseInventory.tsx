@@ -1,5 +1,5 @@
 import { useAero } from '../../lib/store';
-import { Package, Search, Warehouse } from 'lucide-react';
+import { Search, Warehouse } from 'lucide-react';
 
 export function WarehouseInventory() {
     const { state } = useAero();

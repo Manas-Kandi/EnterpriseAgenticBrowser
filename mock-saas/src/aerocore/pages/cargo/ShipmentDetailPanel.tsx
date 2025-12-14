@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useAero } from '../../lib/store';
 import type { Shipment } from '../../lib/types';
-import { X, MapPin, Package, Calendar, Truck, ArrowRight, Loader2, Navigation, CheckCircle, AlertTriangle } from 'lucide-react';
+import { X, MapPin, Package, Calendar, Truck, ArrowRight, Loader2, Navigation, CheckCircle, AlertTriangle, FileSignature } from 'lucide-react';
 
 interface ShipmentDetailPanelProps {
     shipment: Shipment | null;
@@ -156,6 +156,27 @@ export function ShipmentDetailPanel({ shipment, onClose }: ShipmentDetailPanelPr
                         </div>
                     </div>
                 </div>
+
+                {/* Proof of Delivery (Task 9) */}
+                {shipment.status === 'Delivered' && (
+                    <div>
+                        <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3 flex items-center gap-2">
+                            <FileSignature size={14} /> Proof of Delivery
+                        </h3>
+                        <div className="bg-slate-950 border border-slate-800 rounded p-4">
+                            <div className="h-24 bg-white/5 rounded border border-white/10 flex items-center justify-center relative overflow-hidden">
+                                <span className="text-slate-600 font-cursive text-2xl italic select-none absolute transform -rotate-12">
+                                    Signed by Customer
+                                </span>
+                                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent"></div>
+                            </div>
+                            <div className="mt-2 text-xs text-slate-400 flex justify-between">
+                                <span>Signed at: {shipment.estimatedDelivery}</span>
+                                <span className="text-emerald-400 flex items-center gap-1"><CheckCircle size={10} /> Verified</span>
+                            </div>
+                        </div>
+                    </div>
+                )}
 
                 {/* Route Optimizer (Mock) */}
                 <div className="bg-slate-950 border border-slate-800 rounded p-4">
