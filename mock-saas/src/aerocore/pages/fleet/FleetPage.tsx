@@ -1,4 +1,5 @@
 import { useAero } from '../../lib/store';
+import { useNavigate } from 'react-router-dom';
 import { MapPin, Activity, Wrench, Plane } from 'lucide-react';
 
 function BatteryIndicator({ level }: { level: number }) {
@@ -23,6 +24,7 @@ function BatteryIndicator({ level }: { level: number }) {
 
 export function FleetPage() {
   const { state } = useAero();
+  const navigate = useNavigate();
   const drones = state.drones;
   
   const readyCount = drones.filter(d => d.status === 'Ready').length;
@@ -99,7 +101,8 @@ export function FleetPage() {
                             <tr 
                                 key={drone.id} 
                                 data-testid={`fleet-drone-row-${drone.id}`}
-                                className="hover:bg-slate-800/50 transition-colors"
+                                onClick={() => navigate(`/aerocore/fleet/${drone.id}`)}
+                                className="hover:bg-slate-800/50 transition-colors cursor-pointer"
                             >
                                 <td className="px-6 py-4 text-sm font-mono text-white">{drone.id}</td>
                                 <td className="px-6 py-4 text-sm text-slate-300">{drone.model}</td>
