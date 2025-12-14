@@ -1,32 +1,5 @@
 [
   {
-    "goal": "Create a new issue in Jira titled ",
-    "trigger_keywords": [
-      "Jira",
-      "create issue",
-      "Fix Alignment, and Help Me"
-    ],
-    "steps": [
-      {
-        "action": "navigate",
-        "url": "http://localhost:3000/jira"
-      },
-      {
-        "action": "click",
-        "selector": "[data-testid=jira-create-issue-button]"
-      },
-      {
-        "action": "type",
-        "selector": "[data-testid=jira-summary-input]",
-        "value": "Fix Alignment, and Help Me"
-      },
-      {
-        "action": "click",
-        "selector": "[data-testid=jira-submit-create]"
-      }
-    ]
-  },
-  {
     "goal": "Create a new issue in Jira titled Wow dude, really?",
     "trigger_keywords": [
       "Jira",
@@ -50,6 +23,33 @@
       {
         "action": "wait",
         "text": "Wow dude, really?"
+      }
+    ]
+  },
+  {
+    "goal": "Create a new issue in Jira titled ",
+    "trigger_keywords": [
+      "Jira",
+      "create issue",
+      "Chocolate Cake Shake"
+    ],
+    "steps": [
+      {
+        "action": "click",
+        "selector": "[data-testid=jira-create-button]"
+      },
+      {
+        "action": "type",
+        "selector": "[data-testid=jira-summary-input]",
+        "value": "Chocolate Cake Shake"
+      },
+      {
+        "action": "click",
+        "selector": "[data-testid=jira-submit-create]"
+      },
+      {
+        "action": "wait",
+        "text": "Chocolate Cake Shake"
       }
     ]
   }

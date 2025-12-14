@@ -41676,7 +41676,8 @@ If you are done:
           if (usedBrowserTools) {
             const last = messages.slice(-8).map((m) => m.content ?? "").join("\n");
             const claimedSuccess = /\b(created|created a|successfully|done|completed)\b/i.test(finalMessage);
-            if (claimedSuccess && !/\bFound text:\b|\b\"found\":\s*[1-9]\d*\b/i.test(last)) {
+            const verificationFound = /\bFound text:\b|\b\"found\":\s*[1-9]\d*\b/i.test(last) || /\bSaved plan for\b/i.test(last);
+            if (claimedSuccess && !verificationFound) {
               messages.push(response);
               messages.push(
                 new SystemMessage(
