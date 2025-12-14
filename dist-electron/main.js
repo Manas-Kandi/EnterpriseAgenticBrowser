@@ -42407,10 +42407,23 @@ class BrowserAutomationService {
     try {
       const raw = await fs$1.readFile(appTsx, "utf8");
       const routes = /* @__PURE__ */ new Set();
-      const re2 = /<Route\s+path\s*=\s*["']([^"']+)["']/g;
+      const re2 = /<Route\s+(?:path|element)\s*=\s*["']([^"']+)["']/g;
       let match;
       while (match = re2.exec(raw)) {
-        routes.add(match[1]);
+        let route = match[1];
+        if (route.endsWith("/*")) {
+          route = route.replace("/*", "");
+          if (route === "/aerocore") {
+            routes.add("/aerocore/admin");
+            routes.add("/aerocore/dispatch");
+            routes.add("/aerocore/fleet");
+            routes.add("/aerocore/security");
+            routes.add("/aerocore/hr");
+            routes.add("/aerocore/cargo");
+            routes.add("/aerocore/data");
+          }
+        }
+        routes.add(route);
       }
       const final = routes.size > 0 ? routes : defaultRoutes;
       this.mockSaasRoutesCache = { loadedAt: now, routes: final };

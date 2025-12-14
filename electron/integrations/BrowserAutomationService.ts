@@ -53,10 +53,24 @@ export class BrowserAutomationService {
     try {
       const raw = await fs.readFile(appTsx, 'utf8');
       const routes = new Set<string>();
-      const re = /<Route\s+path\s*=\s*["']([^"']+)["']/g;
+      const re = /<Route\s+(?:path|element)\s*=\s*["']([^"']+)["']/g;
       let match: RegExpExecArray | null;
       while ((match = re.exec(raw))) {
-        routes.add(match[1]);
+        let route = match[1];
+        if (route.endsWith('/*')) {
+           route = route.replace('/*', '');
+           // Add common sub-routes for aerocore automatically to help the agent
+           if (route === '/aerocore') {
+             routes.add('/aerocore/admin');
+             routes.add('/aerocore/dispatch');
+             routes.add('/aerocore/fleet');
+             routes.add('/aerocore/security');
+             routes.add('/aerocore/hr');
+             routes.add('/aerocore/cargo');
+             routes.add('/aerocore/data');
+           }
+        }
+        routes.add(route);
       }
 
       const final = routes.size > 0 ? routes : defaultRoutes;
