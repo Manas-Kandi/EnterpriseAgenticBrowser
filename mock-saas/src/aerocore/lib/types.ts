@@ -4,6 +4,7 @@ export type User = {
   role: 'Admin' | 'Dispatcher' | 'Pilot' | 'Manager' | 'Security';
   email: string;
   status: 'Active' | 'Inactive';
+  dutyStatus?: 'On-Duty' | 'Off-Duty';
   certifications?: string[];
   certExpiry?: string; // ISO date string
 };

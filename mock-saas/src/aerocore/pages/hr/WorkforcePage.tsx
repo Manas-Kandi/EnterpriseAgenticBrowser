@@ -5,7 +5,7 @@ import { RenewCertModal } from './RenewCertModal';
 import type { User } from '../../lib/types';
 
 export function WorkforcePage() {
-  const { state } = useAero();
+  const { state, dispatch } = useAero();
   const users = state.users || [];
   
   // Local state for shift scheduler (overrides mock defaults)
@@ -19,15 +19,12 @@ export function WorkforcePage() {
   const pilots = users.filter(u => u.role === 'Pilot');
   
   const totalCount = personnel.length;
-  const activeCount = personnel.filter(u => u.status === 'Active').length;
+  // Active Shifts now reflects On-Duty status
+  const activeCount = personnel.filter(u => u.dutyStatus === 'On-Duty').length;
   
   const getShift = (id: string) => {
-    // Check local schedule first
     if (schedule[id]) return schedule[id];
-
-    // Mock deterministic shift assignment
     const shifts = ['Morning (06:00 - 14:00)', 'Afternoon (14:00 - 22:00)', 'Night (22:00 - 06:00)', 'Off Duty'];
-    // Use last char of ID or similar to pick
     const idx = (id.charCodeAt(id.length - 1) || 0) % shifts.length;
     return shifts[idx];
   };
@@ -49,6 +46,11 @@ export function WorkforcePage() {
   const handleRenewClick = (user: User) => {
       setSelectedUser(user);
       setRenewModalOpen(true);
+  };
+
+  const handleToggleDuty = (user: User) => {
+    const newStatus = user.dutyStatus === 'On-Duty' ? 'Off-Duty' : 'On-Duty';
+    dispatch({ type: 'UPDATE_USER', payload: { ...user, dutyStatus: newStatus } });
   };
   
   return (
@@ -122,8 +124,6 @@ export function WorkforcePage() {
                                     {pilot.name}
                                 </div>
                                 {['Morning', 'Afternoon', 'Night'].map(shift => {
-                                    // Check if this shift is assigned (either explicitly or via default mock)
-                                    // We only highlight if it matches EXACTLY the start
                                     const currentShift = getShift(pilot.id);
                                     const isAssigned = currentShift.startsWith(shift);
                                     
@@ -168,7 +168,7 @@ export function WorkforcePage() {
                             <th className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Name / ID</th>
                             <th className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Role</th>
                             <th className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Certifications</th>
-                            <th className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
+                            <th className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Duty Status</th>
                             <th className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Current Shift</th>
                             <th className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider text-right">Actions</th>
                         </tr>
@@ -210,13 +210,29 @@ export function WorkforcePage() {
                                         </div>
                                     </td>
                                     <td className="px-6 py-4">
-                                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${
-                                            user.status === 'Active' 
-                                                ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' 
-                                                : 'text-slate-400 bg-slate-500/10 border-slate-500/20'
-                                        }`}>
-                                            {user.status}
-                                        </span>
+                                        {user.status === 'Inactive' ? (
+                                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border text-slate-400 bg-slate-500/10 border-slate-500/20">
+                                                Inactive
+                                            </span>
+                                        ) : (
+                                            <div className="flex items-center gap-2">
+                                                <button 
+                                                    onClick={() => handleToggleDuty(user)}
+                                                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none ${
+                                                        user.dutyStatus === 'On-Duty' ? 'bg-emerald-500' : 'bg-slate-700'
+                                                    }`}
+                                                >
+                                                    <span
+                                                        className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
+                                                            user.dutyStatus === 'On-Duty' ? 'translate-x-5' : 'translate-x-1'
+                                                        }`}
+                                                    />
+                                                </button>
+                                                <span className="text-xs text-slate-300 font-medium">
+                                                    {user.dutyStatus === 'On-Duty' ? 'On Duty' : 'Off Duty'}
+                                                </span>
+                                            </div>
+                                        )}
                                     </td>
                                     <td className="px-6 py-4">
                                         <div className="flex items-center gap-2 text-sm text-slate-300">

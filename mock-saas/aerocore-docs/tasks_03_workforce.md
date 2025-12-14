@@ -48,10 +48,10 @@
 - [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 6: Implement "On-Duty" Toggle
-- [ ] Add a master switch for each user to mark them "On Duty" or "Off Duty".
-- [ ] This affects their availability in AeroDispatch (can only assign incidents to On-Duty pilots - advanced logic).
-- [ ] Run a comprehensive review of the implementation and make sure it is ok.
-- [ ] Write a clear comprehensive commit message, git commit and push.
+- [x] Add a master switch for each user to mark them "On Duty" or "Off Duty".
+- [x] This affects their availability in AeroDispatch (can only assign incidents to On-Duty pilots - advanced logic).
+- [x] Run a comprehensive review of the implementation and make sure it is ok.
+- [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 7: Implement "Leave Request" Queue
 - [ ] Create a mock list of "Pending Leave Requests".
