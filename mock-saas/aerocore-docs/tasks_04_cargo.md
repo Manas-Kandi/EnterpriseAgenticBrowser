@@ -11,18 +11,18 @@
 ## Tasks
 
 ### Task 1: Initialize CargoFlow Structure
-- [ ] Create `src/aerocore/pages/cargo`.
-- [ ] Create `CargoPage.tsx`.
-- [ ] Register route in `App.tsx`.
-- [ ] Run a comprehensive review of the implementation and make sure it is ok.
-- [ ] Write a clear comprehensive commit message, git commit and push.
+- [x] Create `src/aerocore/pages/cargo`.
+- [x] Create `CargoPage.tsx`.
+- [x] Register route in `App.tsx`.
+- [x] Run a comprehensive review of the implementation and make sure it is ok.
+- [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 2: Implement "Active Shipments" Dashboard
-- [ ] Create `shipments` array in Global Store (Order ID, Origin, Destination, Status, Customer).
-- [ ] Display in DataGrid.
-- [ ] Statuses: Pending, Processing, In-Transit, Delivered.
-- [ ] Run a comprehensive review of the implementation and make sure it is ok.
-- [ ] Write a clear comprehensive commit message, git commit and push.
+- [x] Create `shipments` array in Global Store (Order ID, Origin, Destination, Status, Customer).
+- [x] Display in DataGrid.
+- [x] Statuses: Pending, Processing, In-Transit, Delivered.
+- [x] Run a comprehensive review of the implementation and make sure it is ok.
+- [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 3: Implement "Create Shipment" Form
 - [ ] Modal form.

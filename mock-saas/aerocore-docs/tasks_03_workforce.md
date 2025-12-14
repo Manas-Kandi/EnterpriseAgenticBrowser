@@ -76,8 +76,8 @@
 - [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 10: Final Review
-- [ ] Ensure Certifications update visually.
-- [ ] Ensure "On Duty" status reflects in the list.
-- [ ] Verify Agent accessibility (`data-testid`).
-- [ ] Run a comprehensive review of the implementation and make sure it is ok.
-- [ ] Write a clear comprehensive commit message, git commit and push.
+- [x] Ensure Certifications update visually.
+- [x] Ensure "On Duty" status reflects in the list.
+- [x] Verify Agent accessibility (`data-testid`).
+- [x] Run a comprehensive review of the implementation and make sure it is ok.
+- [x] Write a clear comprehensive commit message, git commit and push.
