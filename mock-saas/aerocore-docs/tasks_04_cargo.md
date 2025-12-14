@@ -53,10 +53,10 @@
 - [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 7: Implement "Customer Manifest" Search
-- [ ] Global search bar specific to Cargo.
-- [ ] Enter "Customer Name" -> Filter shipments.
-- [ ] Run a comprehensive review of the implementation and make sure it is ok.
-- [ ] Write a clear comprehensive commit message, git commit and push.
+- [x] Global search bar specific to Cargo.
+- [x] Enter "Customer Name" -> Filter shipments.
+- [x] Run a comprehensive review of the implementation and make sure it is ok.
+- [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 8: Implement "Delivery Exception" Handling
 - [ ] Button on a shipment "Report Issue" (Lost, Damaged).
