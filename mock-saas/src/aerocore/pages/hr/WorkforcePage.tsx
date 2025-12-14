@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useAero } from '../../lib/store';
 import { Users, UserCheck, Calendar, Clock, Shield, Plane, Radio, Briefcase, Check, AlertTriangle, RefreshCw, X, ThumbsUp, ThumbsDown, DollarSign } from 'lucide-react';
 import { RenewCertModal } from './RenewCertModal';
+import { NewHireModal } from './NewHireModal';
 import type { User } from '../../lib/types';
 
 interface LeaveRequest {
@@ -31,6 +32,9 @@ export function WorkforcePage() {
   // State for Cert Renewal Modal
   const [renewModalOpen, setRenewModalOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
+
+  // State for New Hire Modal
+  const [newHireModalOpen, setNewHireModalOpen] = useState(false);
 
   const personnel = users.filter(u => u.role !== 'Admin');
   const pilots = users.filter(u => u.role === 'Pilot');
@@ -88,6 +92,7 @@ export function WorkforcePage() {
                 <p className="text-slate-400 text-sm mt-1">Human Resources for scheduling and pilot management.</p>
             </div>
             <button 
+                onClick={() => setNewHireModalOpen(true)}
                 className="bg-sky-600 hover:bg-sky-500 text-white px-4 py-2 rounded-md text-sm font-medium flex items-center gap-2 transition-colors"
             >
                 <Users size={16} />
@@ -400,6 +405,11 @@ export function WorkforcePage() {
             isOpen={renewModalOpen} 
             onClose={() => setRenewModalOpen(false)} 
             user={selectedUser} 
+        />
+
+        <NewHireModal 
+            isOpen={newHireModalOpen} 
+            onClose={() => setNewHireModalOpen(false)} 
         />
     </div>
   );
