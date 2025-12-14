@@ -41,12 +41,12 @@
 - [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 5: Implement "Create Incident" Workflow
-- [ ] Create a modal `CreateIncidentModal.tsx`.
-- [ ] Form fields: Type (Select), Priority (Select), Location (Text), Description (Textarea).
-- [ ] Add `data-testid` for all inputs (e.g., `dispatch-input-location`).
-- [ ] Dispatch `ADD_INCIDENT` action to Global Store on submit.
-- [ ] Run a comprehensive review of the implementation and make sure it is ok.
-- [ ] Write a clear comprehensive commit message, git commit and push.
+- [x] Create a modal `CreateIncidentModal.tsx`.
+- [x] Form fields: Type (Select), Priority (Select), Location (Text), Description (Textarea).
+- [x] Add `data-testid` for all inputs (e.g., `dispatch-input-location`).
+- [x] Dispatch `ADD_INCIDENT` action to Global Store on submit.
+- [x] Run a comprehensive review of the implementation and make sure it is ok.
+- [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 6: Implement Drone Selection Logic
 - [ ] In the Incident Detail view, implement "Assign Drone".

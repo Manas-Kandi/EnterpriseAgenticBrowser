@@ -1,6 +1,7 @@
+import { useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useAero } from '../../lib/store';
-import { ArrowLeft, MapPin, Cpu, Scale, Gauge, ShieldAlert } from 'lucide-react';
+import { ArrowLeft, MapPin, Cpu, Scale, Gauge, ShieldAlert, Wrench, RefreshCw, CheckCircle } from 'lucide-react';
 
 function BatteryIndicator({ level }: { level: number }) {
   let colorClass = 'bg-emerald-500';
@@ -25,12 +26,23 @@ function BatteryIndicator({ level }: { level: number }) {
 export function DroneDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { state } = useAero();
+  const { state, dispatch } = useAero();
+  const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'updating' | 'complete'>('idle');
+  const [progress, setProgress] = useState(0);
   
   const drone = state.drones.find(d => d.id === id);
   const activeIncident = drone?.assignedMissionId 
     ? state.incidents.find(i => i.id === drone.assignedMissionId) 
     : null;
+
+  const toggleMaintenance = () => {
+    if (!drone) return;
+    const newStatus = drone.status === 'Maintenance' ? 'Ready' : 'Maintenance';
+    dispatch({
+        type: 'UPDATE_DRONE',
+        payload: { ...drone, status: newStatus }
+    });
+  };
 
   if (!drone) {
     return (
@@ -147,12 +159,55 @@ export function DroneDetailPage() {
                         <span className="font-mono text-white">{drone.payloadCapacity}</span>
                     </div>
 
-                    <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-                        <div className="flex items-center gap-3 text-slate-300">
-                            <Cpu size={18} className="text-slate-500" />
-                            <span className="text-sm">Firmware</span>
+                    <div className="border-b border-slate-800 pb-3">
+                        <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-3 text-slate-300">
+                                <Cpu size={18} className="text-slate-500" />
+                                <span className="text-sm">Firmware</span>
+                            </div>
+                            <span className="font-mono text-white">{drone.firmwareVersion}</span>
                         </div>
-                        <span className="font-mono text-white">{drone.firmwareVersion}</span>
+                        
+                        {/* Update Workflow */}
+                        <div className="pl-8">
+                            {updateStatus === 'idle' && (
+                                <button 
+                                    onClick={handleUpdateFirmware}
+                                    className="text-xs text-sky-400 hover:text-sky-300 hover:underline flex items-center gap-1"
+                                >
+                                    Check for Updates
+                                </button>
+                            )}
+                            
+                            {updateStatus === 'checking' && (
+                                <div className="flex items-center gap-2 text-xs text-slate-400">
+                                    <RefreshCw size={12} className="animate-spin" />
+                                    Checking repository...
+                                </div>
+                            )}
+
+                            {updateStatus === 'updating' && (
+                                <div className="space-y-1">
+                                    <div className="flex items-center justify-between text-xs text-slate-400">
+                                        <span>Installing v3.5.0...</span>
+                                        <span>{progress}%</span>
+                                    </div>
+                                    <div className="w-full h-1 bg-slate-800 rounded-full overflow-hidden">
+                                        <div 
+                                            className="h-full bg-sky-500 transition-all duration-300"
+                                            style={{ width: `${progress}%` }}
+                                        />
+                                    </div>
+                                </div>
+                            )}
+
+                            {updateStatus === 'complete' && (
+                                <div className="flex items-center gap-2 text-xs text-emerald-400">
+                                    <CheckCircle size={12} />
+                                    Update Successful
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </div>
             </div>

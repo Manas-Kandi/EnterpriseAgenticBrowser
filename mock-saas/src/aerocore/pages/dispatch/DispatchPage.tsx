@@ -1,23 +1,27 @@
 import { useState } from 'react';
 import { useAero } from '../../lib/store';
-import { Radio } from 'lucide-react';
+import { Radio, Plus } from 'lucide-react';
 import { IncidentMap } from './IncidentMap';
 import { IncidentList } from './IncidentList';
 import { IncidentDetailPanel } from './IncidentDetailPanel';
+import { CreateIncidentModal } from './CreateIncidentModal';
 
 export function DispatchPage() {
   const { state } = useAero();
   const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(null);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 
   const activeIncidents = state.incidents.filter(i => i.status !== 'Resolved');
   const availableDrones = state.drones.filter(d => d.status === 'Ready');
 
-  const selectedIncident = state.incidents.find(i => i.id === selectedIncidentId) || null;
-
   return (
     <div className="space-y-6 relative">
+        <CreateIncidentModal 
+            isOpen={isCreateModalOpen} 
+            onClose={() => setIsCreateModalOpen(false)} 
+        />
         <IncidentDetailPanel 
-            incident={selectedIncident} 
+            incident={selectedIncidentId ? state.incidents.find(i => i.id === selectedIncidentId) || null : null} 
             onClose={() => setSelectedIncidentId(null)} 
         />
         <div className="flex items-center justify-between">
@@ -26,6 +30,13 @@ export function DispatchPage() {
                 <p className="text-slate-400 text-sm mt-1">Monitor active incidents and fleet status.</p>
             </div>
             <div className="flex items-center gap-2">
+                <button 
+                    onClick={() => setIsCreateModalOpen(true)}
+                    data-testid="dispatch-create-btn"
+                    className="bg-rose-600 hover:bg-rose-500 text-white px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wide flex items-center gap-2 transition-colors mr-2"
+                >
+                    <Plus size={14} /> Report Incident
+                </button>
                 <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-3 py-1 rounded text-xs font-medium flex items-center gap-2">
                     <Radio size={14} /> Live Feed Active
                 </span>
