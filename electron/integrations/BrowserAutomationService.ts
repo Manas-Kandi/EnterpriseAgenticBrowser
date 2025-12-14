@@ -796,6 +796,55 @@ export class BrowserAutomationService {
       },
     };
 
+    const executePlanTool: AgentTool = {
+      name: 'browser_execute_plan',
+      description:
+        'Execute a batch of browser actions (navigate, click, type, select, wait). Use this for Mock SaaS tasks where you have read the code and know the selectors.',
+      schema: z.object({
+        steps: z.array(
+          z.object({
+            action: z.enum(['navigate', 'click', 'type', 'select', 'wait']),
+            url: z.string().optional().describe('For navigate action'),
+            selector: z.string().optional().describe('For click/type/select actions'),
+            value: z.string().optional().describe('For type/select actions'),
+            text: z.string().optional().describe('For wait action'),
+          })
+        ),
+      }),
+      execute: async (input: unknown) => {
+        const { steps } = input as { steps: any[] };
+        const results = [];
+        for (const [i, step] of steps.entries()) {
+          try {
+            let res = '';
+            if (step.action === 'navigate') {
+              if (!step.url) throw new Error('Missing url for navigate');
+              res = await navigateTool.execute({ url: step.url });
+            } else if (step.action === 'click') {
+              if (!step.selector) throw new Error('Missing selector for click');
+              res = await clickTool.execute({ selector: step.selector });
+            } else if (step.action === 'type') {
+              if (!step.selector || step.value === undefined) throw new Error('Missing selector/value for type');
+              res = await typeTool.execute({ selector: step.selector, text: step.value });
+            } else if (step.action === 'select') {
+              if (!step.selector || step.value === undefined) throw new Error('Missing selector/value for select');
+              res = await selectTool.execute({ selector: step.selector, value: step.value });
+            } else if (step.action === 'wait') {
+              if (!step.text) throw new Error('Missing text for wait');
+              res = await waitForTextTool.execute({ text: step.text });
+            } else {
+              throw new Error(`Unknown action ${step.action}`);
+            }
+            results.push(`Step ${i + 1} (${step.action}): ${res}`);
+          } catch (e: any) {
+            results.push(`Step ${i + 1} (${step.action}) FAILED: ${e.message}`);
+            return `Plan execution stopped at step ${i + 1} due to error.\nResults so far:\n${results.join('\n')}`;
+          }
+        }
+        return `Plan completed successfully.\n${results.join('\n')}`;
+      },
+    };
+
     toolRegistry.register(observeTool);
     toolRegistry.register(navigateTool);
     toolRegistry.register(clickTool);
@@ -808,6 +857,7 @@ export class BrowserAutomationService {
     toolRegistry.register(selectTool);
     toolRegistry.register(clickTextTool);
     toolRegistry.register(extractMainTextTool);
+    toolRegistry.register(executePlanTool);
   }
 }
 

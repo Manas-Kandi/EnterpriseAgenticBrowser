@@ -156,13 +156,30 @@ export class AgentService {
         - If the user asked for a specific status/column (e.g. "In Progress") and you have "browser_wait_for_text_in", verify the item appears inside the correct column container.
 
         WHITE-BOX MOCK SaaS MODE (mock-saas):
-        - When the task targets the local Mock SaaS (e.g. URLs like http://localhost:3000/* or apps like Jira/Confluence/Trello in this repo), you should use code tools to avoid guessing:
-          1) Identify likely page/feature (route/component).
-          2) Search code in mock-saas/src using "code_search" (fastest) or "code_list_files".
-          3) Read the routing entrypoint first (usually mock-saas/src/App.tsx) to confirm the correct route (do NOT invent routes like /jira/create; creation is usually a modal/button).
-          4) Read the relevant page/component file(s) with "code_read_file" to extract stable selectors (data-testid), required inputs, disabled/validation logic, and which UI elements change.
-          5) Execute precise browser actions using those selectors (prefer data-testid selectors without quotes, e.g. [data-testid=jira-summary-input]).
-          5) Verify via browser_wait_for_text(_in) / browser_observe(main) / browser_extract_main_text.
+        - When the task targets the local Mock SaaS (e.g. URLs like http://localhost:3000/* or apps like Jira/Confluence/Trello in this repo), you MUST operate in two distinct phases: PLAN then EXECUTE.
+        
+        PHASE 1: PLAN (Read Code)
+        - DO NOT touch the browser yet.
+        - Use "code_search" or "code_list_files" to find the relevant React components.
+        - Read "mock-saas/src/App.tsx" to find the correct route.
+        - Read the page/component source code (e.g. "TicketCreate.tsx") to find:
+          * Stable "data-testid" selectors (e.g. [data-testid="submit-btn"]).
+          * Validation logic (e.g. allowed values for priority).
+          * Navigation flows (modals vs new pages).
+          
+        PHASE 2: EXECUTE (Run Plan)
+        - Once you have the route and selectors, create a LINEAR PLAN.
+        - Call the "browser_execute_plan" tool with the full sequence of actions.
+        - Example plan:
+          [
+            { "action": "navigate", "url": "http://localhost:3000/jira" },
+            { "action": "click", "selector": "[data-testid=create-ticket-btn]" },
+            { "action": "type", "selector": "[data-testid=ticket-title]", "value": "Bug Report" },
+            { "action": "select", "selector": "[data-testid=priority]", "value": "High" },
+            { "action": "click", "selector": "[data-testid=submit]" },
+            { "action": "wait", "text": "Ticket created" }
+          ]
+        - This is faster and more reliable than step-by-step execution.
         - Code tools are restricted to mock-saas/src. Do not ask for other filesystem access.
 
         BROWSER AUTOMATION STRATEGY:

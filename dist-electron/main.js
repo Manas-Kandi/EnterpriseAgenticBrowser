@@ -41499,13 +41499,30 @@ class AgentService {
         - If the user asked for a specific status/column (e.g. "In Progress") and you have "browser_wait_for_text_in", verify the item appears inside the correct column container.
 
         WHITE-BOX MOCK SaaS MODE (mock-saas):
-        - When the task targets the local Mock SaaS (e.g. URLs like http://localhost:3000/* or apps like Jira/Confluence/Trello in this repo), you should use code tools to avoid guessing:
-          1) Identify likely page/feature (route/component).
-          2) Search code in mock-saas/src using "code_search" (fastest) or "code_list_files".
-          3) Read the routing entrypoint first (usually mock-saas/src/App.tsx) to confirm the correct route (do NOT invent routes like /jira/create; creation is usually a modal/button).
-          4) Read the relevant page/component file(s) with "code_read_file" to extract stable selectors (data-testid), required inputs, disabled/validation logic, and which UI elements change.
-          5) Execute precise browser actions using those selectors (prefer data-testid selectors without quotes, e.g. [data-testid=jira-summary-input]).
-          5) Verify via browser_wait_for_text(_in) / browser_observe(main) / browser_extract_main_text.
+        - When the task targets the local Mock SaaS (e.g. URLs like http://localhost:3000/* or apps like Jira/Confluence/Trello in this repo), you MUST operate in two distinct phases: PLAN then EXECUTE.
+        
+        PHASE 1: PLAN (Read Code)
+        - DO NOT touch the browser yet.
+        - Use "code_search" or "code_list_files" to find the relevant React components.
+        - Read "mock-saas/src/App.tsx" to find the correct route.
+        - Read the page/component source code (e.g. "TicketCreate.tsx") to find:
+          * Stable "data-testid" selectors (e.g. [data-testid="submit-btn"]).
+          * Validation logic (e.g. allowed values for priority).
+          * Navigation flows (modals vs new pages).
+          
+        PHASE 2: EXECUTE (Run Plan)
+        - Once you have the route and selectors, create a LINEAR PLAN.
+        - Call the "browser_execute_plan" tool with the full sequence of actions.
+        - Example plan:
+          [
+            { "action": "navigate", "url": "http://localhost:3000/jira" },
+            { "action": "click", "selector": "[data-testid=create-ticket-btn]" },
+            { "action": "type", "selector": "[data-testid=ticket-title]", "value": "Bug Report" },
+            { "action": "select", "selector": "[data-testid=priority]", "value": "High" },
+            { "action": "click", "selector": "[data-testid=submit]" },
+            { "action": "wait", "text": "Ticket created" }
+          ]
+        - This is faster and more reliable than step-by-step execution.
         - Code tools are restricted to mock-saas/src. Do not ask for other filesystem access.
 
         BROWSER AUTOMATION STRATEGY:
@@ -42973,6 +42990,56 @@ class BrowserAutomationService {
         return String(text ?? "");
       }
     };
+    const executePlanTool = {
+      name: "browser_execute_plan",
+      description: "Execute a batch of browser actions (navigate, click, type, select, wait). Use this for Mock SaaS tasks where you have read the code and know the selectors.",
+      schema: object({
+        steps: array(
+          object({
+            action: _enum(["navigate", "click", "type", "select", "wait"]),
+            url: string().optional().describe("For navigate action"),
+            selector: string().optional().describe("For click/type/select actions"),
+            value: string().optional().describe("For type/select actions"),
+            text: string().optional().describe("For wait action")
+          })
+        )
+      }),
+      execute: async (input) => {
+        const { steps } = input;
+        const results = [];
+        for (const [i, step] of steps.entries()) {
+          try {
+            let res = "";
+            if (step.action === "navigate") {
+              if (!step.url) throw new Error("Missing url for navigate");
+              res = await navigateTool.execute({ url: step.url });
+            } else if (step.action === "click") {
+              if (!step.selector) throw new Error("Missing selector for click");
+              res = await clickTool.execute({ selector: step.selector });
+            } else if (step.action === "type") {
+              if (!step.selector || step.value === void 0) throw new Error("Missing selector/value for type");
+              res = await typeTool.execute({ selector: step.selector, text: step.value });
+            } else if (step.action === "select") {
+              if (!step.selector || step.value === void 0) throw new Error("Missing selector/value for select");
+              res = await selectTool.execute({ selector: step.selector, value: step.value });
+            } else if (step.action === "wait") {
+              if (!step.text) throw new Error("Missing text for wait");
+              res = await waitForTextTool.execute({ text: step.text });
+            } else {
+              throw new Error(`Unknown action ${step.action}`);
+            }
+            results.push(`Step ${i + 1} (${step.action}): ${res}`);
+          } catch (e) {
+            results.push(`Step ${i + 1} (${step.action}) FAILED: ${e.message}`);
+            return `Plan execution stopped at step ${i + 1} due to error.
+Results so far:
+${results.join("\n")}`;
+          }
+        }
+        return `Plan completed successfully.
+${results.join("\n")}`;
+      }
+    };
     toolRegistry.register(observeTool);
     toolRegistry.register(navigateTool);
     toolRegistry.register(clickTool);
@@ -42985,6 +43052,7 @@ class BrowserAutomationService {
     toolRegistry.register(selectTool);
     toolRegistry.register(clickTextTool);
     toolRegistry.register(extractMainTextTool);
+    toolRegistry.register(executePlanTool);
   }
 }
 new BrowserAutomationService();
