@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useAero } from '../../lib/store';
 import type { Shipment } from '../../lib/types';
-import { X, MapPin, Package, Calendar, Truck, ArrowRight, Loader2, Navigation, CheckCircle } from 'lucide-react';
+import { X, MapPin, Package, Calendar, Truck, ArrowRight, Loader2, Navigation, CheckCircle, AlertTriangle } from 'lucide-react';
 
 interface ShipmentDetailPanelProps {
     shipment: Shipment | null;
@@ -68,6 +68,18 @@ export function ShipmentDetailPanel({ shipment, onClose }: ShipmentDetailPanelPr
         }, 1000);
     };
 
+    const handleReportIssue = () => {
+        if (confirm('Are you sure you want to report an issue with this shipment?')) {
+            dispatch({
+                type: 'UPDATE_SHIPMENT',
+                payload: {
+                    ...shipment,
+                    status: 'Exception'
+                }
+            });
+        }
+    };
+
     return (
         <div className="absolute inset-y-0 right-0 w-96 bg-slate-900 border-l border-slate-800 shadow-2xl transform transition-transform duration-300 ease-in-out z-50 flex flex-col">
             {/* Header */}
@@ -75,9 +87,10 @@ export function ShipmentDetailPanel({ shipment, onClose }: ShipmentDetailPanelPr
                 <div>
                     <div className="flex items-center gap-2 mb-1">
                         <span className={`text-xs font-bold px-2 py-0.5 rounded border uppercase tracking-wider
-                            ${shipment.priority === 'Express' ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' : 
+                            ${shipment.status === 'Exception' ? 'bg-rose-500/10 text-rose-400 border-rose-500/20' :
+                              shipment.priority === 'Express' ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' : 
                               'bg-slate-500/10 text-slate-400 border-slate-500/20'}`}>
-                            {shipment.priority}
+                            {shipment.status === 'Exception' ? 'ISSUE REPORTED' : shipment.priority}
                         </span>
                         <span className="text-xs font-mono text-slate-500">#{shipment.id}</span>
                     </div>
@@ -199,7 +212,7 @@ export function ShipmentDetailPanel({ shipment, onClose }: ShipmentDetailPanelPr
             </div>
 
             {/* Actions Footer */}
-            <div className="p-4 bg-slate-950 border-t border-slate-800">
+            <div className="p-4 bg-slate-950 border-t border-slate-800 space-y-2">
                  <button 
                     onClick={handleDispatch}
                     disabled={isDispatching || shipment.status !== 'Pending'}
@@ -209,6 +222,17 @@ export function ShipmentDetailPanel({ shipment, onClose }: ShipmentDetailPanelPr
                     {isDispatching ? <Loader2 size={16} className="animate-spin" /> : <Truck size={16} />}
                     {isDispatching ? 'Dispatching Drone...' : 'Dispatch to Drone'}
                 </button>
+
+                {shipment.status !== 'Exception' && shipment.status !== 'Delivered' && (
+                    <button 
+                        onClick={handleReportIssue}
+                        data-testid="cargo-report-issue-btn"
+                        className="w-full bg-rose-600/10 hover:bg-rose-600/20 text-rose-400 border border-rose-600/20 py-2 rounded font-medium text-sm flex items-center justify-center gap-2 transition-colors"
+                    >
+                        <AlertTriangle size={16} />
+                        Report Issue
+                    </button>
+                )}
             </div>
         </div>
     );
