@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useAero } from '../../lib/store';
 import { useNavigate } from 'react-router-dom';
-import { MapPin, Activity, Wrench, Plane, Plus } from 'lucide-react';
+import { MapPin, Activity, Wrench, Plane, Plus, LayoutGrid, CheckCircle } from 'lucide-react';
 import { AddDroneModal } from './AddDroneModal';
 
 function BatteryIndicator({ level }: { level: number }) {
@@ -30,9 +30,9 @@ export function FleetPage() {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const drones = state.drones;
   
+  const totalCount = drones.length;
   const readyCount = drones.filter(d => d.status === 'Ready').length;
   const maintenanceCount = drones.filter(d => d.status === 'Maintenance').length;
-  const inFlightCount = drones.filter(d => d.status === 'In-Flight').length;
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -65,25 +65,25 @@ export function FleetPage() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="bg-slate-900 border border-slate-800 p-4 rounded-lg flex items-center justify-between">
                 <div>
-                    <div className="text-slate-500 text-xs font-semibold uppercase tracking-wider">Ready</div>
+                    <div className="text-slate-500 text-xs font-semibold uppercase tracking-wider">Total Fleet</div>
+                    <div className="text-2xl font-mono text-white mt-1">{totalCount}</div>
+                </div>
+                <div className="bg-slate-800 p-2 rounded text-slate-400">
+                    <LayoutGrid size={20} />
+                </div>
+            </div>
+            <div className="bg-slate-900 border border-slate-800 p-4 rounded-lg flex items-center justify-between">
+                <div>
+                    <div className="text-slate-500 text-xs font-semibold uppercase tracking-wider">Ready to Fly</div>
                     <div className="text-2xl font-mono text-white mt-1">{readyCount}</div>
                 </div>
                 <div className="bg-emerald-500/10 p-2 rounded text-emerald-400">
-                    <Plane size={20} />
+                    <CheckCircle size={20} />
                 </div>
             </div>
             <div className="bg-slate-900 border border-slate-800 p-4 rounded-lg flex items-center justify-between">
                 <div>
-                    <div className="text-slate-500 text-xs font-semibold uppercase tracking-wider">In Flight</div>
-                    <div className="text-2xl font-mono text-white mt-1">{inFlightCount}</div>
-                </div>
-                <div className="bg-sky-500/10 p-2 rounded text-sky-400">
-                    <Activity size={20} />
-                </div>
-            </div>
-            <div className="bg-slate-900 border border-slate-800 p-4 rounded-lg flex items-center justify-between">
-                <div>
-                    <div className="text-slate-500 text-xs font-semibold uppercase tracking-wider">Maintenance</div>
+                    <div className="text-slate-500 text-xs font-semibold uppercase tracking-wider">In Maintenance</div>
                     <div className="text-2xl font-mono text-white mt-1">{maintenanceCount}</div>
                 </div>
                 <div className="bg-amber-500/10 p-2 rounded text-amber-400">
