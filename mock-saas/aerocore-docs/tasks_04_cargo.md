@@ -66,9 +66,9 @@
 - [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 9: Implement "Proof of Delivery"
-- [ ] For "Delivered" items, clicking detail shows a mock "Signature" image.
-- [ ] Run a comprehensive review of the implementation and make sure it is ok.
-- [ ] Write a clear comprehensive commit message, git commit and push.
+- [x] For "Delivered" items, clicking detail shows a mock "Signature" image.
+- [x] Run a comprehensive review of the implementation and make sure it is ok.
+- [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 10: Final Review
 - [ ] Test the Create -> Dispatch -> Delivered flow.
