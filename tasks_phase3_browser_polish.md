@@ -53,7 +53,7 @@ This phase focuses on refining the Enterprise Browser into a daily-driver capabl
         - Clicking an icon opens a persistent "Panel" (or acts as a pinned tab) specifically for that app.
     - **Git:** `git add . && git commit -m "feat(workspace): implement app sidebar dock"`
 
-- [ ] **Task 3.7: Google Account Connector**
+- [x] **Task 3.7: Google Account Connector**
     - **Description:**
         - Add a "Profile" section in the Workspace Sidebar.
         - Implement a "Sign in with Google" flow (can simply be a navigation to `accounts.google.com` in a special popup/webview).

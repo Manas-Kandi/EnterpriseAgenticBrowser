@@ -16,11 +16,17 @@ export function WorkspacePanel() {
                     <X size={14} />
                 </button>
             </div>
-            <div className="flex-1 overflow-hidden relative">
+            <div className="flex-1 overflow-hidden relative flex flex-col">
                 {activeSidebarPanel === 'drive' ? (
-                     <div className="absolute inset-0 flex items-center justify-center text-muted-foreground text-sm">
-                        <p>Google Drive Panel Placeholder</p>
-                     </div>
+                     <webview 
+                        src="https://drive.google.com/drive/my-drive"
+                        className="flex-1 w-full h-full"
+                        // @ts-ignore
+                        allowpopups="true"
+                        // Use mobile user agent to get a more compact view
+                        // @ts-ignore
+                        useragent="Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1"
+                     />
                 ) : (
                     <div className="p-4 text-center text-muted-foreground text-sm">
                         Panel content
