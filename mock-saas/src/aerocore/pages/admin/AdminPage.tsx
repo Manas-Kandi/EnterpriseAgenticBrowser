@@ -106,7 +106,12 @@ export function AdminPage() {
                                 </span>
                             </td>
                             <td className="px-4 py-3 text-right text-slate-500">
-                                <button className="p-1 hover:text-sky-400 transition-colors"><Edit size={14} /></button>
+                                <button 
+                                    data-testid={`admin-edit-user-${user.id}`}
+                                    className="p-1 hover:text-sky-400 transition-colors"
+                                >
+                                    <Edit size={14} />
+                                </button>
                             </td>
                         </tr>
                     ))}
