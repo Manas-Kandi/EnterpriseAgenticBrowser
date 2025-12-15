@@ -30,7 +30,7 @@ This phase focuses on refining the Enterprise Browser into a daily-driver capabl
 
 ## Section 2: Browser Functionality
 
-- [ ] **Task 3.4: History & State Persistence**
+- [x] **Task 3.4: History & State Persistence**
     - **Description:**
         - Update `useBrowserStore` to save visited URLs to a `history` array.
         - Persist the store to `localStorage` (using Zustand persist middleware) so tabs and history survive restarts.

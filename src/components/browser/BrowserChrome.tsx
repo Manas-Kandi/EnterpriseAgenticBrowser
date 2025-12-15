@@ -1,12 +1,25 @@
 import { useBrowserStore } from '@/lib/store';
-import { X, Plus, Search, RotateCw, ArrowLeft, ArrowRight, Loader2, Globe, Lock, Unlock } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { X, Plus, Search, RotateCw, ArrowLeft, ArrowRight, Loader2, Globe, Lock, Unlock, MoreVertical, Terminal, ZoomIn, ZoomOut, History as HistoryIcon } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
 import { cn, getFaviconUrl } from '@/lib/utils';
 
 export function BrowserChrome() {
   const { tabs, activeTabId, addTab, removeTab, setActiveTab, updateTab } = useBrowserStore();
   const activeTab = tabs.find(t => t.id === activeTabId);
   const [urlInput, setUrlInput] = useState('');
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // Close menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setIsMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // Sync input with active tab URL
   useEffect(() => {
@@ -136,8 +149,64 @@ export function BrowserChrome() {
              </div>
          </form>
 
-         <div className="flex items-center gap-2 ml-auto">
-             {/* Add extension icons or profile placeholder here if needed */}
+         <div className="flex items-center gap-2 ml-auto" ref={menuRef}>
+             {/* Settings Menu */}
+             <div className="relative">
+                 <button
+                    onClick={() => setIsMenuOpen(!isMenuOpen)}
+                    className={cn("p-1.5 hover:bg-background/50 rounded-md text-muted-foreground transition-colors", isMenuOpen && "bg-background text-foreground")}
+                 >
+                    <MoreVertical size={14} />
+                 </button>
+
+                 {isMenuOpen && (
+                    <div className="absolute right-0 top-full mt-2 w-56 bg-popover border border-border rounded-lg shadow-xl py-1 z-50 animate-in fade-in slide-in-from-top-2 duration-200">
+                        {/* New Tab */}
+                        <button 
+                            onClick={() => { addTab(); setIsMenuOpen(false); }}
+                            className="w-full text-left px-3 py-2 text-sm hover:bg-secondary/50 flex items-center gap-2 text-foreground"
+                        >
+                            <Plus size={14} /> New Tab
+                        </button>
+                        
+                        {/* History */}
+                        <button 
+                            onClick={() => { setIsMenuOpen(false); }}
+                            className="w-full text-left px-3 py-2 text-sm hover:bg-secondary/50 flex items-center gap-2 text-foreground"
+                        >
+                            <HistoryIcon size={14} /> History
+                        </button>
+
+                        <div className="h-[1px] bg-border/50 my-1" />
+
+                        {/* Zoom */}
+                        <div className="flex items-center justify-between px-3 py-2 text-sm">
+                            <span className="text-muted-foreground">Zoom</span>
+                            <div className="flex items-center gap-1 bg-secondary/30 rounded-md p-0.5">
+                                <button onClick={() => activeTabId && updateTab(activeTabId, { action: 'zoomOut' })} className="p-1 hover:bg-background rounded">
+                                    <ZoomOut size={14} />
+                                </button>
+                                <button onClick={() => activeTabId && updateTab(activeTabId, { action: 'zoomIn' })} className="p-1 hover:bg-background rounded">
+                                    <ZoomIn size={14} />
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="h-[1px] bg-border/50 my-1" />
+
+                        {/* DevTools */}
+                        <button 
+                            onClick={() => { 
+                                if (activeTabId) updateTab(activeTabId, { action: 'devtools' });
+                                setIsMenuOpen(false); 
+                            }}
+                            className="w-full text-left px-3 py-2 text-sm hover:bg-secondary/50 flex items-center gap-2 text-muted-foreground hover:text-foreground"
+                        >
+                            <Terminal size={14} /> Developer Tools
+                        </button>
+                    </div>
+                 )}
+             </div>
          </div>
 
          {/* Loading Progress Bar */}

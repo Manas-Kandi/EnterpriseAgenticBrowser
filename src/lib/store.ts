@@ -7,7 +7,7 @@ export interface BrowserTab {
   title: string;
   faviconUrl?: string;
   loading: boolean;
-  action?: 'back' | 'forward' | 'reload' | 'stop' | null;
+  action?: 'back' | 'forward' | 'reload' | 'stop' | 'devtools' | 'zoomIn' | 'zoomOut' | null;
   canGoBack?: boolean;
   canGoForward?: boolean;
 }

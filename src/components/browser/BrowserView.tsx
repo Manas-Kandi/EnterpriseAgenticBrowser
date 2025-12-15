@@ -27,6 +27,18 @@ function WebViewInstance({ tab, active }: { tab: BrowserTab; active: boolean }) 
       el.reload();
     } else if (tab.action === 'stop') {
         el.stop();
+    } else if (tab.action === 'devtools') {
+        if (el.isDevToolsOpened()) {
+            el.closeDevTools();
+        } else {
+            el.openDevTools();
+        }
+    } else if (tab.action === 'zoomIn') {
+        const current = el.getZoomLevel();
+        el.setZoomLevel(current + 0.5);
+    } else if (tab.action === 'zoomOut') {
+        const current = el.getZoomLevel();
+        el.setZoomLevel(current - 0.5);
     }
 
     // Reset action immediately
