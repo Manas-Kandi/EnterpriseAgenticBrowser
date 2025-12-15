@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAero } from '../../lib/store';
-import { Search, Clock, FileText, MessageSquare, MapPin, Plane, Shield, Truck, Calendar, Check, Bell } from 'lucide-react';
+import { Search, Clock, FileText, MessageSquare, MapPin, Plane, Shield, Truck, Calendar, Check, Bell, Download, DollarSign } from 'lucide-react';
 import type { Shipment, Incident } from '../../lib/types';
 
 export const PortalPage: React.FC = () => {
@@ -23,6 +23,20 @@ export const PortalPage: React.FC = () => {
         { id: 2, text: "Security Patrol scheduled for Sector 4.", time: "5 hrs ago", type: "info" },
         { id: 3, text: "Maintenance scheduled for Drone D-902.", time: "1 day ago", type: "warning" }
     ]);
+
+    // Mock Invoices
+    const [invoices] = useState([
+        { id: 'INV-2023-001', date: 'Oct 01, 2023', amount: '$4,500.00', status: 'Paid' },
+        { id: 'INV-2023-002', date: 'Sep 01, 2023', amount: '$3,250.00', status: 'Paid' },
+        { id: 'INV-2023-003', date: 'Aug 01, 2023', amount: '$4,100.00', status: 'Paid' },
+    ]);
+
+    const [downloading, setDownloading] = useState<string | null>(null);
+
+    const handleDownload = (id: string) => {
+        setDownloading(id);
+        setTimeout(() => setDownloading(null), 2000);
+    };
 
     // Service Request State
     const [reqType, setReqType] = useState<'Security' | 'Logistics'>('Security');
@@ -405,11 +419,43 @@ export const PortalPage: React.FC = () => {
                 </div>
 
                 <div className="bg-slate-800/50 p-6 rounded-lg border border-slate-700">
-                    <h3 className="text-lg font-semibold text-slate-200 mb-2 flex items-center gap-2">
+                    <h3 className="text-lg font-semibold text-slate-200 mb-4 flex items-center gap-2">
                         <FileText className="w-5 h-5 text-sky-400" />
                         Invoices
                     </h3>
-                    <p className="text-slate-400 text-sm">All payments up to date.</p>
+                    <div className="space-y-2">
+                        {invoices.map(inv => (
+                            <div key={inv.id} className="flex items-center justify-between p-3 bg-slate-900/50 rounded border border-slate-800/50">
+                                <div>
+                                    <div className="text-sm font-medium text-slate-200">{inv.id}</div>
+                                    <div className="text-xs text-slate-500">{inv.date}</div>
+                                </div>
+                                <div className="text-right">
+                                    <div className="text-sm font-medium text-emerald-400">{inv.amount}</div>
+                                    <button 
+                                        onClick={() => handleDownload(inv.id)}
+                                        className="text-xs text-sky-400 hover:text-sky-300 flex items-center gap-1 ml-auto mt-1 transition-colors"
+                                    >
+                                        {downloading === inv.id ? (
+                                            <span className="animate-pulse">Downloading...</span>
+                                        ) : (
+                                            <>
+                                                <Download className="w-3 h-3" />
+                                                PDF
+                                            </>
+                                        )}
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                    <div className="mt-4 pt-4 border-t border-slate-700/50 flex justify-between items-center">
+                        <span className="text-xs text-slate-500 uppercase font-semibold">Total Due</span>
+                        <div className="flex items-center gap-1 text-slate-200 font-mono font-medium">
+                            <DollarSign className="w-3 h-3 text-slate-500" />
+                            0.00
+                        </div>
+                    </div>
                 </div>
 
                 <div className="bg-slate-800/50 p-6 rounded-lg border border-slate-700">
