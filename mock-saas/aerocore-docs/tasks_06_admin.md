@@ -59,10 +59,10 @@
 - [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 8: Implement "Global Settings"
-- [ ] Form for "Company Name", "Timezone", "Security Level" (Low/Med/High).
-- [ ] Save to a new `settings` slice in Global Store (optional, or just local state).
-- [ ] Run a comprehensive review of the implementation and make sure it is ok.
-- [ ] Write a clear comprehensive commit message, git commit and push.
+- [x] Form for "Company Name", "Timezone", "Security Level" (Low/Med/High).
+- [x] Save to a new `settings` slice in Global Store (optional, or just local state).
+- [x] Run a comprehensive review of the implementation and make sure it is ok.
+- [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 9: Implement "Batch Actions"
 - [ ] Add checkboxes to User List rows.
