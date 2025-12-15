@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAero } from '../../lib/store';
-import { Search, Clock, FileText, MessageSquare, MapPin, Plane, Shield, Truck, Calendar, Check } from 'lucide-react';
+import { Search, Clock, FileText, MessageSquare, MapPin, Plane, Shield, Truck, Calendar, Check, Bell } from 'lucide-react';
 import type { Shipment, Incident } from '../../lib/types';
 
 export const PortalPage: React.FC = () => {
@@ -16,6 +16,13 @@ export const PortalPage: React.FC = () => {
         balance: '$0.00',
         plan: 'Enterprise'
     };
+
+    // Mock Notifications
+    const [notifications] = useState([
+        { id: 1, text: "Your package ORD-003 has arrived at Base Alpha.", time: "2 hrs ago", type: "success" },
+        { id: 2, text: "Security Patrol scheduled for Sector 4.", time: "5 hrs ago", type: "info" },
+        { id: 3, text: "Maintenance scheduled for Drone D-902.", time: "1 day ago", type: "warning" }
+    ]);
 
     // Service Request State
     const [reqType, setReqType] = useState<'Security' | 'Logistics'>('Security');
@@ -347,6 +354,28 @@ export const PortalPage: React.FC = () => {
                             </div>
                             <div className="text-[10px] text-slate-600 mt-1">Oct 15, 2023</div>
                         </div>
+                    </div>
+                </div>
+
+                <div className="bg-slate-800/50 p-6 rounded-lg border border-slate-700">
+                    <h3 className="text-lg font-semibold text-slate-200 mb-4 flex items-center gap-2">
+                        <Bell className="w-5 h-5 text-sky-400" />
+                        Notifications
+                    </h3>
+                    <div className="space-y-3">
+                        {notifications.map(note => (
+                            <div key={note.id} className="flex gap-3 items-start p-3 bg-slate-900/50 rounded border border-slate-800/50">
+                                <div className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${
+                                    note.type === 'success' ? 'bg-emerald-500' :
+                                    note.type === 'warning' ? 'bg-amber-500' :
+                                    'bg-sky-500'
+                                }`} />
+                                <div>
+                                    <p className="text-sm text-slate-300 leading-snug">{note.text}</p>
+                                    <span className="text-xs text-slate-500 mt-1 block">{note.time}</span>
+                                </div>
+                            </div>
+                        ))}
                     </div>
                 </div>
 
