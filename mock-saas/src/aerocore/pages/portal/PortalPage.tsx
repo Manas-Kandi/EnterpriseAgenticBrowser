@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAero } from '../../lib/store';
-import { Search, Clock, FileText, MessageSquare, MapPin, Plane, Shield, Truck, Calendar, Check, Bell, Download, DollarSign } from 'lucide-react';
+import { Search, Clock, FileText, MessageSquare, MapPin, Plane, Shield, Truck, Calendar, Check, Bell, Download, DollarSign, Star, Send } from 'lucide-react';
 import type { Shipment, Incident } from '../../lib/types';
 
 export const PortalPage: React.FC = () => {
@@ -15,6 +15,15 @@ export const PortalPage: React.FC = () => {
         account: 'TC-9001',
         balance: '$0.00',
         plan: 'Enterprise'
+    };
+
+    // Rating State
+    const [rating, setRating] = useState(0);
+    const [ratingSubmitted, setRatingSubmitted] = useState(false);
+
+    const handleRating = (value: number) => {
+        setRating(value);
+        setTimeout(() => setRatingSubmitted(true), 500);
     };
 
     // Mock Notifications
