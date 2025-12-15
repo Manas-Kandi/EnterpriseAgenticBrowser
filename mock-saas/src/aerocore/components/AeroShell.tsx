@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
-import { Grid, Shield, Users, Box, Radio, LayoutDashboard, Settings, FileBarChart } from 'lucide-react';
+import { Grid, Shield, Users, Box, Radio, LayoutDashboard, Settings, FileBarChart, Globe } from 'lucide-react';
 
 // Inline utility if needed
 const classNames = (...classes: (string | undefined)[]) => classes.filter(Boolean).join(' ');
@@ -12,6 +12,7 @@ const apps = [
   { name: 'Security', path: '/aerocore/security', icon: Shield },
   { name: 'HR', path: '/aerocore/hr', icon: Users },
   { name: 'Logistics', path: '/aerocore/cargo', icon: Box },
+  { name: 'Portal', path: '/aerocore/portal', icon: Globe },
   { name: 'DataLake', path: '/aerocore/data', icon: FileBarChart },
 ];
 

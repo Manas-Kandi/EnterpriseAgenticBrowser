@@ -13,6 +13,7 @@ import { DroneDetailPage } from './aerocore/pages/fleet/DroneDetailPage';
 import { WorkforcePage } from './aerocore/pages/hr/WorkforcePage';
 import { CargoPage } from './aerocore/pages/cargo/CargoPage';
 import { SecurityPage } from './aerocore/pages/security/SecurityPage';
+import { PortalPage } from './aerocore/pages/portal/PortalPage';
 
 function App() {
   return (
@@ -32,6 +33,7 @@ function App() {
                         <Route path="fleet" element={<FleetPage />} />
                         <Route path="fleet/:id" element={<DroneDetailPage />} />
                         <Route path="security" element={<SecurityPage />} />
+                        <Route path="portal" element={<PortalPage />} />
                         <Route path="hr" element={<WorkforcePage />} />
                         <Route path="cargo" element={<CargoPage />} />
                         <Route path="data" element={<div className="p-10 text-slate-400">DataLake (Coming Soon)</div>} />
@@ -64,6 +66,7 @@ function App() {
                             <li><a href="/aerocore/dispatch" className="block p-3 bg-slate-800 rounded hover:bg-slate-700 hover:text-sky-300 transition-colors">Dispatch (Beta)</a></li>
                             <li><a href="/aerocore/fleet" className="block p-3 bg-slate-800 rounded hover:bg-slate-700 hover:text-sky-300 transition-colors">FleetForge</a></li>
                             <li><a href="/aerocore/hr" className="block p-3 bg-slate-800 rounded hover:bg-slate-700 hover:text-sky-300 transition-colors">WorkforceHub</a></li>
+                            <li><a href="/aerocore/portal" className="block p-3 bg-slate-800 rounded hover:bg-slate-700 hover:text-sky-300 transition-colors">Client Portal</a></li>
                         </ul>
                     </div>
                 </div>
