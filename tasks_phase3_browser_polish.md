@@ -37,7 +37,7 @@ This phase focuses on refining the Enterprise Browser into a daily-driver capabl
         - Add keyboard shortcuts: `Cmd+T` (New Tab), `Cmd+W` (Close Tab), `Cmd+R` (Reload).
     - **Git:** `git add . && git commit -m "feat(core): add history tracking and state persistence"`
 
-- [ ] **Task 3.5: Browser Settings & DevTools**
+- [x] **Task 3.5: Browser Settings & DevTools**
     - **Description:**
         - Add a "Menu" button (three dots) to the right of the Omnibar.
         - Create a dropdown menu with: "New Tab", "History", "Zoom In/Out", "Toggle Developer Tools".

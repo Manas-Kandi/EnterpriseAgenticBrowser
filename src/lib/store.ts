@@ -22,6 +22,7 @@ interface BrowserState {
   tabs: BrowserTab[];
   activeTabId: string | null;
   history: HistoryItem[];
+  activeSidebarPanel: 'drive' | 'gmail' | 'calendar' | 'slack' | null;
   
   // Actions
   addTab: (url?: string) => void;
@@ -29,6 +30,7 @@ interface BrowserState {
   setActiveTab: (id: string) => void;
   updateTab: (id: string, data: Partial<BrowserTab>) => void;
   addToHistory: (url: string, title: string) => void;
+  setSidebarPanel: (panel: 'drive' | 'gmail' | 'calendar' | 'slack' | null) => void;
 }
 
 export const useBrowserStore = create<BrowserState>()(
@@ -39,6 +41,7 @@ export const useBrowserStore = create<BrowserState>()(
       ],
       activeTabId: '1',
       history: [],
+      activeSidebarPanel: null,
 
       addTab: (url = 'about:newtab') => set((state) => {
         const newTab = {
@@ -74,6 +77,8 @@ export const useBrowserStore = create<BrowserState>()(
               history: [{ url, title, timestamp: Date.now() }, ...state.history].slice(0, 100) // Keep last 100 items
           };
       }),
+
+      setSidebarPanel: (panel) => set({ activeSidebarPanel: panel }),
     }),
     {
       name: 'browser-storage',

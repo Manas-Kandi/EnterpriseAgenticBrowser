@@ -2,6 +2,8 @@ import { Sidebar } from '@/components/layout/Sidebar';
 import { StatusBar } from '@/components/layout/StatusBar';
 import { BrowserChrome } from '@/components/browser/BrowserChrome';
 import { BrowserView } from '@/components/browser/BrowserView';
+import { WorkspaceSidebar } from '@/components/browser/WorkspaceSidebar';
+import { WorkspacePanel } from '@/components/browser/WorkspacePanel';
 import { useEffect } from 'react';
 import { useBrowserStore } from '@/lib/store';
 
@@ -36,8 +38,14 @@ function App() {
   return (
     <div className="h-screen flex flex-col overflow-hidden bg-background text-foreground">
       <div className="flex-1 flex overflow-hidden">
+        {/* Workspace Dock */}
+        <WorkspaceSidebar />
+        
+        {/* Workspace Panel */}
+        <WorkspacePanel />
+
         {/* Main Browser Area */}
-        <main className="flex-1 flex flex-col min-w-0 bg-background">
+        <main className="flex-1 flex flex-col min-w-0 bg-background relative z-0">
           <BrowserChrome />
           <BrowserView />
         </main>
