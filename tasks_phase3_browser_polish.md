@@ -20,7 +20,7 @@ This phase focuses on refining the Enterprise Browser into a daily-driver capabl
         - Add a "Stop" button (X) that appears while loading, swapping with the "Reload" button.
     - **Git:** `git add . && git commit -m "feat(ui): add security indicators and load progress"`
 
-- [ ] **Task 3.3: "New Tab" Dashboard**
+- [x] **Task 3.3: "New Tab" Dashboard**
     - **Description:**
         - Create a `NewTabPage.tsx` component.
         - When opening a new tab, render this component instead of `about:blank`.

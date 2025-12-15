@@ -3,7 +3,7 @@ import { useEffect, useRef } from 'react';
 import { NewTabPage } from './NewTabPage';
 
 function WebViewInstance({ tab, active }: { tab: BrowserTab; active: boolean }) {
-  const { updateTab } = useBrowserStore();
+  const { updateTab, addToHistory } = useBrowserStore();
   const webviewRef = useRef<any>(null);
   const registeredRef = useRef(false);
 
@@ -58,11 +58,18 @@ function WebViewInstance({ tab, active }: { tab: BrowserTab; active: boolean }) 
     // History State Logic
     const updateHistory = () => {
         try {
+            const url = el.getURL();
+            const title = el.getTitle() || tab.title || url;
+            
             updateTab(tab.id, {
                 canGoBack: el.canGoBack(),
                 canGoForward: el.canGoForward(),
-                url: el.getURL()
+                url: url
             });
+            
+            if (url && !url.startsWith('about:')) {
+                addToHistory(url, title);
+            }
         } catch(e) {}
     };
 
