@@ -9,6 +9,14 @@ export const PortalPage: React.FC = () => {
     const [foundShipment, setFoundShipment] = useState<Shipment | null>(null);
     const [hasSearched, setHasSearched] = useState(false);
 
+    // Mock Client State
+    const mockClient = {
+        name: 'TechCorp Industries',
+        account: 'TC-9001',
+        balance: '$0.00',
+        plan: 'Enterprise'
+    };
+
     // Service Request State
     const [reqType, setReqType] = useState<'Security' | 'Logistics'>('Security');
     const [reqLocation, setReqLocation] = useState('');
@@ -76,6 +84,15 @@ export const PortalPage: React.FC = () => {
                 <div>
                     <h1 className="text-3xl font-bold tracking-tight text-slate-100">Client Portal</h1>
                     <p className="text-slate-400 mt-1">Track shipments and manage service requests.</p>
+                </div>
+                <div className="flex items-center gap-3 bg-slate-900 px-4 py-2 rounded-lg border border-slate-800">
+                    <div className="w-10 h-10 bg-sky-500 rounded-full flex items-center justify-center font-bold text-white">
+                        {mockClient.name.charAt(0)}
+                    </div>
+                    <div className="text-right">
+                        <div className="text-sm font-semibold text-slate-200">{mockClient.name}</div>
+                        <div className="text-xs text-slate-500 font-mono">{mockClient.account}</div>
+                    </div>
                 </div>
             </header>
 
@@ -287,12 +304,50 @@ export const PortalPage: React.FC = () => {
                     )}
                 </div>
 
-                <div className="bg-slate-800/50 p-6 rounded-lg border border-slate-700">
-                    <h3 className="text-lg font-semibold text-slate-200 mb-2 flex items-center gap-2">
+                <div className="bg-slate-800/50 p-6 rounded-lg border border-slate-700 flex flex-col">
+                    <h3 className="text-lg font-semibold text-slate-200 mb-4 flex items-center gap-2">
                         <Clock className="w-5 h-5 text-sky-400" />
                         Recent Orders
                     </h3>
-                    <p className="text-slate-400 text-sm">No recent orders found.</p>
+                    <div className="flex-1 overflow-auto space-y-3">
+                        {state.shipments.filter(s => s.customer === mockClient.name).length > 0 ? (
+                            state.shipments.filter(s => s.customer === mockClient.name).map(shipment => (
+                                <div key={shipment.id} className="p-3 bg-slate-900/50 rounded border border-slate-800/50 hover:bg-slate-800 transition-colors cursor-pointer" onClick={() => {
+                                    setTrackingId(shipment.id);
+                                    setFoundShipment(shipment);
+                                    setHasSearched(true);
+                                }}>
+                                    <div className="flex justify-between items-start mb-1">
+                                        <span className="text-sm font-medium text-slate-200">{shipment.id}</span>
+                                        <span className={`text-[10px] px-1.5 py-0.5 rounded uppercase font-bold ${
+                                            shipment.status === 'Delivered' ? 'text-emerald-400 bg-emerald-500/10' :
+                                            shipment.status === 'Exception' ? 'text-rose-400 bg-rose-500/10' :
+                                            'text-sky-400 bg-sky-500/10'
+                                        }`}>{shipment.status}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center text-xs text-slate-500">
+                                        <span>To: {shipment.destination}</span>
+                                        <span>{shipment.weight}</span>
+                                    </div>
+                                </div>
+                            ))
+                        ) : (
+                             <p className="text-slate-400 text-sm">No recent orders found.</p>
+                        )}
+                        
+                        {/* Mocking a few more static entries for "history" feel if state is empty */}
+                        <div className="p-3 bg-slate-900/50 rounded border border-slate-800/50 opacity-60">
+                            <div className="flex justify-between items-start mb-1">
+                                <span className="text-sm font-medium text-slate-200">ORD-000</span>
+                                <span className="text-[10px] px-1.5 py-0.5 rounded uppercase font-bold text-slate-400 bg-slate-700/50">Delivered</span>
+                            </div>
+                            <div className="flex justify-between items-center text-xs text-slate-500">
+                                <span>To: Sector 4 HQ</span>
+                                <span>5.0kg</span>
+                            </div>
+                            <div className="text-[10px] text-slate-600 mt-1">Oct 15, 2023</div>
+                        </div>
+                    </div>
                 </div>
 
                 <div className="bg-slate-800/50 p-6 rounded-lg border border-slate-700">
