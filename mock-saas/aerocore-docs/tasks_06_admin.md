@@ -65,13 +65,13 @@
 - [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 9: Implement "Batch Actions"
-- [ ] Add checkboxes to User List rows.
-- [ ] "Bulk Deactivate", "Bulk Email".
-- [ ] Run a comprehensive review of the implementation and make sure it is ok.
-- [ ] Write a clear comprehensive commit message, git commit and push.
+- [x] Add checkboxes to User List rows.
+- [x] "Bulk Deactivate", "Bulk Email".
+- [x] Run a comprehensive review of the implementation and make sure it is ok.
+- [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 10: Final Polish
-- [ ] Ensure the "Admin" badge looks distinct.
-- [ ] Verify search filtering works perfectly.
-- [ ] Run a comprehensive review of the implementation and make sure it is ok.
-- [ ] Write a clear comprehensive commit message, git commit and push.
+- [x] Ensure the "Admin" badge looks distinct.
+- [x] Verify search filtering works perfectly.
+- [x] Run a comprehensive review of the implementation and make sure it is ok.
+- [x] Write a clear comprehensive commit message, git commit and push.
