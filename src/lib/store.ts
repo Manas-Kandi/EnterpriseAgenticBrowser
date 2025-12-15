@@ -4,6 +4,7 @@ export interface BrowserTab {
   id: string;
   url: string;
   title: string;
+  faviconUrl?: string;
   loading: boolean;
   action?: 'back' | 'forward' | 'reload' | null;
   canGoBack?: boolean;

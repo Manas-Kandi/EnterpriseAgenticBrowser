@@ -1,7 +1,7 @@
 import { useBrowserStore } from '@/lib/store';
-import { X, Plus, Search, RotateCw, ArrowLeft, ArrowRight } from 'lucide-react';
+import { X, Plus, Search, RotateCw, ArrowLeft, ArrowRight, Loader2, Globe } from 'lucide-react';
 import { useState, useEffect } from 'react';
-import { cn } from '@/lib/utils';
+import { cn, getFaviconUrl } from '@/lib/utils';
 
 export function BrowserChrome() {
   const { tabs, activeTabId, addTab, removeTab, setActiveTab, updateTab } = useBrowserStore();
@@ -35,20 +35,42 @@ export function BrowserChrome() {
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
             className={cn(
-              "group flex items-center gap-2 px-3 py-1.5 rounded-t-lg text-xs min-w-[120px] max-w-[200px] cursor-pointer transition-all border-t border-x border-transparent relative",
+              "group flex items-center gap-2 px-3 py-1.5 rounded-t-lg text-xs min-w-[120px] max-w-[200px] cursor-pointer transition-all border-t border-x relative select-none",
               activeTabId === tab.id 
-                ? "bg-secondary/50 border-border/40 text-foreground shadow-sm z-10" 
-                : "text-muted-foreground hover:bg-secondary/30 hover:text-foreground/80 opacity-70 hover:opacity-100"
+                ? "bg-background border-border/40 text-foreground shadow-sm z-10" 
+                : "bg-secondary/20 border-transparent text-muted-foreground hover:bg-secondary/40 hover:text-foreground/80"
             )}
           >
+            {/* Favicon / Loader */}
+            <div className="flex items-center justify-center w-4 h-4 shrink-0">
+                {tab.loading ? (
+                    <Loader2 size={12} className="animate-spin text-primary" />
+                ) : (
+                    <img 
+                        src={getFaviconUrl(tab.url)} 
+                        onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextElementSibling?.classList.remove('hidden'); }}
+                        className="w-3.5 h-3.5 object-contain"
+                        alt=""
+                    />
+                )}
+                {/* Fallback Icon (hidden by default unless img fails or is loading) */}
+                <Globe size={12} className={cn("hidden text-muted-foreground/70", tab.loading ? "hidden" : "hidden group-hover:block")} />
+            </div>
+
             <span className="truncate flex-1 font-medium">{tab.title || 'New Tab'}</span>
+            
             <button
               onClick={(e) => { e.stopPropagation(); removeTab(tab.id); }}
-              className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-background/50 rounded-md transition-opacity text-muted-foreground hover:text-destructive"
+              className={cn(
+                  "p-0.5 rounded-md transition-all text-muted-foreground hover:text-destructive hover:bg-background/80 opacity-0 group-hover:opacity-100",
+                  activeTabId === tab.id && "opacity-100" // Always show close button on active tab
+              )}
             >
               <X size={12} />
             </button>
-            {activeTabId === tab.id && <div className="absolute bottom-[-1px] left-0 right-0 h-[1px] bg-secondary/50" />}
+            
+            {/* Active Tab Bottom Hider (blends into toolbar) */}
+            {activeTabId === tab.id && <div className="absolute bottom-[-1px] left-0 right-0 h-[1px] bg-background z-20" />}
           </div>
         ))}
         <button
