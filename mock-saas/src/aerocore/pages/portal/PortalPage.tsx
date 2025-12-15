@@ -1,10 +1,43 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useAero } from '../../lib/store';
 import { Search, Clock, FileText, MessageSquare } from 'lucide-react';
+import type { Shipment } from '../../lib/types';
 
 export const PortalPage: React.FC = () => {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    // const { state } = useAero();
+    const { state } = useAero();
+    const [trackingId, setTrackingId] = useState('');
+    const [foundShipment, setFoundShipment] = useState<Shipment | null>(null);
+    const [hasSearched, setHasSearched] = useState(false);
+
+    const handleTrack = () => {
+        if (!trackingId.trim()) return;
+        const shipment = state.shipments.find(s => s.id.toLowerCase() === trackingId.trim().toLowerCase());
+        setFoundShipment(shipment || null);
+        setHasSearched(true);
+    };
+
+    const handleKeyDown = (e: React.KeyboardEvent) => {
+        if (e.key === 'Enter') handleTrack();
+    };
+
+    const getProgress = (status: Shipment['status']) => {
+        switch (status) {
+            case 'Pending': return 10;
+            case 'Processing': return 35;
+            case 'In-Transit': return 70;
+            case 'Delivered': return 100;
+            case 'Exception': return 100;
+            default: return 0;
+        }
+    };
+
+    const getStatusColor = (status: Shipment['status']) => {
+        switch (status) {
+            case 'Delivered': return 'bg-emerald-500';
+            case 'Exception': return 'bg-rose-500';
+            default: return 'bg-sky-500';
+        }
+    };
 
     return (
         <div className="space-y-6 animate-in fade-in duration-500">
@@ -15,23 +48,83 @@ export const PortalPage: React.FC = () => {
                 </div>
             </header>
 
-            {/* Placeholder content for now - will be implemented in subsequent tasks */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {/* Track Shipment Hero */}
                 <div className="col-span-full bg-slate-800/50 p-6 rounded-lg border border-slate-700">
                     <h2 className="text-xl font-semibold text-sky-400 mb-4 flex items-center gap-2">
                         <Search className="w-5 h-5" />
                         Track Shipment
                     </h2>
-                    <div className="flex gap-4">
+                    <div className="flex gap-4 mb-6">
                         <input 
                             type="text" 
-                            placeholder="Enter Tracking Number..." 
-                            className="flex-1 bg-slate-900 border border-slate-700 rounded-md px-4 py-2 text-slate-100 focus:outline-none focus:ring-2 focus:ring-sky-500"
+                            value={trackingId}
+                            onChange={(e) => setTrackingId(e.target.value)}
+                            onKeyDown={handleKeyDown}
+                            placeholder="Enter Tracking Number (e.g. ORD-001)" 
+                            className="flex-1 bg-slate-900 border border-slate-700 rounded-md px-4 py-2 text-slate-100 focus:outline-none focus:ring-2 focus:ring-sky-500 placeholder:text-slate-500"
                         />
-                        <button className="bg-sky-600 hover:bg-sky-500 text-white px-6 py-2 rounded-md font-medium transition-colors">
+                        <button 
+                            onClick={handleTrack}
+                            className="bg-sky-600 hover:bg-sky-500 text-white px-6 py-2 rounded-md font-medium transition-colors"
+                        >
                             Track
                         </button>
                     </div>
+
+                    {hasSearched && !foundShipment && (
+                        <div className="p-4 bg-slate-900/50 rounded-lg border border-slate-800 text-center text-slate-400">
+                            No shipment found with tracking number <span className="text-slate-200 font-mono">{trackingId}</span>
+                        </div>
+                    )}
+
+                    {foundShipment && (
+                        <div className="bg-slate-900 rounded-lg border border-slate-800 p-6 animate-in slide-in-from-top-2">
+                            <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+                                <div>
+                                    <div className="flex items-center gap-2 mb-1">
+                                        <h3 className="text-2xl font-bold text-white tracking-tight">{foundShipment.id}</h3>
+                                        <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wider ${
+                                            foundShipment.status === 'Exception' ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20' :
+                                            foundShipment.status === 'Delivered' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
+                                            'bg-sky-500/10 text-sky-400 border border-sky-500/20'
+                                        }`}>
+                                            {foundShipment.status}
+                                        </span>
+                                    </div>
+                                    <div className="text-sm text-slate-400 flex items-center gap-2">
+                                        <span>From: <span className="text-slate-300">{foundShipment.origin}</span></span>
+                                        <span className="text-slate-600">&rarr;</span>
+                                        <span>To: <span className="text-slate-300">{foundShipment.destination}</span></span>
+                                    </div>
+                                </div>
+                                {foundShipment.estimatedDelivery && (
+                                    <div className="text-right">
+                                        <div className="text-xs text-slate-500 uppercase tracking-wider">Estimated Delivery</div>
+                                        <div className="text-lg font-mono text-emerald-400">{foundShipment.estimatedDelivery}</div>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Progress Bar */}
+                            <div className="relative pt-4 pb-2">
+                                <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
+                                    <div 
+                                        className={`h-full transition-all duration-1000 ease-out ${getStatusColor(foundShipment.status)}`}
+                                        style={{ width: `${getProgress(foundShipment.status)}%` }}
+                                    />
+                                </div>
+                                <div className="flex justify-between mt-2 text-xs font-medium text-slate-500">
+                                    <div className={getProgress(foundShipment.status) >= 10 ? 'text-sky-400' : ''}>Ordered</div>
+                                    <div className={getProgress(foundShipment.status) >= 35 ? 'text-sky-400' : ''}>Processing</div>
+                                    <div className={getProgress(foundShipment.status) >= 70 ? 'text-sky-400' : ''}>In-Transit</div>
+                                    <div className={getProgress(foundShipment.status) >= 100 ? (foundShipment.status === 'Exception' ? 'text-rose-400' : 'text-emerald-400') : ''}>
+                                        {foundShipment.status === 'Exception' ? 'Exception' : 'Delivered'}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 <div className="bg-slate-800/50 p-6 rounded-lg border border-slate-700">

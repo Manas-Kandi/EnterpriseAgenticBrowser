@@ -41,11 +41,22 @@ export type InventoryItem = {
   category: 'Medical' | 'Parts' | 'Supplies' | 'Hazardous';
 };
 
+export type Shipment = {
+  id: string;
+  origin: string;
+  destination: string;
+  status: 'Pending' | 'Processing' | 'In-Transit' | 'Delivered' | 'Exception';
+  customer: string;
+  priority: 'Standard' | 'Express' | 'Critical';
+  weight: string;
+  estimatedDelivery?: string;
+};
+
 export type AeroState = {
   users: User[];
   drones: Drone[];
   incidents: Incident[];
-  shipments: any[];
+  shipments: Shipment[];
   inventory: InventoryItem[];
   currentUser: User | null;
 };
