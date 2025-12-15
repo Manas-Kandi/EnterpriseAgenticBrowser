@@ -8,20 +8,34 @@ export function AdminPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newUser, setNewUser] = useState<Partial<User>>({ role: 'Pilot', status: 'Active' });
 
-  const handleCreate = (e: React.FormEvent) => {
+  const handleEdit = (user: User) => {
+      setNewUser(user);
+      setIsModalOpen(true);
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newUser.name || !newUser.email) return;
     
-    dispatch({
-        type: 'ADD_USER',
-        payload: {
-            id: `u${Date.now()}`,
-            name: newUser.name,
-            email: newUser.email,
-            role: newUser.role as any,
-            status: 'Active'
-        }
-    });
+    if (newUser.id) {
+        // Edit Mode
+        dispatch({
+            type: 'UPDATE_USER',
+            payload: newUser as User
+        });
+    } else {
+        // Create Mode
+        dispatch({
+            type: 'ADD_USER',
+            payload: {
+                id: `u${Date.now()}`,
+                name: newUser.name,
+                email: newUser.email,
+                role: newUser.role as any,
+                status: 'Active'
+            }
+        });
+    }
     setIsModalOpen(false);
     setNewUser({ role: 'Pilot', status: 'Active' });
   };
@@ -172,7 +186,7 @@ export function AdminPage() {
                                 data-testid="admin-submit-user"
                                 className="bg-sky-600 hover:bg-sky-500 text-white px-4 py-2 rounded text-sm font-medium transition-colors"
                             >
-                                Create User
+                                {newUser.id ? 'Update User' : 'Create User'}
                             </button>
                         </div>
                     </form>
