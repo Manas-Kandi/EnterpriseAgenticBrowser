@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAero } from '../../lib/store';
-import { Search, Clock, FileText, MessageSquare } from 'lucide-react';
+import { Search, Clock, FileText, MessageSquare, MapPin, Plane } from 'lucide-react';
 import type { Shipment } from '../../lib/types';
 
 export const PortalPage: React.FC = () => {
@@ -107,7 +107,7 @@ export const PortalPage: React.FC = () => {
                             </div>
 
                             {/* Progress Bar */}
-                            <div className="relative pt-4 pb-2">
+                            <div className="relative pt-4 pb-2 mb-6">
                                 <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
                                     <div 
                                         className={`h-full transition-all duration-1000 ease-out ${getStatusColor(foundShipment.status)}`}
@@ -120,6 +120,54 @@ export const PortalPage: React.FC = () => {
                                     <div className={getProgress(foundShipment.status) >= 70 ? 'text-sky-400' : ''}>In-Transit</div>
                                     <div className={getProgress(foundShipment.status) >= 100 ? (foundShipment.status === 'Exception' ? 'text-rose-400' : 'text-emerald-400') : ''}>
                                         {foundShipment.status === 'Exception' ? 'Exception' : 'Delivered'}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Shipment Details Card (Map & Info) */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-950/50 rounded-lg p-4 border border-slate-800">
+                                {/* Map Placeholder */}
+                                <div className="bg-slate-900 rounded border border-slate-800 h-48 flex items-center justify-center relative overflow-hidden group">
+                                    <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1524661135-423995f22d0b?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80')] bg-cover bg-center opacity-40 grayscale group-hover:grayscale-0 transition-all duration-500"></div>
+                                    <div className="relative z-10 flex flex-col items-center gap-2">
+                                        <MapPin className="text-sky-500 w-8 h-8 animate-bounce" />
+                                        <span className="text-xs font-mono bg-black/50 px-2 py-1 rounded text-white backdrop-blur-sm">Live Tracking</span>
+                                    </div>
+                                </div>
+
+                                {/* Details */}
+                                <div className="space-y-4">
+                                    <h4 className="text-sm font-semibold text-slate-200 uppercase tracking-wider border-b border-slate-800 pb-2">Shipment Details</h4>
+                                    
+                                    <div className="space-y-3">
+                                        <div className="flex justify-between text-sm">
+                                            <span className="text-slate-500">Weight</span>
+                                            <span className="text-slate-300 font-mono">{foundShipment.weight}</span>
+                                        </div>
+                                        <div className="flex justify-between text-sm">
+                                            <span className="text-slate-500">Priority</span>
+                                            <span className={`font-medium ${
+                                                foundShipment.priority === 'Critical' ? 'text-rose-400' :
+                                                foundShipment.priority === 'Express' ? 'text-amber-400' :
+                                                'text-slate-300'
+                                            }`}>{foundShipment.priority}</span>
+                                        </div>
+                                        <div className="flex justify-between text-sm">
+                                            <span className="text-slate-500">Customer</span>
+                                            <span className="text-slate-300">{foundShipment.customer}</span>
+                                        </div>
+
+                                        {foundShipment.status === 'In-Transit' && foundShipment.assignedDroneId && (
+                                            <div className="mt-4 p-3 bg-sky-500/10 border border-sky-500/20 rounded-md flex items-center justify-between">
+                                                <div className="flex items-center gap-2 text-sky-400">
+                                                    <Plane className="w-4 h-4" />
+                                                    <span className="text-sm font-medium">Airborne</span>
+                                                </div>
+                                                <div className="text-xs text-sky-300 font-mono">
+                                                    Drone ID: {foundShipment.assignedDroneId}
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             </div>

@@ -50,6 +50,7 @@ export type Shipment = {
   priority: 'Standard' | 'Express' | 'Critical';
   weight: string;
   estimatedDelivery?: string;
+  assignedDroneId?: string;
 };
 
 export type AeroState = {
