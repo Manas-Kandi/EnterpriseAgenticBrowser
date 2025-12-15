@@ -1,13 +1,21 @@
 import { useBrowserStore, BrowserTab } from '@/lib/store';
 import { useEffect, useRef } from 'react';
+import { NewTabPage } from './NewTabPage';
 
 function WebViewInstance({ tab, active }: { tab: BrowserTab; active: boolean }) {
-  const { updateTab } = useBrowserStore();
+  const { updateTab, addToHistory } = useBrowserStore();
   const webviewRef = useRef<any>(null);
   const registeredRef = useRef(false);
 
+  // Check if this is a "New Tab" page
+  const isNewTab = !tab.url || tab.url === 'about:blank' || tab.url === 'about:newtab';
+
   // Handle Action (Back/Forward/Reload)
   useEffect(() => {
+    // If we are on New Tab, actions might need different handling or be ignored
+    // But usually you can't go back/forward on a fresh new tab anyway.
+    if (isNewTab) return; 
+
     const el = webviewRef.current;
     if (!el || !tab.action) return;
 
@@ -17,11 +25,25 @@ function WebViewInstance({ tab, active }: { tab: BrowserTab; active: boolean }) 
       el.goForward();
     } else if (tab.action === 'reload') {
       el.reload();
+    } else if (tab.action === 'stop') {
+        el.stop();
+    } else if (tab.action === 'devtools') {
+        if (el.isDevToolsOpened()) {
+            el.closeDevTools();
+        } else {
+            el.openDevTools();
+        }
+    } else if (tab.action === 'zoomIn') {
+        const current = el.getZoomLevel();
+        el.setZoomLevel(current + 0.5);
+    } else if (tab.action === 'zoomOut') {
+        const current = el.getZoomLevel();
+        el.setZoomLevel(current - 0.5);
     }
 
     // Reset action immediately
     updateTab(tab.id, { action: null });
-  }, [tab.action, tab.id, updateTab]);
+  }, [tab.action, tab.id, updateTab, isNewTab]);
 
   const handleRef = (el: any) => {
     webviewRef.current = el;
@@ -48,11 +70,18 @@ function WebViewInstance({ tab, active }: { tab: BrowserTab; active: boolean }) 
     // History State Logic
     const updateHistory = () => {
         try {
+            const url = el.getURL();
+            const title = el.getTitle() || tab.title || url;
+            
             updateTab(tab.id, {
                 canGoBack: el.canGoBack(),
                 canGoForward: el.canGoForward(),
-                url: el.getURL()
+                url: url
             });
+            
+            if (url && !url.startsWith('about:')) {
+                addToHistory(url, title);
+            }
         } catch(e) {}
     };
 
@@ -60,6 +89,14 @@ function WebViewInstance({ tab, active }: { tab: BrowserTab; active: boolean }) 
     el.addEventListener('did-navigate-in-page', updateHistory);
     el.addEventListener('dom-ready', updateHistory);
   };
+
+  if (isNewTab) {
+      return (
+          <div className={`absolute inset-0 w-full h-full bg-background ${active ? 'flex flex-col' : 'hidden'}`}>
+              <NewTabPage tabId={tab.id} />
+          </div>
+      );
+  }
 
   return (
     <webview
