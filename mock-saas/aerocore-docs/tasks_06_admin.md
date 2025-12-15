@@ -53,10 +53,10 @@
 - [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 7: Implement "System Health" Widget
-- [ ] Add a dashboard widget showing "Server Status", "Database Latency".
-- [ ] Visual graphs (can be static SVGs or simple CSS bars).
-- [ ] Run a comprehensive review of the implementation and make sure it is ok.
-- [ ] Write a clear comprehensive commit message, git commit and push.
+- [x] Add a dashboard widget showing "Server Status", "Database Latency".
+- [x] Visual graphs (can be static SVGs or simple CSS bars).
+- [x] Run a comprehensive review of the implementation and make sure it is ok.
+- [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 8: Implement "Global Settings"
 - [ ] Form for "Company Name", "Timezone", "Security Level" (Low/Med/High).
