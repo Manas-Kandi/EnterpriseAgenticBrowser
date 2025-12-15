@@ -19,7 +19,7 @@ const initialState: AeroState = {
     { id: 'inc2', type: 'Medical', priority: 'Critical', status: 'New', location: 'Downtown', description: 'Cardiac arrest reported', timestamp: '2023-10-27 14:45' },
   ],
   shipments: [
-    { id: 'ORD-001', origin: 'Warehouse A', destination: 'Sector 7 Outpost', status: 'In-Transit', customer: 'TechCorp Industries', priority: 'Express', weight: '2.5kg', estimatedDelivery: '2023-10-27 16:00' },
+    { id: 'ORD-001', origin: 'Warehouse A', destination: 'Sector 7 Outpost', status: 'In-Transit', customer: 'TechCorp Industries', priority: 'Express', weight: '2.5kg', estimatedDelivery: '2023-10-27 16:00', assignedDroneId: 'd3' },
     { id: 'ORD-002', origin: 'Distribution Hub', destination: 'City General Hospital', status: 'Pending', customer: 'HealthPlus', priority: 'Standard', weight: '12kg' },
     { id: 'ORD-003', origin: 'Port Logistics', destination: 'Base Alpha', status: 'Delivered', customer: 'Global Defense', priority: 'Standard', weight: '45kg', estimatedDelivery: '2023-10-26 09:30' },
     { id: 'ORD-004', origin: 'Warehouse B', destination: 'Sector 3', status: 'Processing', customer: 'RetailGo', priority: 'Standard', weight: '1.2kg' },
