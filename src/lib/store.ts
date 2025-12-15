@@ -23,6 +23,7 @@ interface BrowserState {
   activeTabId: string | null;
   history: HistoryItem[];
   activeSidebarPanel: 'drive' | 'gmail' | 'calendar' | 'slack' | null;
+  user: { name: string; email: string; avatar?: string } | null;
   
   // Actions
   addTab: (url?: string) => void;
@@ -31,6 +32,7 @@ interface BrowserState {
   updateTab: (id: string, data: Partial<BrowserTab>) => void;
   addToHistory: (url: string, title: string) => void;
   setSidebarPanel: (panel: 'drive' | 'gmail' | 'calendar' | 'slack' | null) => void;
+  setUser: (user: { name: string; email: string; avatar?: string } | null) => void;
 }
 
 export const useBrowserStore = create<BrowserState>()(
@@ -42,6 +44,7 @@ export const useBrowserStore = create<BrowserState>()(
       activeTabId: '1',
       history: [],
       activeSidebarPanel: null,
+      user: null,
 
       addTab: (url = 'about:newtab') => set((state) => {
         const newTab = {
@@ -79,10 +82,11 @@ export const useBrowserStore = create<BrowserState>()(
       }),
 
       setSidebarPanel: (panel) => set({ activeSidebarPanel: panel }),
+      setUser: (user) => set({ user }),
     }),
     {
       name: 'browser-storage',
-      partialize: (state) => ({ tabs: state.tabs, activeTabId: state.activeTabId, history: state.history }), // Persist these fields
+      partialize: (state) => ({ tabs: state.tabs, activeTabId: state.activeTabId, history: state.history, user: state.user }), // Persist these fields
     }
   )
 );

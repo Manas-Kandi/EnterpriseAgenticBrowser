@@ -46,7 +46,7 @@ This phase focuses on refining the Enterprise Browser into a daily-driver capabl
 
 ## Section 3: Google Workspace Integration
 
-- [ ] **Task 3.6: Workspace Sidebar**
+- [x] **Task 3.6: Workspace Sidebar**
     - **Description:**
         - Create a collapsible sidebar on the left side of the browser (separate from the webview).
         - Add a "Dock" of icons: Google Drive, Gmail, Calendar, Slack.
