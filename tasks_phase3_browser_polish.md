@@ -4,7 +4,7 @@ This phase focuses on refining the Enterprise Browser into a daily-driver capabl
 
 ## Section 1: Professional UI/UX Refinement
 
-- [ ] **Task 3.1: Enhanced Tab System (Favicons & States)**
+- [x] **Task 3.1: Enhanced Tab System (Favicons & States)**
     - **Description:** 
         - Update `BrowserTab` interface to include `faviconUrl`.
         - Implement a utility to fetch favicons (e.g., using `https://www.google.com/s2/favicons?domain=${url}`).

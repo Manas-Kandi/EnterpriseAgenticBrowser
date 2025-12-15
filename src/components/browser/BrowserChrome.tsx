@@ -1,5 +1,5 @@
 import { useBrowserStore } from '@/lib/store';
-import { X, Plus, Search, RotateCw, ArrowLeft, ArrowRight, Loader2, Globe } from 'lucide-react';
+import { X, Plus, Search, RotateCw, ArrowLeft, ArrowRight, Loader2, Globe, Lock, Unlock } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { cn, getFaviconUrl } from '@/lib/utils';
 
@@ -82,7 +82,7 @@ export function BrowserChrome() {
       </div>
 
       {/* Omnibar Toolbar */}
-      <div className="h-10 flex items-center gap-3 px-3 bg-secondary/50 border-y border-border/40 shadow-sm z-0">
+      <div className="h-10 flex items-center gap-3 px-3 bg-secondary/50 border-y border-border/40 shadow-sm z-0 relative">
          <div className="flex items-center gap-1">
              <button 
                 onClick={() => activeTabId && updateTab(activeTabId, { action: 'back' })}
@@ -98,21 +98,36 @@ export function BrowserChrome() {
              >
                 <ArrowRight size={14} />
              </button>
-             <button 
-                onClick={() => activeTabId && updateTab(activeTabId, { action: 'reload' })}
-                className="p-1.5 hover:bg-background/50 rounded-md text-muted-foreground transition-colors"
-             >
-                <RotateCw size={14} className={cn(activeTab?.loading ? "animate-spin" : "")} />
-             </button>
+             {activeTab?.loading ? (
+                 <button 
+                    onClick={() => activeTabId && updateTab(activeTabId, { action: 'stop', loading: false })}
+                    className="p-1.5 hover:bg-background/50 rounded-md text-muted-foreground transition-colors"
+                 >
+                    <X size={14} />
+                 </button>
+             ) : (
+                 <button 
+                    onClick={() => activeTabId && updateTab(activeTabId, { action: 'reload' })}
+                    className="p-1.5 hover:bg-background/50 rounded-md text-muted-foreground transition-colors"
+                 >
+                    <RotateCw size={14} />
+                 </button>
+             )}
          </div>
          
          <form onSubmit={handleNavigate} className="flex-1 max-w-3xl">
              <div className="relative group">
                 <div className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/50">
-                    <Search size={12} />
+                    {urlInput.startsWith('https://') ? (
+                        <Lock size={12} className="text-emerald-500" />
+                    ) : urlInput.startsWith('http://') ? (
+                        <Unlock size={12} className="text-amber-500" />
+                    ) : (
+                        <Search size={12} />
+                    )}
                 </div>
                 <input
-                    className="w-full bg-background border border-border/30 rounded-full pl-8 pr-3 py-1.5 text-xs text-foreground placeholder:text-muted-foreground/40 outline-none focus:border-primary/20 focus:ring-1 focus:ring-primary/10 transition-all shadow-sm"
+                    className="w-full bg-background border border-border/30 rounded-full pl-8 pr-3 py-1.5 text-xs text-foreground placeholder:text-muted-foreground/40 outline-none focus:border-primary/20 focus:ring-1 focus:ring-primary/10 transition-all shadow-sm font-mono"
                     value={urlInput}
                     onChange={(e) => setUrlInput(e.target.value)}
                     placeholder="Search or enter website name"
@@ -124,6 +139,11 @@ export function BrowserChrome() {
          <div className="flex items-center gap-2 ml-auto">
              {/* Add extension icons or profile placeholder here if needed */}
          </div>
+
+         {/* Loading Progress Bar */}
+         {activeTab?.loading && (
+            <div className="absolute bottom-[-1px] left-0 h-[2px] bg-blue-500 animate-progress w-full origin-left" style={{ animation: 'progress 2s ease-in-out infinite' }} />
+         )}
       </div>
     </div>
   );
