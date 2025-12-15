@@ -1,13 +1,19 @@
 import React, { useState } from 'react';
 import { useAero } from '../../lib/store';
-import { Search, Clock, FileText, MessageSquare, MapPin, Plane } from 'lucide-react';
-import type { Shipment } from '../../lib/types';
+import { Search, Clock, FileText, MessageSquare, MapPin, Plane, Shield, Truck, Calendar, Check } from 'lucide-react';
+import type { Shipment, Incident } from '../../lib/types';
 
 export const PortalPage: React.FC = () => {
-    const { state } = useAero();
+    const { state, dispatch } = useAero();
     const [trackingId, setTrackingId] = useState('');
     const [foundShipment, setFoundShipment] = useState<Shipment | null>(null);
     const [hasSearched, setHasSearched] = useState(false);
+
+    // Service Request State
+    const [reqType, setReqType] = useState<'Security' | 'Logistics'>('Security');
+    const [reqLocation, setReqLocation] = useState('');
+    const [reqDate, setReqDate] = useState('');
+    const [reqSubmitted, setReqSubmitted] = useState(false);
 
     const handleTrack = () => {
         if (!trackingId.trim()) return;
@@ -18,6 +24,31 @@ export const PortalPage: React.FC = () => {
 
     const handleKeyDown = (e: React.KeyboardEvent) => {
         if (e.key === 'Enter') handleTrack();
+    };
+
+    const handleRequestSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!reqLocation || !reqDate) return;
+
+        const newIncident: Incident = {
+            id: `REQ-${Math.floor(Math.random() * 10000)}`,
+            type: reqType,
+            priority: reqType === 'Security' ? 'High' : 'Medium',
+            status: 'New',
+            location: reqLocation,
+            description: `Client requested ${reqType === 'Security' ? 'Security Patrol' : 'Urgent Delivery'}`,
+            timestamp: reqDate.replace('T', ' '),
+        };
+
+        dispatch({ type: 'ADD_INCIDENT', payload: newIncident });
+        setReqSubmitted(true);
+        
+        // Reset form after delay
+        setTimeout(() => {
+            setReqSubmitted(false);
+            setReqLocation('');
+            setReqDate('');
+        }, 3000);
     };
 
     const getProgress = (status: Shipment['status']) => {
@@ -172,6 +203,87 @@ export const PortalPage: React.FC = () => {
                                 </div>
                             </div>
                         </div>
+                    )}
+                </div>
+
+                {/* Request Service Form */}
+                <div className="bg-slate-800/50 p-6 rounded-lg border border-slate-700">
+                    <h3 className="text-lg font-semibold text-slate-200 mb-4 flex items-center gap-2">
+                        <Shield className="w-5 h-5 text-sky-400" />
+                        Request Service
+                    </h3>
+                    
+                    {reqSubmitted ? (
+                        <div className="h-64 flex flex-col items-center justify-center text-center p-4 animate-in fade-in zoom-in">
+                            <div className="w-12 h-12 bg-emerald-500/20 text-emerald-400 rounded-full flex items-center justify-center mb-3">
+                                <Check className="w-6 h-6" />
+                            </div>
+                            <h4 className="text-white font-medium mb-1">Request Received</h4>
+                            <p className="text-sm text-slate-400">An agent will review your request shortly.</p>
+                        </div>
+                    ) : (
+                        <form onSubmit={handleRequestSubmit} className="space-y-4">
+                            <div className="flex gap-2 p-1 bg-slate-900 rounded-lg border border-slate-800">
+                                <button
+                                    type="button"
+                                    onClick={() => setReqType('Security')}
+                                    className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-md text-sm font-medium transition-all ${
+                                        reqType === 'Security' 
+                                            ? 'bg-slate-800 text-sky-400 shadow-sm' 
+                                            : 'text-slate-500 hover:text-slate-300'
+                                    }`}
+                                >
+                                    <Shield className="w-4 h-4" />
+                                    Patrol
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setReqType('Logistics')}
+                                    className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-md text-sm font-medium transition-all ${
+                                        reqType === 'Logistics' 
+                                            ? 'bg-slate-800 text-sky-400 shadow-sm' 
+                                            : 'text-slate-500 hover:text-slate-300'
+                                    }`}
+                                >
+                                    <Truck className="w-4 h-4" />
+                                    Delivery
+                                </button>
+                            </div>
+
+                            <div className="space-y-1">
+                                <label className="text-xs font-semibold text-slate-500 uppercase">Location</label>
+                                <div className="relative">
+                                    <MapPin className="absolute left-3 top-2.5 w-4 h-4 text-slate-500" />
+                                    <input 
+                                        type="text" 
+                                        value={reqLocation}
+                                        onChange={(e) => setReqLocation(e.target.value)}
+                                        placeholder="Sector 4, Building A..." 
+                                        className="w-full bg-slate-900 border border-slate-700 rounded-md pl-9 pr-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="space-y-1">
+                                <label className="text-xs font-semibold text-slate-500 uppercase">Date & Time</label>
+                                <div className="relative">
+                                    <Calendar className="absolute left-3 top-2.5 w-4 h-4 text-slate-500" />
+                                    <input 
+                                        type="datetime-local" 
+                                        value={reqDate}
+                                        onChange={(e) => setReqDate(e.target.value)}
+                                        className="w-full bg-slate-900 border border-slate-700 rounded-md pl-9 pr-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500 [color-scheme:dark]"
+                                    />
+                                </div>
+                            </div>
+
+                            <button 
+                                type="submit"
+                                className="w-full bg-sky-600 hover:bg-sky-500 text-white py-2 rounded-md font-medium text-sm transition-colors mt-2"
+                            >
+                                Submit Request
+                            </button>
+                        </form>
                     )}
                 </div>
 
