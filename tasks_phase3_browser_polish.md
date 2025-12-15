@@ -60,7 +60,7 @@ This phase focuses on refining the Enterprise Browser into a daily-driver capabl
         - Once logged in, try to fetch the user's avatar/name (or scrape it from the webview session) to display in the sidebar.
     - **Git:** `git add . && git commit -m "feat(auth): add google account integration placeholder"`
 
-- [ ] **Task 3.8: Drive "Files" Panel**
+- [x] **Task 3.8: Drive "Files" Panel**
     - **Description:**
         - Create a "Files" panel in the sidebar that connects to Google Drive.
         - *MVP Approach:* Embed `drive.google.com/drive/my-drive?usp=embedded` (or mobile view) in a narrow webview column.
