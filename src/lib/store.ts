@@ -28,12 +28,12 @@ export const useBrowserStore = create<BrowserState>((set) => ({
   ],
   activeTabId: '1',
 
-  addTab: (url = 'about:blank') => set((state) => {
+  addTab: (url = 'about:newtab') => set((state) => {
     const newTab = {
       id: Math.random().toString(36).substring(2, 9),
       url,
       title: 'New Tab',
-      loading: true,
+      loading: false,
     };
     return { tabs: [...state.tabs, newTab], activeTabId: newTab.id };
   }),

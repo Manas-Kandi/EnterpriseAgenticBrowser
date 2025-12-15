@@ -13,7 +13,7 @@ This phase focuses on refining the Enterprise Browser into a daily-driver capabl
         - Improve active/inactive tab contrast and hover states for a "native" feel.
     - **Git:** `git add . && git commit -m "feat(ui): implement favicons and enhanced tab states"`
 
-- [ ] **Task 3.2: Omnibar Security & Progress**
+- [x] **Task 3.2: Omnibar Security & Progress**
     - **Description:**
         - Add a Lock icon (green/grey) in the Omnibar for HTTPS/HTTP connections.
         - Add a visual progress indicator (thin blue line) at the top of the active webview area (or bottom of omnibar) that animates during loading.

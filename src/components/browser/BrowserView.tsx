@@ -1,13 +1,21 @@
 import { useBrowserStore, BrowserTab } from '@/lib/store';
 import { useEffect, useRef } from 'react';
+import { NewTabPage } from './NewTabPage';
 
 function WebViewInstance({ tab, active }: { tab: BrowserTab; active: boolean }) {
   const { updateTab } = useBrowserStore();
   const webviewRef = useRef<any>(null);
   const registeredRef = useRef(false);
 
+  // Check if this is a "New Tab" page
+  const isNewTab = !tab.url || tab.url === 'about:blank' || tab.url === 'about:newtab';
+
   // Handle Action (Back/Forward/Reload)
   useEffect(() => {
+    // If we are on New Tab, actions might need different handling or be ignored
+    // But usually you can't go back/forward on a fresh new tab anyway.
+    if (isNewTab) return; 
+
     const el = webviewRef.current;
     if (!el || !tab.action) return;
 
@@ -17,11 +25,13 @@ function WebViewInstance({ tab, active }: { tab: BrowserTab; active: boolean }) 
       el.goForward();
     } else if (tab.action === 'reload') {
       el.reload();
+    } else if (tab.action === 'stop') {
+        el.stop();
     }
 
     // Reset action immediately
     updateTab(tab.id, { action: null });
-  }, [tab.action, tab.id, updateTab]);
+  }, [tab.action, tab.id, updateTab, isNewTab]);
 
   const handleRef = (el: any) => {
     webviewRef.current = el;
@@ -60,6 +70,14 @@ function WebViewInstance({ tab, active }: { tab: BrowserTab; active: boolean }) 
     el.addEventListener('did-navigate-in-page', updateHistory);
     el.addEventListener('dom-ready', updateHistory);
   };
+
+  if (isNewTab) {
+      return (
+          <div className={`absolute inset-0 w-full h-full bg-background ${active ? 'flex flex-col' : 'hidden'}`}>
+              <NewTabPage tabId={tab.id} />
+          </div>
+      );
+  }
 
   return (
     <webview
