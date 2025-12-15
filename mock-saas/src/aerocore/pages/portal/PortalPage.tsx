@@ -30,6 +30,31 @@ export const PortalPage: React.FC = () => {
     const [reqDate, setReqDate] = useState('');
     const [reqSubmitted, setReqSubmitted] = useState(false);
 
+    // Support Chat State
+    const [chatOpen, setChatOpen] = useState(false);
+    const [chatMessages, setChatMessages] = useState<{ id: number, text: string, sender: 'user' | 'agent' }[]>([
+        { id: 1, text: "Hello! How can I help you today?", sender: 'agent' }
+    ]);
+    const [msgInput, setMsgInput] = useState('');
+
+    const handleSendMsg = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!msgInput.trim()) return;
+
+        const newUserMsg = { id: Date.now(), text: msgInput, sender: 'user' as const };
+        setChatMessages(prev => [...prev, newUserMsg]);
+        setMsgInput('');
+
+        // Mock Auto-reply
+        setTimeout(() => {
+            setChatMessages(prev => [...prev, { 
+                id: Date.now() + 1, 
+                text: "Thanks for reaching out. An agent will be with you shortly.", 
+                sender: 'agent' 
+            }]);
+        }, 1500);
+    };
+
     const handleTrack = () => {
         if (!trackingId.trim()) return;
         const shipment = state.shipments.find(s => s.id.toLowerCase() === trackingId.trim().toLowerCase());
@@ -392,9 +417,58 @@ export const PortalPage: React.FC = () => {
                         <MessageSquare className="w-5 h-5 text-sky-400" />
                         Support
                     </h3>
-                    <p className="text-slate-400 text-sm">Need help? Start a chat.</p>
+                    <p className="text-slate-400 text-sm mb-4">Need help? Start a chat.</p>
+                    <button 
+                        onClick={() => setChatOpen(true)}
+                        className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-sky-400 border border-slate-700 rounded-md text-sm font-medium transition-colors"
+                    >
+                        Open Support Chat
+                    </button>
                 </div>
             </div>
+
+            {/* Chat Widget */}
+            {chatOpen && (
+                <div className="fixed bottom-6 right-6 w-80 bg-slate-900 border border-slate-700 rounded-lg shadow-2xl overflow-hidden flex flex-col animate-in slide-in-from-bottom-4 z-50">
+                    <div className="bg-slate-800 p-3 border-b border-slate-700 flex justify-between items-center">
+                        <h4 className="font-semibold text-white flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+                            Live Support
+                        </h4>
+                        <button onClick={() => setChatOpen(false)} className="text-slate-400 hover:text-white">
+                            <span className="sr-only">Close</span>
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                        </button>
+                    </div>
+                    <div className="h-64 overflow-y-auto p-4 space-y-3 bg-slate-950/50">
+                        {chatMessages.map(msg => (
+                            <div key={msg.id} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                <div className={`max-w-[80%] rounded-lg p-2 text-sm ${
+                                    msg.sender === 'user' 
+                                        ? 'bg-sky-600 text-white rounded-br-none' 
+                                        : 'bg-slate-800 text-slate-200 rounded-bl-none'
+                                }`}>
+                                    {msg.text}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                    <form onSubmit={handleSendMsg} className="p-3 bg-slate-900 border-t border-slate-800">
+                        <div className="flex gap-2">
+                            <input 
+                                type="text" 
+                                value={msgInput} 
+                                onChange={(e) => setMsgInput(e.target.value)}
+                                placeholder="Type a message..." 
+                                className="flex-1 bg-slate-950 border border-slate-700 rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:ring-1 focus:ring-sky-500"
+                            />
+                            <button type="submit" className="bg-sky-600 hover:bg-sky-500 text-white p-1.5 rounded transition-colors">
+                                <Plane className="w-4 h-4 rotate-90" />
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            )}
         </div>
     );
 };
