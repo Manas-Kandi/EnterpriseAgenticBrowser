@@ -11,32 +11,32 @@
 ## Tasks
 
 ### Task 1: Review Existing Implementation
-- [ ] Review `AdminPage.tsx`.
-- [ ] Ensure it uses the Global Store correctly.
-- [ ] Verify `data-testid` coverage.
-- [ ] Run a comprehensive review of the implementation and make sure it is ok.
-- [ ] Write a clear comprehensive commit message, git commit and push.
+- [x] Review `AdminPage.tsx`.
+- [x] Ensure it uses the Global Store correctly.
+- [x] Verify `data-testid` coverage.
+- [x] Run a comprehensive review of the implementation and make sure it is ok.
+- [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 2: Implement "Edit User" Workflow
-- [ ] The "Edit" button currently does nothing.
-- [ ] Wire it to open the Modal pre-filled with user data.
-- [ ] Handle "Update" action in Reducer (`UPDATE_USER`).
-- [ ] Run a comprehensive review of the implementation and make sure it is ok.
-- [ ] Write a clear comprehensive commit message, git commit and push.
+- [x] The "Edit" button currently does nothing.
+- [x] Wire it to open the Modal pre-filled with user data.
+- [x] Handle "Update" action in Reducer (`UPDATE_USER`).
+- [x] Run a comprehensive review of the implementation and make sure it is ok.
+- [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 3: Implement "Deactivate User"
-- [ ] Add "Deactivate" / "Delete" button.
-- [ ] Update status to 'Inactive'.
-- [ ] Visual indication (greyed out row).
-- [ ] Run a comprehensive review of the implementation and make sure it is ok.
-- [ ] Write a clear comprehensive commit message, git commit and push.
+- [x] Add "Deactivate" / "Delete" button.
+- [x] Update status to 'Inactive'.
+- [x] Visual indication (greyed out row).
+- [x] Run a comprehensive review of the implementation and make sure it is ok.
+- [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 4: Implement "Role Permissions" Matrix
-- [ ] New Tab: "Permissions".
-- [ ] Grid of Roles (Admin, Pilot) vs Apps (Dispatch, Fleet).
-- [ ] Checkboxes (mock functionality is fine, visual is key).
-- [ ] Run a comprehensive review of the implementation and make sure it is ok.
-- [ ] Write a clear comprehensive commit message, git commit and push.
+- [x] New Tab: "Permissions".
+- [x] Grid of Roles (Admin, Pilot) vs Apps (Dispatch, Fleet).
+- [x] Checkboxes (mock functionality is fine, visual is key).
+- [x] Run a comprehensive review of the implementation and make sure it is ok.
+- [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 5: Implement "Audit Logs"
 - [ ] New Tab: "System Logs".
@@ -46,32 +46,32 @@
 - [ ] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 6: Implement "Password Reset"
-- [ ] Action on User row: "Reset Password".
-- [ ] Shows a temporary password in a toast/modal.
-- [ ] Agent Task: "Reset password for user John".
-- [ ] Run a comprehensive review of the implementation and make sure it is ok.
-- [ ] Write a clear comprehensive commit message, git commit and push.
+- [x] Action on User row: "Reset Password".
+- [x] Shows a temporary password in a toast/modal.
+- [x] Agent Task: "Reset password for user John".
+- [x] Run a comprehensive review of the implementation and make sure it is ok.
+- [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 7: Implement "System Health" Widget
-- [ ] Add a dashboard widget showing "Server Status", "Database Latency".
-- [ ] Visual graphs (can be static SVGs or simple CSS bars).
-- [ ] Run a comprehensive review of the implementation and make sure it is ok.
-- [ ] Write a clear comprehensive commit message, git commit and push.
+- [x] Add a dashboard widget showing "Server Status", "Database Latency".
+- [x] Visual graphs (can be static SVGs or simple CSS bars).
+- [x] Run a comprehensive review of the implementation and make sure it is ok.
+- [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 8: Implement "Global Settings"
-- [ ] Form for "Company Name", "Timezone", "Security Level" (Low/Med/High).
-- [ ] Save to a new `settings` slice in Global Store (optional, or just local state).
-- [ ] Run a comprehensive review of the implementation and make sure it is ok.
-- [ ] Write a clear comprehensive commit message, git commit and push.
+- [x] Form for "Company Name", "Timezone", "Security Level" (Low/Med/High).
+- [x] Save to a new `settings` slice in Global Store (optional, or just local state).
+- [x] Run a comprehensive review of the implementation and make sure it is ok.
+- [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 9: Implement "Batch Actions"
-- [ ] Add checkboxes to User List rows.
-- [ ] "Bulk Deactivate", "Bulk Email".
-- [ ] Run a comprehensive review of the implementation and make sure it is ok.
-- [ ] Write a clear comprehensive commit message, git commit and push.
+- [x] Add checkboxes to User List rows.
+- [x] "Bulk Deactivate", "Bulk Email".
+- [x] Run a comprehensive review of the implementation and make sure it is ok.
+- [x] Write a clear comprehensive commit message, git commit and push.
 
 ### Task 10: Final Polish
-- [ ] Ensure the "Admin" badge looks distinct.
-- [ ] Verify search filtering works perfectly.
-- [ ] Run a comprehensive review of the implementation and make sure it is ok.
-- [ ] Write a clear comprehensive commit message, git commit and push.
+- [x] Ensure the "Admin" badge looks distinct.
+- [x] Verify search filtering works perfectly.
+- [x] Run a comprehensive review of the implementation and make sure it is ok.
+- [x] Write a clear comprehensive commit message, git commit and push.
