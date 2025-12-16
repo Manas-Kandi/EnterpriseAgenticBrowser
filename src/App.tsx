@@ -4,11 +4,12 @@ import { BrowserChrome } from '@/components/browser/BrowserChrome';
 import { BrowserView } from '@/components/browser/BrowserView';
 import { WorkspaceSidebar } from '@/components/browser/WorkspaceSidebar';
 import { WorkspacePanel } from '@/components/browser/WorkspacePanel';
+import { OnboardingPage } from '@/components/onboarding/OnboardingPage';
 import { useEffect } from 'react';
 import { useBrowserStore } from '@/lib/store';
 
 function App() {
-  const { addTab, removeTab, updateTab, activeTabId } = useBrowserStore();
+  const { addTab, removeTab, updateTab, activeTabId, appMode, setAppMode } = useBrowserStore();
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -34,6 +35,10 @@ function App() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [addTab, removeTab, updateTab, activeTabId]);
+
+  if (!appMode) {
+      return <OnboardingPage onSelectMode={setAppMode} />;
+  }
 
   return (
     <div className="h-screen flex flex-col overflow-hidden bg-background text-foreground">

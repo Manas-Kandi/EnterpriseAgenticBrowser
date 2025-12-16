@@ -25,7 +25,7 @@ This phase focuses on elevating the browser's aesthetic to a commercial standard
         - **Close Button:** Only show the close button on hover (standard browser behavior) to reduce clutter.
     - **Git:** `git add . && git commit -m "feat(tabs): add context menus and refined hover states" && git push origin PersonalvsDevDiff`
 
-- [ ] **Task 4.3: Collapsible & Resizable Sidebar**
+- [x] **Task 4.3: Collapsible & Resizable Sidebar**
     - **Description:**
         - Allow the Workspace Sidebar to be collapsed into a thinner "Icon Only" mode (already kind of is, but make it smooth).
         - Add a "Collapse/Expand" toggle at the bottom.
