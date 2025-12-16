@@ -18,7 +18,7 @@ This phase focuses on elevating the browser's aesthetic to a commercial standard
         - **Refined Icons:** Review all icons for consistent stroke width and sizing.
     - **Git:** `git add . && git commit -m "style(ui): improve window controls and add glassmorphism" && git push origin PersonalvsDevDiff`
 
-- [ ] **Task 4.2: Advanced Tab Management**
+- [x] **Task 4.2: Advanced Tab Management**
     - **Description:**
         - **Context Menu:** Right-click on a tab to show a menu: "Close Tab", "Duplicate Tab", "Pin Tab".
         - **Hover Effects:** Smoother transitions for tab hover and active states.
