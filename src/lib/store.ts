@@ -23,7 +23,7 @@ interface BrowserState {
   tabs: BrowserTab[];
   activeTabId: string | null;
   history: HistoryItem[];
-  activeSidebarPanel: 'drive' | 'gmail' | 'calendar' | 'slack' | null;
+  activeSidebarPanel: 'drive' | 'gmail' | 'calendar' | 'slack' | 'agent' | 'extensions' | null;
   user: { name: string; email: string; avatar?: string } | null;
   appMode: 'personal' | 'dev' | null;
   
@@ -33,7 +33,7 @@ interface BrowserState {
   setActiveTab: (id: string) => void;
   updateTab: (id: string, data: Partial<BrowserTab>) => void;
   addToHistory: (url: string, title: string) => void;
-  setSidebarPanel: (panel: 'drive' | 'gmail' | 'calendar' | 'slack' | 'agent' | 'extensions' | null) => void;
+  setSidebarPanel: (panel: 'drive' | 'gmail' | 'calendar' | 'slack' | null) => void;
   setUser: (user: { name: string; email: string; avatar?: string } | null) => void;
   setAppMode: (mode: 'personal' | 'dev' | null) => void;
 }
