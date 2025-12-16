@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain } from 'electron'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { vaultService } from './services/VaultService'
-import { agentService } from './services/AgentService'
+import { agentService, AVAILABLE_MODELS } from './services/AgentService'
 import { auditService } from './services/AuditService'
 import { toolRegistry } from './services/ToolRegistry'
 import { browserTargetService } from './services/BrowserTargetService'
@@ -165,7 +165,6 @@ app.whenReady().then(() => {
 
   // Agent model management handlers
   ipcMain.handle('agent:get-models', async () => {
-    const { AVAILABLE_MODELS } = await import('./services/AgentService');
     return AVAILABLE_MODELS;
   });
 

@@ -461,6 +461,43 @@ export class AgentService {
                   }
                 }
                 
+                // FAST PATH: For simple successful operations, return immediately without another LLM call
+                // This dramatically improves perceived speed for common operations
+                const resultStr = String(result);
+                const toolName = (action as any).tool;
+                
+                if (toolName === 'browser_navigate' && resultStr.includes('Navigated to')) {
+                  const url = (action as any).args?.url || 'the page';
+                  const fastResponse = `Opened ${url}`;
+                  this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: 'final_response', args: { message: fastResponse } })));
+                  return fastResponse;
+                }
+                
+                if (toolName === 'browser_click' && !resultStr.toLowerCase().includes('error') && !resultStr.toLowerCase().includes('failed')) {
+                  const fastResponse = `Clicked the element.`;
+                  this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: 'final_response', args: { message: fastResponse } })));
+                  return fastResponse;
+                }
+                
+                if (toolName === 'browser_type' && !resultStr.toLowerCase().includes('error') && !resultStr.toLowerCase().includes('failed') && !resultStr.toLowerCase().includes('timeout')) {
+                  const text = (action as any).args?.text || '';
+                  const fastResponse = text ? `Typed "${text.slice(0, 50)}${text.length > 50 ? '...' : ''}"` : `Typed the text.`;
+                  this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: 'final_response', args: { message: fastResponse } })));
+                  return fastResponse;
+                }
+                
+                if (toolName === 'browser_scroll' && !resultStr.toLowerCase().includes('error')) {
+                  const fastResponse = `Scrolled the page.`;
+                  this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: 'final_response', args: { message: fastResponse } })));
+                  return fastResponse;
+                }
+                
+                if (toolName === 'browser_go_back' && !resultStr.toLowerCase().includes('error')) {
+                  const fastResponse = `Went back to the previous page.`;
+                  this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: 'final_response', args: { message: fastResponse } })));
+                  return fastResponse;
+                }
+                
                 // Add interaction to both local messages and persistent history
                 const aiMsg = new AIMessage(content);
                 const toolOutputMsg = new SystemMessage(`Tool '${(action as any).tool}' Output:\n${result}`);

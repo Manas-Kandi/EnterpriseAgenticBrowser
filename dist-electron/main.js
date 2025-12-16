@@ -41640,6 +41640,7 @@ const _AgentService = class _AgentService {
     }
   }
   async chat(userMessage, browserContext) {
+    var _a3, _b;
     const tools = toolRegistry.toLangChainTools();
     let usedBrowserTools = false;
     let parseFailures = 0;
@@ -41650,8 +41651,8 @@ const _AgentService = class _AgentService {
         
         You have access to the following tools:
         ${tools.map((t2) => {
-        var _a3;
-        return `- ${t2.name}: ${t2.description} (Args: ${JSON.stringify(((_a3 = t2.schema) == null ? void 0 : _a3.shape) || {})})`;
+        var _a4;
+        return `- ${t2.name}: ${t2.description} (Args: ${JSON.stringify(((_a4 = t2.schema) == null ? void 0 : _a4.shape) || {})})`;
       }).join("\n")}
 
         CRITICAL INSTRUCTIONS:
@@ -41819,6 +41820,35 @@ If you are done:
                 lastVerified = result;
               }
             }
+            const resultStr = String(result);
+            const toolName = action.tool;
+            if (toolName === "browser_navigate" && resultStr.includes("Navigated to")) {
+              const url = ((_a3 = action.args) == null ? void 0 : _a3.url) || "the page";
+              const fastResponse = `Opened ${url}`;
+              this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: "final_response", args: { message: fastResponse } })));
+              return fastResponse;
+            }
+            if (toolName === "browser_click" && !resultStr.toLowerCase().includes("error") && !resultStr.toLowerCase().includes("failed")) {
+              const fastResponse = `Clicked the element.`;
+              this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: "final_response", args: { message: fastResponse } })));
+              return fastResponse;
+            }
+            if (toolName === "browser_type" && !resultStr.toLowerCase().includes("error") && !resultStr.toLowerCase().includes("failed") && !resultStr.toLowerCase().includes("timeout")) {
+              const text = ((_b = action.args) == null ? void 0 : _b.text) || "";
+              const fastResponse = text ? `Typed "${text.slice(0, 50)}${text.length > 50 ? "..." : ""}"` : `Typed the text.`;
+              this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: "final_response", args: { message: fastResponse } })));
+              return fastResponse;
+            }
+            if (toolName === "browser_scroll" && !resultStr.toLowerCase().includes("error")) {
+              const fastResponse = `Scrolled the page.`;
+              this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: "final_response", args: { message: fastResponse } })));
+              return fastResponse;
+            }
+            if (toolName === "browser_go_back" && !resultStr.toLowerCase().includes("error")) {
+              const fastResponse = `Went back to the previous page.`;
+              this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: "final_response", args: { message: fastResponse } })));
+              return fastResponse;
+            }
             const aiMsg = new AIMessage(content);
             const toolOutputMsg = new SystemMessage(`Tool '${action.tool}' Output:
 ${result}`);
@@ -41868,12 +41898,6 @@ ${result}`);
 __publicField(_AgentService, "MAX_HISTORY_MESSAGES", 50);
 let AgentService = _AgentService;
 const agentService = new AgentService();
-const AgentService$1 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
-  __proto__: null,
-  AVAILABLE_MODELS,
-  AgentService,
-  agentService
-}, Symbol.toStringTag, { value: "Module" }));
 const byteToHex = [];
 for (let i = 0; i < 256; ++i) {
   byteToHex.push((i + 256).toString(16).slice(1));
@@ -43392,8 +43416,7 @@ app.whenReady().then(() => {
     return { success: true };
   });
   ipcMain.handle("agent:get-models", async () => {
-    const { AVAILABLE_MODELS: AVAILABLE_MODELS2 } = await Promise.resolve().then(() => AgentService$1);
-    return AVAILABLE_MODELS2;
+    return AVAILABLE_MODELS;
   });
   ipcMain.handle("agent:get-current-model", async () => {
     return agentService.getCurrentModelId();
