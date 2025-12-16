@@ -1,4 +1,4 @@
-import { User, Code, Check } from 'lucide-react';
+import { User, Code, Check, Lock, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
 
@@ -8,12 +8,77 @@ interface OnboardingPageProps {
 
 export function OnboardingPage({ onSelectMode }: OnboardingPageProps) {
     const [selected, setSelected] = useState<'personal' | 'dev' | null>(null);
+    const [showPassword, setShowPassword] = useState(false);
+    const [password, setPassword] = useState('');
+    const [error, setError] = useState(false);
 
     const handleConfirm = () => {
-        if (selected) {
+        if (selected === 'dev') {
+            setShowPassword(true);
+        } else if (selected) {
             onSelectMode(selected);
         }
     };
+
+    const handlePasswordSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        // Hardcoded password for MVP
+        if (password === 'dev123') {
+            onSelectMode('dev');
+        } else {
+            setError(true);
+        }
+    };
+
+    if (showPassword) {
+        return (
+            <div className="fixed inset-0 z-50 bg-background/95 backdrop-blur-sm flex items-center justify-center p-6 animate-in fade-in duration-300">
+                <div className="max-w-md w-full bg-card border border-border p-8 rounded-2xl shadow-2xl relative">
+                    <button 
+                        onClick={() => setShowPassword(false)}
+                        className="absolute top-4 right-4 p-2 text-muted-foreground hover:text-foreground rounded-full hover:bg-secondary/50"
+                    >
+                        <X size={20} />
+                    </button>
+
+                    <div className="flex flex-col items-center gap-6">
+                        <div className="w-16 h-16 rounded-full bg-zinc-500/10 flex items-center justify-center text-zinc-500">
+                            <Lock size={32} />
+                        </div>
+                        
+                        <div className="text-center space-y-2">
+                            <h2 className="text-2xl font-semibold">Developer Access</h2>
+                            <p className="text-muted-foreground">Enter password to unlock Developer Mode</p>
+                        </div>
+
+                        <form onSubmit={handlePasswordSubmit} className="w-full space-y-4">
+                            <input
+                                type="password"
+                                autoFocus
+                                value={password}
+                                onChange={(e) => { setPassword(e.target.value); setError(false); }}
+                                className={cn(
+                                    "w-full px-4 py-3 bg-background border rounded-lg outline-none focus:ring-2 transition-all",
+                                    error 
+                                        ? "border-destructive focus:ring-destructive/20" 
+                                        : "border-border focus:border-primary focus:ring-primary/20"
+                                )}
+                                placeholder="Enter password"
+                            />
+                            {error && <p className="text-sm text-destructive text-center">Incorrect password</p>}
+                            
+                            <button
+                                type="submit"
+                                className="w-full py-3 bg-primary text-primary-foreground rounded-lg font-medium hover:opacity-90 transition-opacity"
+                            >
+                                Unlock
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="fixed inset-0 z-50 bg-background flex flex-col items-center justify-center p-6 animate-in fade-in duration-500">

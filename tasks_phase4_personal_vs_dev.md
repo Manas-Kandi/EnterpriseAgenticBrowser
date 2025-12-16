@@ -34,7 +34,7 @@ This phase focuses on elevating the browser's aesthetic to a commercial standard
 
 ## Phase 2: Personal vs Dev Mode Architecture
 
-- [ ] **Task 4.4: Onboarding Experience**
+- [x] **Task 4.4: Onboarding Experience**
     - **Description:**
         - Create a `OnboardingPage.tsx`.
         - If no mode is selected in `localStorage`, overlay this page on startup.
