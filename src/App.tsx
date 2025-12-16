@@ -1,4 +1,3 @@
-import { StatusBar } from '@/components/layout/StatusBar';
 import { BrowserChrome } from '@/components/browser/BrowserChrome';
 import { BrowserView } from '@/components/browser/BrowserView';
 import { WorkspaceSidebar } from '@/components/browser/WorkspaceSidebar';
@@ -54,9 +53,6 @@ function App() {
           <BrowserView />
         </main>
       </div>
-      
-      {/* Global Status Bar */}
-      <StatusBar />
     </div>
   )
 }
