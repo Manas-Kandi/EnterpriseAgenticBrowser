@@ -601,6 +601,31 @@ export class AgentService {
                   this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: 'final_response', args: { message: fastResponse } })));
                   return fastResponse;
                 }
+
+                if (toolName === 'browser_go_forward' && !resultStr.toLowerCase().includes('error')) {
+                  const fastResponse = `Went forward to the next page.`;
+                  this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: 'final_response', args: { message: fastResponse } })));
+                  return fastResponse;
+                }
+
+                if (toolName === 'browser_reload' && !resultStr.toLowerCase().includes('error')) {
+                  const fastResponse = `Reloaded the page.`;
+                  this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: 'final_response', args: { message: fastResponse } })));
+                  return fastResponse;
+                }
+
+                if (toolName === 'browser_press_key' && !resultStr.toLowerCase().includes('error')) {
+                  const key = (action as any).args?.key || 'the key';
+                  const fastResponse = `Pressed ${key}.`;
+                  this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: 'final_response', args: { message: fastResponse } })));
+                  return fastResponse;
+                }
+
+                if (toolName === 'browser_clear' && !resultStr.toLowerCase().includes('error')) {
+                  const fastResponse = `Cleared the input field.`;
+                  this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: 'final_response', args: { message: fastResponse } })));
+                  return fastResponse;
+                }
                 
                 // Add interaction to both local messages and persistent history
                 const aiMsg = new AIMessage(content);

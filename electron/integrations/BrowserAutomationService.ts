@@ -289,6 +289,48 @@ export class BrowserAutomationService {
     };
 
     // Tool: Navigate
+    const goBackTool: AgentTool = {
+      name: 'browser_go_back',
+      description: 'Navigate back in the browser history.',
+      schema: z.object({}),
+      execute: async () => {
+        const target = await this.getTarget();
+        if (target.canGoBack()) {
+          target.goBack();
+          await this.delay(500);
+          return 'Navigated back';
+        }
+        return 'Cannot go back (no history)';
+      },
+    };
+
+    const goForwardTool: AgentTool = {
+      name: 'browser_go_forward',
+      description: 'Navigate forward in the browser history.',
+      schema: z.object({}),
+      execute: async () => {
+        const target = await this.getTarget();
+        if (target.canGoForward()) {
+          target.goForward();
+          await this.delay(500);
+          return 'Navigated forward';
+        }
+        return 'Cannot go forward (no history)';
+      },
+    };
+
+    const reloadTool: AgentTool = {
+      name: 'browser_reload',
+      description: 'Reload the current page.',
+      schema: z.object({}),
+      execute: async () => {
+        const target = await this.getTarget();
+        target.reload();
+        await this.delay(1000);
+        return 'Page reloading triggered';
+      },
+    };
+
     const navigateTool: AgentTool<z.ZodObject<{ url: z.ZodString }>> = {
       name: 'browser_navigate',
       description: 'Navigate the browser to a specific URL.',
@@ -387,6 +429,161 @@ export class BrowserAutomationService {
         } catch (e: any) {
             return `Failed to navigate: ${e.message}`;
         }
+      },
+    };
+
+    const scrollSchema = z.object({
+      selector: z.string().optional().describe('CSS selector to scroll into view'),
+      direction: z.enum(['up', 'down', 'top', 'bottom']).optional().describe('Scroll direction if no selector provided'),
+      amount: z.number().optional().describe('Pixels to scroll (default 500 for up/down)'),
+    });
+    const scrollTool: AgentTool<typeof scrollSchema> = {
+      name: 'browser_scroll',
+      description: 'Scroll to an element or by an amount. Provide "selector" to scroll element into view, or "direction" (up/down/top/bottom) to scroll page.',
+      schema: scrollSchema,
+      execute: async ({ selector, direction, amount }) => {
+        const target = await this.getTarget();
+        if (selector) {
+          await target.executeJavaScript(
+            `(() => {
+               const el = document.querySelector('${selector}');
+               if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+             })()`
+          );
+          return `Scrolled to element "${selector}"`;
+        } else if (direction) {
+          await target.executeJavaScript(
+            `(() => {
+               const amt = ${amount ?? 500};
+               if ('${direction}' === 'top') window.scrollTo({ top: 0, behavior: 'smooth' });
+               else if ('${direction}' === 'bottom') window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+               else if ('${direction}' === 'up') window.scrollBy({ top: -amt, behavior: 'smooth' });
+               else window.scrollBy({ top: amt, behavior: 'smooth' });
+             })()`
+          );
+          return `Scrolled ${direction}`;
+        }
+        return 'No scroll action performed (provide selector or direction)';
+      },
+    };
+
+    const pressKeySchema = z.object({
+      key: z.string().describe('Key name (e.g. Enter, Escape, ArrowDown)'),
+    });
+    const pressKeyTool: AgentTool<typeof pressKeySchema> = {
+      name: 'browser_press_key',
+      description: 'Press a keyboard key (e.g. Enter, Escape, ArrowDown, Tab).',
+      schema: pressKeySchema,
+      execute: async ({ key }) => {
+        const target = await this.getTarget();
+        try {
+          target.sendInputEvent({ type: 'keyDown', keyCode: key });
+          target.sendInputEvent({ type: 'keyUp', keyCode: key });
+          return `Pressed key: ${key}`;
+        } catch (e: any) {
+          return `Failed to press key: ${e.message}`;
+        }
+      },
+    };
+
+    const waitForSelectorSchema = z.object({
+      selector: z.string().describe('CSS selector to wait for'),
+      timeoutMs: z.number().optional().describe('Timeout in ms (default 5000)'),
+    });
+    const waitForSelectorTool: AgentTool<typeof waitForSelectorSchema> = {
+      name: 'browser_wait_for_selector',
+      description: 'Wait for an element to appear in the DOM.',
+      schema: waitForSelectorSchema,
+      execute: async ({ selector, timeoutMs }) => {
+        const target = await this.getTarget();
+        const timeout = timeoutMs ?? 5000;
+        try {
+          const found = await target.executeJavaScript(
+            `(() => {
+               return new Promise((resolve) => {
+                 if (document.querySelector('${selector}')) return resolve(true);
+                 const observer = new MutationObserver(() => {
+                   if (document.querySelector('${selector}')) {
+                     observer.disconnect();
+                     resolve(true);
+                   }
+                 });
+                 observer.observe(document.body, { childList: true, subtree: true });
+                 setTimeout(() => {
+                   observer.disconnect();
+                   resolve(false);
+                 }, ${timeout});
+               });
+             })()`,
+             true
+          );
+          return found ? `Element "${selector}" appeared` : `Timeout waiting for "${selector}"`;
+        } catch (e: any) {
+          return `Error waiting for selector: ${e.message}`;
+        }
+      },
+    };
+
+    const waitForUrlSchema = z.object({
+      urlPart: z.string().describe('Substring or full URL to wait for'),
+      timeoutMs: z.number().optional().describe('Timeout in ms (default 5000)'),
+    });
+    const waitForUrlTool: AgentTool<typeof waitForUrlSchema> = {
+      name: 'browser_wait_for_url',
+      description: 'Wait for the URL to contain a specific string.',
+      schema: waitForUrlSchema,
+      execute: async ({ urlPart, timeoutMs }) => {
+        const target = await this.getTarget();
+        const timeout = timeoutMs ?? 5000;
+        const startedAt = Date.now();
+        while (Date.now() - startedAt < timeout) {
+          const currentUrl = target.getURL();
+          if (currentUrl.includes(urlPart)) return `URL matches "${urlPart}"`;
+          await this.delay(200);
+        }
+        return `Timeout waiting for URL to contain "${urlPart}"`;
+      },
+    };
+
+    const focusSchema = z.object({
+      selector: z.string().describe('CSS selector to focus'),
+    });
+    const focusTool: AgentTool<typeof focusSchema> = {
+      name: 'browser_focus',
+      description: 'Focus an element (e.g. input field).',
+      schema: focusSchema,
+      execute: async ({ selector }) => {
+        const target = await this.getTarget();
+        await target.executeJavaScript(
+          `(() => {
+             const el = document.querySelector('${selector}');
+             if (el) el.focus();
+           })()`
+        );
+        return `Focused "${selector}"`;
+      },
+    };
+
+    const clearSchema = z.object({
+      selector: z.string().describe('CSS selector of input to clear'),
+    });
+    const clearTool: AgentTool<typeof clearSchema> = {
+      name: 'browser_clear',
+      description: 'Clear the value of an input or textarea.',
+      schema: clearSchema,
+      execute: async ({ selector }) => {
+        const target = await this.getTarget();
+        await target.executeJavaScript(
+          `(() => {
+             const el = document.querySelector('${selector}');
+             if (el) {
+               el.value = '';
+               el.dispatchEvent(new Event('input', { bubbles: true }));
+               el.dispatchEvent(new Event('change', { bubbles: true }));
+             }
+           })()`
+        );
+        return `Cleared input "${selector}"`;
       },
     };
 
@@ -1126,7 +1323,16 @@ export class BrowserAutomationService {
     };
 
     toolRegistry.register(observeTool);
+    toolRegistry.register(goBackTool);
+    toolRegistry.register(goForwardTool);
+    toolRegistry.register(reloadTool);
     toolRegistry.register(navigateTool);
+    toolRegistry.register(scrollTool);
+    toolRegistry.register(pressKeyTool);
+    toolRegistry.register(waitForSelectorTool);
+    toolRegistry.register(waitForUrlTool);
+    toolRegistry.register(focusTool);
+    toolRegistry.register(clearTool);
     toolRegistry.register(clickTool);
     toolRegistry.register(typeTool);
     toolRegistry.register(getTextTool);
