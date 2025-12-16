@@ -19,12 +19,12 @@ export function WorkspaceSidebar() {
     }, []);
 
     const apps = [
-        { id: 'agent', icon: Bot, label: 'Agent', color: 'text-foreground' },
-        { id: 'drive', icon: Folder, color: 'text-green-500', label: 'Drive' },
-        { id: 'gmail', icon: Mail, color: 'text-red-500', label: 'Gmail', url: 'https://mail.google.com' },
-        { id: 'calendar', icon: Calendar, color: 'text-blue-500', label: 'Calendar', url: 'https://calendar.google.com' },
-        { id: 'slack', icon: MessageCircle, color: 'text-purple-500', label: 'Slack', url: 'https://slack.com' },
-        { id: 'extensions', icon: Puzzle, color: 'text-muted-foreground', label: 'Extensions' },
+        { id: 'agent', icon: Bot, label: 'Agent' },
+        { id: 'drive', icon: Folder, label: 'Drive' },
+        { id: 'gmail', icon: Mail, label: 'Gmail', url: 'https://mail.google.com' },
+        { id: 'calendar', icon: Calendar, label: 'Calendar', url: 'https://calendar.google.com' },
+        { id: 'slack', icon: MessageCircle, label: 'Slack', url: 'https://slack.com' },
+        { id: 'extensions', icon: Puzzle, label: 'Extensions' },
     ] as const;
 
     const handleAppClick = (app: typeof apps[number]) => {
@@ -62,7 +62,7 @@ export function WorkspaceSidebar() {
                         )}
                         title={app.label}
                     >
-                        <app.icon size={20} className={cn("shrink-0 transition-colors", activeSidebarPanel === app.id ? "text-foreground" : app.color)} />
+                        <app.icon size={20} className="shrink-0" />
                         {activeSidebarPanel === app.id && (
                             <div className="absolute left-0 top-2 bottom-2 w-0.5 bg-foreground rounded-r-full" />
                         )}
@@ -81,7 +81,7 @@ export function WorkspaceSidebar() {
                         {user?.avatar ? (
                             <img src={user.avatar} className="w-6 h-6 rounded-full" alt="User" />
                         ) : (
-                            <UserCircle size={20} className={cn(user ? "text-blue-500" : "text-muted-foreground")} />
+                            <UserCircle size={20} className="text-muted-foreground" />
                         )}
                     </button>
                     {isProfileOpen && (
@@ -106,7 +106,7 @@ export function WorkspaceSidebar() {
                             ) : (
                                 <button 
                                     onClick={handleLogin}
-                                    className="w-full text-left px-3 py-2 text-sm hover:bg-secondary/50 flex items-center gap-2 text-blue-500 font-medium"
+                                    className="w-full text-left px-3 py-2 text-sm hover:bg-secondary/50 flex items-center gap-2 text-foreground font-medium"
                                 >
                                     <ExternalLink size={14} /> Sign in with Google
                                 </button>
