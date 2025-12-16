@@ -588,47 +588,69 @@ export class BrowserAutomationService {
     };
 
     // Tool: Click
-    const clickTool: AgentTool<z.ZodObject<{ selector: z.ZodString }>> = {
+    const clickSchema = z.object({
+      selector: z.string().describe('CSS selector of the element to click'),
+      index: z.number().optional().describe('Index of element if multiple match (0-based)'),
+      matchText: z.string().optional().describe('Text content to match if multiple elements found'),
+    });
+    const clickTool: AgentTool<typeof clickSchema> = {
       name: 'browser_click',
-      description: 'Click an element on the current page.',
-      schema: z.object({
-        selector: z.string().describe('CSS selector of the element to click'),
-      }),
-      execute: async ({ selector }: { selector: string }) => {
+      description: 'Click an element on the current page. Ensures uniqueness or requires disambiguation.',
+      schema: clickSchema,
+      execute: async ({ selector, index, matchText }) => {
         try {
             const target = await this.getTarget();
             // Wait for selector with improved timeout
             await this.waitForSelector(target, selector, 5000);
             
-            await target.executeJavaScript(
+            // Check uniqueness if no disambiguation provided
+            if (index === undefined && !matchText) {
+              const count = await this.querySelectorCount(target, selector);
+              if (count > 1) {
+                return `Failed to click: Selector "${selector}" matches ${count} elements. Please specify "index" (0-${count-1}) or "matchText" to disambiguate.`;
+              }
+            }
+
+            const result = await target.executeJavaScript(
               `(() => {
-                // Helper to find element including shadow DOM
-                const findElement = (sel) => {
+                // Helper to find elements including shadow DOM
+                const findElements = (sel) => {
+                  const results = [];
                   const queryDeep = (root) => {
-                    const el = root.querySelector(sel);
-                    if (el) return el;
+                    const els = Array.from(root.querySelectorAll(sel));
+                    results.push(...els);
                     if (root.shadowRoot) {
-                      const found = queryDeep(root.shadowRoot);
-                      if (found) return found;
+                      queryDeep(root.shadowRoot);
                     }
                     const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
                     while (walker.nextNode()) {
                       const node = walker.currentNode;
                       if (node.shadowRoot) {
-                        const found = queryDeep(node.shadowRoot);
-                        if (found) return found;
+                        queryDeep(node.shadowRoot);
                       }
                     }
-                    return null;
                   };
-                  return queryDeep(document);
+                  queryDeep(document);
+                  return results;
                 };
 
-                const el = findElement(${JSON.stringify(selector)}) || document.querySelector(${JSON.stringify(selector)});
-                if (!el) throw new Error('Element not found');
+                let candidates = findElements(${JSON.stringify(selector)});
+                
+                // Filter by text if provided
+                if (${JSON.stringify(matchText)}) {
+                  const needle = ${JSON.stringify(matchText || '')}.toLowerCase();
+                  candidates = candidates.filter(el => (el.innerText || '').toLowerCase().includes(needle));
+                }
+
+                if (candidates.length === 0) return { ok: false, error: 'Element not found' };
+
+                const idx = ${JSON.stringify(index ?? 0)};
+                if (idx >= candidates.length) return { ok: false, error: 'Index out of bounds' };
+                
+                const el = candidates[idx];
                 
                 const isDisabled = ('disabled' in el && Boolean(el.disabled)) || el.getAttribute?.('aria-disabled') === 'true';
-                if (isDisabled) throw new Error('Element is disabled');
+                if (isDisabled) return { ok: false, error: 'Element is disabled' };
                 
                 el.scrollIntoView({ block: 'center', inline: 'center' });
                 
@@ -644,10 +666,14 @@ export class BrowserAutomationService {
                 el.dispatchEvent(new MouseEvent('mouseup', eventOpts));
                 el.dispatchEvent(new MouseEvent('click', eventOpts));
                 
-                return true;
+                return { ok: true };
               })()`,
               true
             );
+            
+            if (!result.ok) {
+              return `Failed to click ${selector}: ${result.error}`;
+            }
             return `Clicked element ${selector}`;
         } catch (e: any) {
             return `Failed to click ${selector}: ${e.message}`;
