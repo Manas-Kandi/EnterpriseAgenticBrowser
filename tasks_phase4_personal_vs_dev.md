@@ -41,7 +41,7 @@ This phase focuses on elevating the browser's aesthetic to a commercial standard
         - **Design:** Two large cards: "Personal Use" (Blue/Peaceful) vs "Developer Mode" (Dark/Matrix/Code).
     - **Git:** `git add . && git commit -m "feat(onboarding): implement mode selection screen" && git push origin PersonalvsDevDiff`
 
-- [ ] **Task 4.5: Developer Mode Security**
+- [x] **Task 4.5: Developer Mode Security**
     - **Description:**
         - If "Developer Mode" is selected, prompt for a password.
         - Store a hashed password (or simple string for MVP) in an environment variable or hardcoded config for now (`dev123`).
