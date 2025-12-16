@@ -45,7 +45,7 @@ export function NewTabPage({ tabId }: { tabId: string }) {
     });
 
     return (
-        <div className="flex flex-col items-center justify-center min-h-full bg-background text-foreground p-8 animate-in fade-in duration-500">
+        <div className="flex flex-col items-center justify-center min-h-full bg-background text-foreground p-8">
             <div className="w-full max-w-4xl space-y-12">
                 
                 {/* Header / Greeting */}

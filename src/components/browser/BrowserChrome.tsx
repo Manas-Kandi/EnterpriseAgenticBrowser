@@ -178,7 +178,7 @@ export function BrowserChrome() {
                  </button>
 
                  {isMenuOpen && (
-                    <div className="absolute right-0 top-full mt-2 w-56 bg-popover border border-border rounded-lg shadow-xl py-1 z-50 animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="absolute right-0 top-full mt-2 w-56 bg-popover border border-border rounded-lg shadow-xl py-1 z-50">
                         {/* New Tab */}
                         <button 
                             onClick={() => { addTab(); setIsMenuOpen(false); }}
@@ -250,7 +250,7 @@ export function BrowserChrome() {
       {contextMenu && (
         <div 
             ref={contextMenuRef}
-            className="fixed bg-popover border border-border rounded-lg shadow-xl py-1 z-50 min-w-[160px] animate-in fade-in duration-200"
+            className="fixed bg-popover border border-border rounded-lg shadow-xl py-1 z-50 min-w-[160px]"
             style={{ top: contextMenu.y, left: contextMenu.x }}
         >
             <button onClick={() => { 

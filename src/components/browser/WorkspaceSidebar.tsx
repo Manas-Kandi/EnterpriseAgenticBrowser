@@ -73,7 +73,7 @@ export function WorkspaceSidebar() {
                     >
                         <app.icon size={20} className={cn(app.color, "shrink-0")} />
                         {isExpanded && (
-                            <span className="text-sm font-medium animate-in fade-in slide-in-from-left-2 duration-200 truncate">
+                            <span className="text-sm font-medium truncate">
                                 {app.label}
                             </span>
                         )}
@@ -94,12 +94,12 @@ export function WorkspaceSidebar() {
                     title={isExpanded ? "Collapse" : "Expand"}
                 >
                     {isExpanded ? <ChevronLeft size={20} /> : <ChevronRight size={20} />}
-                    {isExpanded && <span className="text-sm font-medium animate-in fade-in">Collapse</span>}
+                    {isExpanded && <span className="text-sm font-medium">Collapse</span>}
                 </button>
 
                 <button className={cn("p-2 text-muted-foreground hover:text-foreground hover:bg-background rounded-lg transition-colors w-full flex items-center gap-3", !isExpanded && "justify-center")}>
                     <Settings size={20} className="shrink-0" />
-                    {isExpanded && <span className="text-sm font-medium animate-in fade-in">Settings</span>}
+                    {isExpanded && <span className="text-sm font-medium">Settings</span>}
                 </button>
                 
                 {/* User Profile */}
@@ -119,7 +119,7 @@ export function WorkspaceSidebar() {
                         )}
                         
                         {isExpanded && (
-                            <div className="flex-1 text-left min-w-0 animate-in fade-in">
+                            <div className="flex-1 text-left min-w-0">
                                 <div className="text-sm font-medium truncate">{user ? user.name : 'Guest'}</div>
                             </div>
                         )}
@@ -129,7 +129,7 @@ export function WorkspaceSidebar() {
                     </button>
 
                     {isProfileOpen && (
-                        <div className="absolute left-full bottom-0 ml-2 w-64 bg-popover border border-border rounded-lg shadow-xl py-2 z-50 animate-in fade-in slide-in-from-left-2 duration-200">
+                        <div className="absolute left-full bottom-0 ml-2 w-64 bg-popover border border-border rounded-lg shadow-xl py-2 z-50">
                             {user ? (
                                 <div className="px-3 pb-2 mb-2 border-b border-border/50">
                                     <div className="font-medium text-sm">{user.name}</div>

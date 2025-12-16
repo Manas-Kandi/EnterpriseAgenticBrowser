@@ -32,7 +32,7 @@ export function OnboardingPage({ onSelectMode }: OnboardingPageProps) {
 
     if (showPassword) {
         return (
-            <div className="fixed inset-0 z-50 bg-background/95 backdrop-blur-sm flex items-center justify-center p-6 animate-in fade-in duration-300">
+            <div className="fixed inset-0 z-50 bg-background/95 backdrop-blur-sm flex items-center justify-center p-6">
                 <div className="max-w-md w-full bg-card border border-border p-8 rounded-2xl shadow-2xl relative">
                     <button 
                         onClick={() => setShowPassword(false)}
@@ -81,7 +81,7 @@ export function OnboardingPage({ onSelectMode }: OnboardingPageProps) {
     }
 
     return (
-        <div className="fixed inset-0 z-50 bg-background flex flex-col items-center justify-center p-6 animate-in fade-in duration-500">
+        <div className="fixed inset-0 z-50 bg-background flex flex-col items-center justify-center p-6">
             <div className="max-w-4xl w-full flex flex-col items-center gap-12">
                 
                 <div className="text-center space-y-4">
@@ -155,7 +155,7 @@ export function OnboardingPage({ onSelectMode }: OnboardingPageProps) {
                     {selected && (
                         <button
                             onClick={handleConfirm}
-                            className="px-8 py-3 bg-primary text-primary-foreground rounded-full font-medium text-lg shadow-lg hover:shadow-xl hover:scale-105 transition-all animate-in slide-in-from-bottom-4 duration-300"
+                            className="px-8 py-3 bg-primary text-primary-foreground rounded-full font-medium text-lg shadow-lg hover:shadow-xl hover:scale-105 transition-all"
                         >
                             Get Started
                         </button>
