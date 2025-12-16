@@ -7,7 +7,7 @@ export function WorkspacePanel() {
     if (!activeSidebarPanel) return null;
 
     return (
-        <div className="w-80 border-r border-border/50 bg-background flex flex-col animate-in slide-in-from-left duration-200 shadow-xl z-10">
+        <div className="w-80 border-r border-border/50 bg-background flex flex-col shadow-xl z-10">
             <div className="h-10 flex items-center justify-between px-3 border-b border-border/50 bg-secondary/20">
                 <span className="text-sm font-medium capitalize flex items-center gap-2">
                     {activeSidebarPanel}

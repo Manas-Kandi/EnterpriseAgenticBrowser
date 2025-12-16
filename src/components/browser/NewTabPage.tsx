@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils';
 import { useState, useEffect } from 'react';
 
 export function NewTabPage({ tabId }: { tabId: string }) {
-    const { updateTab } = useBrowserStore();
+    const { updateTab, appMode } = useBrowserStore();
     const [greeting, setGreeting] = useState('');
 
     useEffect(() => {
@@ -25,17 +25,27 @@ export function NewTabPage({ tabId }: { tabId: string }) {
         { name: 'Drive', url: 'https://drive.google.com', icon: Folder, color: 'text-green-500', bg: 'bg-green-500/10' },
         { name: 'Mail', url: 'https://gmail.com', icon: Mail, color: 'text-red-500', bg: 'bg-red-500/10' },
         { name: 'Calendar', url: 'https://calendar.google.com', icon: Calendar, color: 'text-blue-600', bg: 'bg-blue-600/10' },
-    ];
+    ].filter(link => {
+        if (appMode === 'personal') {
+            return !link.url.includes('localhost') && !link.name.includes('Jira') && !link.name.includes('Dashboard');
+        }
+        return true;
+    });
 
     const recentHistory = [
         { title: 'Project Roadmap - Jira', url: 'http://localhost:3000/jira/PROJ-123', time: '10 mins ago' },
         { title: 'Q4 Financials - Sheets', url: 'https://docs.google.com/spreadsheets', time: '1 hour ago' },
         { title: 'Team Sync - Calendar', url: 'https://calendar.google.com', time: '2 hours ago' },
         { title: 'AeroCore Admin', url: 'http://localhost:3000/aerocore/admin', time: 'Yesterday' },
-    ];
+    ].filter(item => {
+        if (appMode === 'personal') {
+            return !item.url.includes('localhost') && !item.title.includes('Jira') && !item.title.includes('AeroCore');
+        }
+        return true;
+    });
 
     return (
-        <div className="flex flex-col items-center justify-center min-h-full bg-background text-foreground p-8 animate-in fade-in duration-500">
+        <div className="flex flex-col items-center justify-center min-h-full bg-background text-foreground p-8">
             <div className="w-full max-w-4xl space-y-12">
                 
                 {/* Header / Greeting */}

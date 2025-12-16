@@ -10,6 +10,7 @@ export interface BrowserTab {
   action?: 'back' | 'forward' | 'reload' | 'stop' | 'devtools' | 'zoomIn' | 'zoomOut' | null;
   canGoBack?: boolean;
   canGoForward?: boolean;
+  pinned?: boolean;
 }
 
 export interface HistoryItem {
@@ -24,6 +25,7 @@ interface BrowserState {
   history: HistoryItem[];
   activeSidebarPanel: 'drive' | 'gmail' | 'calendar' | 'slack' | null;
   user: { name: string; email: string; avatar?: string } | null;
+  appMode: 'personal' | 'dev' | null;
   
   // Actions
   addTab: (url?: string) => void;
@@ -33,6 +35,7 @@ interface BrowserState {
   addToHistory: (url: string, title: string) => void;
   setSidebarPanel: (panel: 'drive' | 'gmail' | 'calendar' | 'slack' | null) => void;
   setUser: (user: { name: string; email: string; avatar?: string } | null) => void;
+  setAppMode: (mode: 'personal' | 'dev' | null) => void;
 }
 
 export const useBrowserStore = create<BrowserState>()(
@@ -45,6 +48,7 @@ export const useBrowserStore = create<BrowserState>()(
       history: [],
       activeSidebarPanel: null,
       user: null,
+      appMode: null,
 
       addTab: (url = 'about:newtab') => set((state) => {
         const newTab = {
@@ -83,10 +87,11 @@ export const useBrowserStore = create<BrowserState>()(
 
       setSidebarPanel: (panel) => set({ activeSidebarPanel: panel }),
       setUser: (user) => set({ user }),
+      setAppMode: (mode) => set({ appMode: mode }),
     }),
     {
       name: 'browser-storage',
-      partialize: (state) => ({ tabs: state.tabs, activeTabId: state.activeTabId, history: state.history, user: state.user }), // Persist these fields
+      partialize: (state) => ({ tabs: state.tabs, activeTabId: state.activeTabId, history: state.history, user: state.user, appMode: state.appMode }), // Persist these fields
     }
   )
 );
