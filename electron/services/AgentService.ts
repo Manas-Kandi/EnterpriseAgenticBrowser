@@ -139,22 +139,6 @@ export class AgentService {
     }
   }
 
-  /**
-   * Get current browser URL for context injection
-   */
-  private async getCurrentBrowserContext(): Promise<string> {
-    try {
-      // Import dynamically to avoid circular dependency
-      const { browserTargetService } = await import('./BrowserTargetService');
-      const wc = browserTargetService.getActiveWebContents();
-      const url = wc.getURL();
-      const title = wc.getTitle();
-      return `Current browser state: URL="${url}", Title="${title}"`;
-    } catch {
-      return 'Current browser state: No active tab';
-    }
-  }
-
   setStepHandler(handler: (step: AgentStep) => void) {
       this.onStep = handler;
   }
@@ -165,7 +149,7 @@ export class AgentService {
       }
   }
 
-  async chat(userMessage: string): Promise<string> {
+  async chat(userMessage: string, browserContext?: string): Promise<string> {
     // Fetch tools dynamically to ensure all services have registered their tools
     const tools = toolRegistry.toLangChainTools();
     let usedBrowserTools = false;
@@ -173,8 +157,8 @@ export class AgentService {
     let lastVerified: string | null = null;
     
     try {
-      // Get current browser context to inject into the conversation
-      const browserContext = await this.getCurrentBrowserContext();
+      // Use provided browser context or default
+      const context = browserContext || 'Current browser state: No context provided';
       
       // Build system prompt with tools (refresh each call in case tools changed)
       this.systemPrompt = new SystemMessage(`You are a helpful enterprise assistant integrated into a browser. 
@@ -199,7 +183,7 @@ export class AgentService {
         CONVERSATION CONTEXT:
         - You have memory of the entire conversation. Use previous messages to understand context.
         - If the user refers to "it", "this page", "here", etc., use the conversation history and current browser state to understand what they mean.
-        - ${browserContext}
+        - ${context}
 
         JSON SAFETY:
         - Tool JSON must be valid JSON. If you include a CSS selector string, it MUST NOT contain unescaped double quotes (").
@@ -265,7 +249,7 @@ export class AgentService {
         `);
       
       // Add user message to conversation history with browser context
-      const contextualUserMessage = new HumanMessage(`[${browserContext}]\n\nUser request: ${userMessage}`);
+      const contextualUserMessage = new HumanMessage(`[${context}]\n\nUser request: ${userMessage}`);
       this.conversationHistory.push(contextualUserMessage);
       
       // Trim history if it's getting too long

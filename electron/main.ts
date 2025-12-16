@@ -50,6 +50,8 @@ function createWindow() {
 
   if (VITE_DEV_SERVER_URL) {
     win.loadURL(VITE_DEV_SERVER_URL)
+    // Open DevTools in development mode to see any errors
+    win.webContents.openDevTools()
   } else {
     // win.loadFile('dist/index.html')
     win.loadFile(path.join(RENDERER_DIST, 'index.html'))
@@ -131,7 +133,18 @@ app.whenReady().then(() => {
         event.sender.send('agent:step', step);
     });
 
-    const response = await agentService.chat(message);
+    // Get current browser context
+    let browserContext = 'Current browser state: No active tab';
+    try {
+        const wc = browserTargetService.getActiveWebContents();
+        const url = wc.getURL();
+        const title = wc.getTitle();
+        browserContext = `Current browser state: URL="${url}", Title="${title}"`;
+    } catch (err) {
+        // Ignore error if no active tab
+    }
+
+    const response = await agentService.chat(message, browserContext);
     
     // Log Agent Response
     await auditService.log({
