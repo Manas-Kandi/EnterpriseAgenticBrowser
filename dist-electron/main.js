@@ -42835,7 +42835,24 @@ class BrowserAutomationService {
         timeoutMs
       }) => {
         try {
-          const target = await this.getTarget();
+          let target;
+          try {
+            target = await this.getTarget();
+          } catch (noWebviewError) {
+            const { BrowserWindow: BrowserWindow2 } = await import("electron");
+            const win2 = BrowserWindow2.getAllWindows()[0];
+            if (win2) {
+              win2.webContents.send("browser:navigate-to", url);
+              await this.delay(1500);
+              try {
+                target = await this.getTarget();
+              } catch {
+                return `Navigated to ${url} (webview initializing)`;
+              }
+            } else {
+              return `Failed to navigate: No browser window found`;
+            }
+          }
           try {
             const parsed = new URL$2(url);
             if ((parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1") && parsed.port === "3000") {
@@ -43483,6 +43500,14 @@ app.whenReady().then(() => {
   ipcMain.handle("agent:set-model", async (_, modelId) => {
     agentService.setModel(modelId);
     return { success: true, modelId };
+  });
+  ipcMain.handle("browser:navigate-tab", async (_, url) => {
+    const win2 = BrowserWindow.getAllWindows()[0];
+    if (win2) {
+      win2.webContents.send("browser:navigate-to", url);
+      return { success: true, url };
+    }
+    return { success: false, error: "No window found" };
   });
   createWindow();
 });

@@ -177,5 +177,15 @@ app.whenReady().then(() => {
     return { success: true, modelId };
   });
 
+  // Handler for agent to navigate when no webview exists (e.g., New Tab page)
+  ipcMain.handle('browser:navigate-tab', async (_, url: string) => {
+    const win = BrowserWindow.getAllWindows()[0];
+    if (win) {
+      win.webContents.send('browser:navigate-to', url);
+      return { success: true, url };
+    }
+    return { success: false, error: 'No window found' };
+  });
+
   createWindow();
 })

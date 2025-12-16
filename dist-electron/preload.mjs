@@ -45,5 +45,10 @@ electron.contextBridge.exposeInMainWorld("agent", {
 });
 electron.contextBridge.exposeInMainWorld("browser", {
   registerWebview: (tabId, webContentsId) => electron.ipcRenderer.invoke("browser:webview-register", { tabId, webContentsId }),
-  setActiveTab: (tabId) => electron.ipcRenderer.invoke("browser:active-tab", { tabId })
+  setActiveTab: (tabId) => electron.ipcRenderer.invoke("browser:active-tab", { tabId }),
+  onNavigateTo: (callback) => {
+    const listener = (_, url) => callback(url);
+    electron.ipcRenderer.on("browser:navigate-to", listener);
+    return () => electron.ipcRenderer.off("browser:navigate-to", listener);
+  }
 });

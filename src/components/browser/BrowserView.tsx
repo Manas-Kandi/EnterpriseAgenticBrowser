@@ -114,11 +114,21 @@ function WebViewInstance({ tab, active }: { tab: BrowserTab; active: boolean }) 
 }
 
 export function BrowserView() {
-  const { tabs, activeTabId } = useBrowserStore();
+  const { tabs, activeTabId, updateTab } = useBrowserStore();
 
   useEffect(() => {
     window.browser?.setActiveTab(activeTabId);
   }, [activeTabId]);
+
+  // Listen for agent-triggered navigation (when on New Tab page)
+  useEffect(() => {
+    const off = window.browser?.onNavigateTo?.((url: string) => {
+      if (activeTabId) {
+        updateTab(activeTabId, { url, loading: true });
+      }
+    });
+    return () => off?.();
+  }, [activeTabId, updateTab]);
 
   return (
     <div className="flex-1 relative bg-white">
