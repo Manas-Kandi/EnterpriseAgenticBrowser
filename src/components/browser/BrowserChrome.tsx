@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { cn, getFaviconUrl } from '@/lib/utils';
 
 export function BrowserChrome() {
-  const { tabs, activeTabId, addTab, removeTab, setActiveTab, updateTab, setAppMode } = useBrowserStore();
+  const { tabs, activeTabId, addTab, removeTab, setActiveTab, updateTab, setAppMode, reorderTabs } = useBrowserStore();
   const activeTab = tabs.find(t => t.id === activeTabId);
   const [urlInput, setUrlInput] = useState('');
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -12,6 +12,9 @@ export function BrowserChrome() {
   
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, tabId: string } | null>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
+  
+  const [draggedTabIndex, setDraggedTabIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -87,22 +90,95 @@ export function BrowserChrome() {
         </div>
 
         {/* Tabs */}
-        <div className="flex-1 flex items-center gap-0.5 overflow-x-auto no-scrollbar mx-1" style={{ WebkitAppRegion: 'no-drag' } as any}>
-          {tabs.map((tab) => (
-            <div
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              onContextMenu={(e) => {
-                e.preventDefault();
-                setContextMenu({ x: e.clientX, y: e.clientY, tabId: tab.id });
-              }}
-              className={cn(
-                "group flex items-center gap-2 h-8 px-3 text-xs cursor-pointer select-none rounded-md min-w-[100px] max-w-[180px] transition-colors",
-                activeTabId === tab.id 
-                  ? "bg-secondary/60 text-foreground" 
-                  : "text-muted-foreground hover:bg-secondary/30"
-              )}
-            >
+        <div className="flex-1 flex items-center overflow-x-auto no-scrollbar mx-1" style={{ WebkitAppRegion: 'no-drag' } as any}>
+          {tabs.map((tab, index) => (
+            <div key={tab.id} className="relative flex items-center">
+              {/* Tab */}
+              <div
+                draggable
+                onDragStart={(e) => {
+                  setDraggedTabIndex(index);
+                  e.dataTransfer.effectAllowed = 'move';
+                }}
+                onDragEnd={() => {
+                  setDraggedTabIndex(null);
+                  setDragOverIndex(null);
+                }}
+                onClick={() => setActiveTab(tab.id)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setContextMenu({ x: e.clientX, y: e.clientY, tabId: tab.id });
+                }}
+                className={cn(
+                  "group flex items-center gap-2 h-8 px-3 text-xs cursor-pointer select-none rounded-md min-w-[100px] max-w-[180px] transition-all duration-200 ease-out",
+                  activeTabId === tab.id 
+                    ? "bg-secondary/60 text-foreground" 
+                    : "text-muted-foreground hover:bg-secondary/30",
+                  draggedTabIndex === index && "opacity-40 scale-95"
+                )}
+              >
+                {/* Left drop zone - covers left half of tab */}
+                <div
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    if (draggedTabIndex !== null && draggedTabIndex !== index && draggedTabIndex !== index - 1) {
+                      setDragOverIndex(index);
+                    }
+                  }}
+                  onDragLeave={() => setDragOverIndex(null)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    if (draggedTabIndex !== null) {
+                      const targetIndex = draggedTabIndex < index ? index - 1 : index;
+                      if (draggedTabIndex !== targetIndex) {
+                        reorderTabs(draggedTabIndex, targetIndex);
+                      }
+                    }
+                    setDraggedTabIndex(null);
+                    setDragOverIndex(null);
+                  }}
+                  className="absolute left-0 top-0 w-3/4 h-full z-10"
+                />
+                {/* Right drop zone - covers right half of tab */}
+                <div
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    if (draggedTabIndex !== null && draggedTabIndex !== index && draggedTabIndex !== index + 1) {
+                      setDragOverIndex(index + 1);
+                    }
+                  }}
+                  onDragLeave={() => setDragOverIndex(null)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    if (draggedTabIndex !== null) {
+                      const targetIndex = draggedTabIndex < index + 1 ? index : index + 1;
+                      if (draggedTabIndex !== targetIndex) {
+                        reorderTabs(draggedTabIndex, targetIndex);
+                      }
+                    }
+                    setDraggedTabIndex(null);
+                    setDragOverIndex(null);
+                  }}
+                  className="absolute right-0 top-0 w-3/4 h-full z-10"
+                />
+                {/* Left indicator */}
+                <div 
+                  className={cn(
+                    "absolute -left-0.5 top-1 bottom-1 rounded-full transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)]",
+                    dragOverIndex === index 
+                      ? "w-1 bg-foreground/70 shadow-[0_0_8px_rgba(255,255,255,0.4)]" 
+                      : "w-0 bg-transparent"
+                  )}
+                />
+                {/* Right indicator */}
+                <div 
+                  className={cn(
+                    "absolute -right-0.5 top-1 bottom-1 rounded-full transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)]",
+                    dragOverIndex === index + 1 
+                      ? "w-1 bg-foreground/70 shadow-[0_0_8px_rgba(255,255,255,0.4)]" 
+                      : "w-0 bg-transparent"
+                  )}
+                />
               <div className="flex items-center justify-center w-4 h-4 shrink-0">
                 {tab.loading ? (
                   <Loader2 size={12} className="animate-spin text-muted-foreground" />
@@ -126,6 +202,7 @@ export function BrowserChrome() {
               >
                 <X size={10} />
               </button>
+              </div>
             </div>
           ))}
           <button
