@@ -49,11 +49,9 @@ export function BrowserChrome() {
     <div className="flex flex-col bg-background relative z-10">
       {/* Unified Tab Bar - Chrome/Arc style */}
       <div 
-        className="h-11 flex items-center gap-1 px-2 bg-background select-none"
+        className="h-11 flex items-center gap-1 pl-1 pr-2 bg-background select-none"
         style={{ WebkitAppRegion: 'drag' } as any}
       >
-        {/* Window drag spacer for macOS traffic lights */}
-        <div className="w-16 shrink-0" />
 
         {/* Navigation Controls */}
         <div className="flex items-center gap-0.5 shrink-0" style={{ WebkitAppRegion: 'no-drag' } as any}>
