@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { cn, getFaviconUrl } from '@/lib/utils';
 
 export function BrowserChrome() {
-  const { tabs, activeTabId, addTab, removeTab, setActiveTab, updateTab, appMode, setAppMode } = useBrowserStore();
+  const { tabs, activeTabId, addTab, removeTab, setActiveTab, updateTab, setAppMode } = useBrowserStore();
   const activeTab = tabs.find(t => t.id === activeTabId);
   const [urlInput, setUrlInput] = useState('');
   const [isMenuOpen, setIsMenuOpen] = useState(false);
