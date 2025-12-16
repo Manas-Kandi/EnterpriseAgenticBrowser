@@ -40,13 +40,17 @@ export function BrowserChrome() {
   };
 
   return (
-    <div className="flex flex-col border-b border-border/50 bg-background pt-2">
+    <div className="flex flex-col border-b border-border/50 bg-background/80 backdrop-blur-md pt-2">
       {/* Tabs Row */}
-      <div className="flex items-center px-3 gap-1 overflow-x-auto no-scrollbar">
+      <div 
+        className="flex items-center pl-10 pr-3 gap-1 overflow-x-auto no-scrollbar"
+        style={{ WebkitAppRegion: 'drag' } as any}
+      >
         {tabs.map((tab) => (
           <div
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
+            style={{ WebkitAppRegion: 'no-drag' } as any}
             className={cn(
               "group flex items-center gap-2 px-3 py-1.5 rounded-t-lg text-xs min-w-[120px] max-w-[200px] cursor-pointer transition-all border-t border-x relative select-none",
               activeTabId === tab.id 
@@ -88,6 +92,7 @@ export function BrowserChrome() {
         ))}
         <button
             onClick={() => addTab()}
+            style={{ WebkitAppRegion: 'no-drag' } as any}
             className="p-1.5 hover:bg-secondary/50 rounded-md text-muted-foreground hover:text-foreground transition-colors ml-1"
         >
             <Plus size={14} />

@@ -50,9 +50,9 @@ export function WorkspaceSidebar() {
     };
 
     return (
-        <div className="w-12 flex flex-col items-center py-4 bg-secondary/30 border-r border-border/50 gap-4 z-20">
+        <div className="w-12 flex flex-col items-center py-4 pt-12 bg-secondary/30 backdrop-blur-md border-r border-border/50 gap-4 z-20" style={{ WebkitAppRegion: 'drag' } as any}>
             {/* Apps Dock */}
-            <div className="flex-1 flex flex-col gap-3">
+            <div className="flex-1 flex flex-col gap-3 w-full items-center" style={{ WebkitAppRegion: 'no-drag' } as any}>
                 {apps.map((app) => (
                     <button
                         key={app.id}
@@ -72,7 +72,7 @@ export function WorkspaceSidebar() {
             </div>
 
             {/* Bottom Actions */}
-            <div className="flex flex-col gap-3 items-center">
+            <div className="flex flex-col gap-3 items-center" style={{ WebkitAppRegion: 'no-drag' } as any}>
                 <button className="p-2 text-muted-foreground hover:text-foreground hover:bg-background rounded-lg transition-colors">
                     <Settings size={20} />
                 </button>

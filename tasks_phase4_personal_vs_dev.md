@@ -4,7 +4,7 @@ This phase focuses on elevating the browser's aesthetic to a commercial standard
 
 ## Phase 0: Workflow Setup
 
-- [ ] **Task 4.0: Branch Setup**
+- [x] **Task 4.0: Branch Setup**
     - **Description:**
         - Create and switch to a new branch named `PersonalvsDevDiff`.
     - **Git:** `git checkout -b PersonalvsDevDiff`
