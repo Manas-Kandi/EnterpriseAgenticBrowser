@@ -26,6 +26,7 @@ export interface ModelConfig {
 }
 
 export const AVAILABLE_MODELS: ModelConfig[] = [
+  // Fast models
   {
     id: 'llama-3.1-70b',
     name: 'Llama 3.1 70B (Fast)',
@@ -35,8 +36,25 @@ export const AVAILABLE_MODELS: ModelConfig[] = [
     supportsThinking: false,
   },
   {
+    id: 'llama-3.3-70b',
+    name: 'Llama 3.3 70B ⭐ Recommended',
+    modelName: 'meta/llama-3.3-70b-instruct',
+    temperature: 0.1,
+    maxTokens: 4096,
+    supportsThinking: false,
+  },
+  {
+    id: 'qwen3-235b',
+    name: 'Qwen3 235B (Best Quality)',
+    modelName: 'qwen/qwen3-235b-a22b',
+    temperature: 0.6,
+    maxTokens: 4096,
+    supportsThinking: false,
+  },
+  // Thinking models
+  {
     id: 'deepseek-v3.1',
-    name: 'DeepSeek V3.1 Terminus (Thinking)',
+    name: 'DeepSeek V3.1 (Thinking)',
     modelName: 'deepseek-ai/deepseek-v3.1-terminus',
     temperature: 0.2,
     maxTokens: 8192,
@@ -355,45 +373,67 @@ export class AgentService {
         ...this.conversationHistory,
       ];
 
+      // Get current model config for timeout
+      const currentConfig = AVAILABLE_MODELS.find(m => m.id === this.currentModelId);
+      // 90s for thinking models AND large models like Qwen 235B
+      // 45s for fast models
+      const isSlowModel = currentConfig?.supportsThinking || currentConfig?.id === 'qwen3-235b';
+      const timeoutMs = isSlowModel ? 90000 : 45000;
+      
       // ReAct Loop (Max 15 turns)
-      for (let i = 0; i < 25; i++) {
-        const response = await this.model.invoke(messages) as AIMessage;
+      for (let i = 0; i < 15; i++) {
+        // Add timeout for each LLM call
+        const timeoutPromise = new Promise<never>((_, reject) => 
+          setTimeout(() => reject(new Error(`LLM call timed out after ${timeoutMs/1000} seconds`)), timeoutMs)
+        );
+        
+        let response: AIMessage;
+        try {
+          response = await Promise.race([
+            this.model.invoke(messages),
+            timeoutPromise
+          ]) as AIMessage;
+        } catch (timeoutErr: any) {
+          this.emitStep('observation', `Request timed out. Try a simpler request or switch to a faster model.`);
+          return "The request timed out. Try breaking it into smaller steps or use a faster model.";
+        }
+        
         const content = response.content as string;
         
         // Log raw response for debugging
         console.log(`[Agent Turn ${i}] Raw Response:`, content);
         
         const action = this.parseToolCall(content);
+        
+        // Fix for models that return integer tool IDs or other weird formats
+        if (action && typeof (action as any).tool === 'number') {
+            // Map common integer mistakes to likely tools if possible, or fail
+            // For now, let's just log it. 
+            // Better fix: Strict system prompt instruction
+        }
+
         if (
           !action ||
-          typeof (action as any).tool !== 'string' ||
+          (typeof (action as any).tool !== 'string') ||
           !(action as any).args ||
           typeof (action as any).args !== 'object'
         ) {
           parseFailures++;
-          const snippet = String(content).slice(0, 600);
-          this.emitStep('observation', `Model output was not valid tool JSON (attempt ${parseFailures}).`, {
-            snippet,
-          });
+          this.emitStep('observation', `Model returned invalid JSON (attempt ${parseFailures}/3).`);
           console.warn("Failed to parse JSON response:", content);
           messages.push(response);
           messages.push(
             new SystemMessage(
-              `Error: You must output valid JSON ONLY in the exact format. No prose. No markdown.\n` +
-                `Reminder format:\n{"tool":"tool_name","args":{}}\n` +
-                `If you are done:\n{"tool":"final_response","args":{"message":"..."}}`
+              `Error: Output ONLY valid JSON. Format: {"tool":"tool_name","args":{...}}\n` +
+                `To finish: {"tool":"final_response","args":{"message":"your response"}}`
             )
           );
-          if (lastVerified && parseFailures >= 3) {
-            return `Completed (verified): ${lastVerified}`;
+          if (lastVerified && parseFailures >= 2) {
+            return `Done: ${lastVerified}`;
           }
-          if (parseFailures >= 6) {
-            return (
-              "The model repeatedly returned invalid tool-calling JSON, so I stopped. " +
-              "Try again; if it persists, switch models or reduce the request. " +
-              "Latest raw model output snippet:\n" +
-              snippet
-            );
+          // Fail faster - 3 parse failures max
+          if (parseFailures >= 3) {
+            return "I had trouble completing this task. Try a simpler request or switch to a thinking model (DeepSeek, Qwen).";
           }
           continue;
         }

@@ -41456,6 +41456,7 @@ class TaskKnowledgeService {
 new TaskKnowledgeService();
 dotenv.config();
 const AVAILABLE_MODELS = [
+  // Fast models
   {
     id: "llama-3.1-70b",
     name: "Llama 3.1 70B (Fast)",
@@ -41465,8 +41466,25 @@ const AVAILABLE_MODELS = [
     supportsThinking: false
   },
   {
+    id: "llama-3.3-70b",
+    name: "Llama 3.3 70B ⭐ Recommended",
+    modelName: "meta/llama-3.3-70b-instruct",
+    temperature: 0.1,
+    maxTokens: 4096,
+    supportsThinking: false
+  },
+  {
+    id: "qwen3-235b",
+    name: "Qwen3 235B (Best Quality)",
+    modelName: "qwen/qwen3-235b-a22b",
+    temperature: 0.6,
+    maxTokens: 4096,
+    supportsThinking: false
+  },
+  // Thinking models
+  {
     id: "deepseek-v3.1",
-    name: "DeepSeek V3.1 Terminus (Thinking)",
+    name: "DeepSeek V3.1 (Thinking)",
     modelName: "deepseek-ai/deepseek-v3.1-terminus",
     temperature: 0.2,
     maxTokens: 8192,
@@ -41745,33 +41763,44 @@ User request: ${userMessage}`);
         this.systemPrompt,
         ...this.conversationHistory
       ];
-      for (let i = 0; i < 25; i++) {
-        const response = await this.model.invoke(messages);
+      const currentConfig = AVAILABLE_MODELS.find((m) => m.id === this.currentModelId);
+      const isSlowModel = (currentConfig == null ? void 0 : currentConfig.supportsThinking) || (currentConfig == null ? void 0 : currentConfig.id) === "qwen3-235b";
+      const timeoutMs = isSlowModel ? 9e4 : 45e3;
+      for (let i = 0; i < 15; i++) {
+        const timeoutPromise = new Promise(
+          (_, reject) => setTimeout(() => reject(new Error(`LLM call timed out after ${timeoutMs / 1e3} seconds`)), timeoutMs)
+        );
+        let response;
+        try {
+          response = await Promise.race([
+            this.model.invoke(messages),
+            timeoutPromise
+          ]);
+        } catch (timeoutErr) {
+          this.emitStep("observation", `Request timed out. Try a simpler request or switch to a faster model.`);
+          return "The request timed out. Try breaking it into smaller steps or use a faster model.";
+        }
         const content = response.content;
         console.log(`[Agent Turn ${i}] Raw Response:`, content);
         const action = this.parseToolCall(content);
+        if (action && typeof action.tool === "number") {
+        }
         if (!action || typeof action.tool !== "string" || !action.args || typeof action.args !== "object") {
           parseFailures++;
-          const snippet = String(content).slice(0, 600);
-          this.emitStep("observation", `Model output was not valid tool JSON (attempt ${parseFailures}).`, {
-            snippet
-          });
+          this.emitStep("observation", `Model returned invalid JSON (attempt ${parseFailures}/3).`);
           console.warn("Failed to parse JSON response:", content);
           messages.push(response);
           messages.push(
             new SystemMessage(
-              `Error: You must output valid JSON ONLY in the exact format. No prose. No markdown.
-Reminder format:
-{"tool":"tool_name","args":{}}
-If you are done:
-{"tool":"final_response","args":{"message":"..."}}`
+              `Error: Output ONLY valid JSON. Format: {"tool":"tool_name","args":{...}}
+To finish: {"tool":"final_response","args":{"message":"your response"}}`
             )
           );
-          if (lastVerified && parseFailures >= 3) {
-            return `Completed (verified): ${lastVerified}`;
+          if (lastVerified && parseFailures >= 2) {
+            return `Done: ${lastVerified}`;
           }
-          if (parseFailures >= 6) {
-            return "The model repeatedly returned invalid tool-calling JSON, so I stopped. Try again; if it persists, switch models or reduce the request. Latest raw model output snippet:\n" + snippet;
+          if (parseFailures >= 3) {
+            return "I had trouble completing this task. Try a simpler request or switch to a thinking model (DeepSeek, Qwen).";
           }
           continue;
         }
@@ -42862,22 +42891,52 @@ class BrowserAutomationService {
       execute: async ({ selector }) => {
         try {
           const target = await this.getTarget();
-          const matches = await this.querySelectorCount(target, selector);
-          if (matches > 1) {
-            return `Refusing to click non-unique selector (matches=${matches}): ${selector}`;
-          }
           await this.waitForSelector(target, selector, 5e3);
           await target.executeJavaScript(
             `(() => {
-                const el = document.querySelector(${JSON.stringify(selector)});
+                // Helper to find element including shadow DOM
+                const findElement = (sel) => {
+                  const queryDeep = (root) => {
+                    const el = root.querySelector(sel);
+                    if (el) return el;
+                    if (root.shadowRoot) {
+                      const found = queryDeep(root.shadowRoot);
+                      if (found) return found;
+                    }
+                    const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
+                    while (walker.nextNode()) {
+                      const node = walker.currentNode;
+                      if (node.shadowRoot) {
+                        const found = queryDeep(node.shadowRoot);
+                        if (found) return found;
+                      }
+                    }
+                    return null;
+                  };
+                  return queryDeep(document);
+                };
+
+                const el = findElement(${JSON.stringify(selector)}) || document.querySelector(${JSON.stringify(selector)});
                 if (!el) throw new Error('Element not found');
+                
                 const isDisabled = ('disabled' in el && Boolean(el.disabled)) || el.getAttribute?.('aria-disabled') === 'true';
                 if (isDisabled) throw new Error('Element is disabled');
+                
                 el.scrollIntoView({ block: 'center', inline: 'center' });
-                el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
-                el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-                el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
-                el.click();
+                
+                // Try multiple click strategies
+                try {
+                  el.click(); // Standard click
+                } catch (e) { console.error('Standard click failed', e); }
+                
+                // Dispatch events (crucial for React/Angular/Vue apps)
+                const eventOpts = { bubbles: true, cancelable: true, view: window };
+                el.dispatchEvent(new MouseEvent('mouseover', eventOpts));
+                el.dispatchEvent(new MouseEvent('mousedown', eventOpts));
+                el.dispatchEvent(new MouseEvent('mouseup', eventOpts));
+                el.dispatchEvent(new MouseEvent('click', eventOpts));
+                
+                return true;
               })()`,
             true
           );
