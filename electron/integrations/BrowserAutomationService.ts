@@ -2,8 +2,12 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { URL } from 'node:url';
 import { z } from 'zod';
+import crypto from 'node:crypto';
+import { v4 as uuidv4 } from 'uuid';
 import { AgentTool, toolRegistry } from '../services/ToolRegistry';
 import { browserTargetService } from '../services/BrowserTargetService';
+import { agentRunContext } from '../services/AgentRunContext';
+import { telemetryService } from '../services/TelemetryService';
 import type { WebContents } from 'electron';
 
 export class BrowserAutomationService {
@@ -879,29 +883,240 @@ export class BrowserAutomationService {
       execute: async (input: unknown) => {
         const { steps } = input as { steps: any[] };
         const results = [];
+        const runId = agentRunContext.getRunId() ?? undefined;
+        const planId = uuidv4();
         for (const [i, step] of steps.entries()) {
+          const stepId = uuidv4();
+          const startedAt = Date.now();
+          let toolCallStarted = false;
+          try {
+            await telemetryService.emit({
+              eventId: uuidv4(),
+              runId,
+              ts: new Date().toISOString(),
+              type: 'plan_step_start',
+              name: 'browser_execute_plan',
+              data: {
+                planId,
+                stepId,
+                stepIndex: i,
+                action: String(step?.action ?? ''),
+              },
+            });
+          } catch {
+            // ignore telemetry failures
+          }
           try {
             let res = '';
+            let toolNameForStep = '';
+            let toolArgsForStep: any = {};
+
             if (step.action === 'navigate') {
               if (!step.url) throw new Error('Missing url for navigate');
-              res = await navigateTool.execute({ url: step.url });
+              toolNameForStep = 'browser_navigate';
+              toolArgsForStep = { url: step.url };
             } else if (step.action === 'click') {
               if (!step.selector) throw new Error('Missing selector for click');
-              res = await clickTool.execute({ selector: step.selector });
+              toolNameForStep = 'browser_click';
+              toolArgsForStep = { selector: step.selector };
             } else if (step.action === 'type') {
               if (!step.selector || step.value === undefined) throw new Error('Missing selector/value for type');
-              res = await typeTool.execute({ selector: step.selector, text: step.value });
+              toolNameForStep = 'browser_type';
+              toolArgsForStep = { selector: step.selector, text: step.value };
             } else if (step.action === 'select') {
               if (!step.selector || step.value === undefined) throw new Error('Missing selector/value for select');
-              res = await selectTool.execute({ selector: step.selector, value: step.value });
+              toolNameForStep = 'browser_select';
+              toolArgsForStep = { selector: step.selector, value: step.value };
             } else if (step.action === 'wait') {
               if (!step.text) throw new Error('Missing text for wait');
-              res = await waitForTextTool.execute({ text: step.text });
+              toolNameForStep = 'browser_wait_for_text';
+              toolArgsForStep = { text: step.text };
             } else {
               throw new Error(`Unknown action ${step.action}`);
             }
+
+            const toolCallId = uuidv4();
+            const argsJson = (() => {
+              try {
+                return JSON.stringify(toolArgsForStep ?? null);
+              } catch {
+                return '[unserializable_args]';
+              }
+            })();
+            const argsHash = crypto.createHash('sha256').update(argsJson).digest('hex');
+
+            const toolStartedAt = Date.now();
+            toolCallStarted = true;
+            try {
+              await telemetryService.emit({
+                eventId: uuidv4(),
+                runId,
+                ts: new Date().toISOString(),
+                type: 'tool_call_start',
+                name: toolNameForStep,
+                data: { toolCallId, argsHash, planId, stepId, stepIndex: i, invokedBy: 'browser_execute_plan' },
+              });
+            } catch {
+              // ignore telemetry failures
+            }
+
+            try {
+              if (step.action === 'navigate') {
+                res = await navigateTool.execute({ url: step.url });
+              } else if (step.action === 'click') {
+                res = await clickTool.execute({ selector: step.selector });
+              } else if (step.action === 'type') {
+                res = await typeTool.execute({ selector: step.selector, text: step.value });
+              } else if (step.action === 'select') {
+                res = await selectTool.execute({ selector: step.selector, value: step.value });
+              } else if (step.action === 'wait') {
+                res = await waitForTextTool.execute({ text: step.text });
+              }
+            } catch (innerErr: any) {
+              const toolDurationMs = Date.now() - toolStartedAt;
+              try {
+                await telemetryService.emit({
+                  eventId: uuidv4(),
+                  runId,
+                  ts: new Date().toISOString(),
+                  type: 'tool_call_end',
+                  name: toolNameForStep,
+                  data: {
+                    toolCallId,
+                    argsHash,
+                    planId,
+                    stepId,
+                    stepIndex: i,
+                    invokedBy: 'browser_execute_plan',
+                    ok: false,
+                    durationMs: toolDurationMs,
+                    errorMessage: String(innerErr?.message ?? innerErr),
+                  },
+                });
+              } catch {
+                // ignore telemetry failures
+              }
+              throw innerErr;
+            }
+
+            const toolDurationMs = Date.now() - toolStartedAt;
+            try {
+              await telemetryService.emit({
+                eventId: uuidv4(),
+                runId,
+                ts: new Date().toISOString(),
+                type: 'tool_call_end',
+                name: toolNameForStep,
+                data: {
+                  toolCallId,
+                  argsHash,
+                  planId,
+                  stepId,
+                  stepIndex: i,
+                  invokedBy: 'browser_execute_plan',
+                  ok: true,
+                  durationMs: toolDurationMs,
+                  resultLength: String(res ?? '').length,
+                },
+              });
+            } catch {
+              // ignore telemetry failures
+            }
+
+            const durationMs = Date.now() - startedAt;
+            try {
+              await telemetryService.emit({
+                eventId: uuidv4(),
+                runId,
+                ts: new Date().toISOString(),
+                type: 'plan_step_end',
+                name: 'browser_execute_plan',
+                data: {
+                  planId,
+                  stepId,
+                  stepIndex: i,
+                  action: String(step?.action ?? ''),
+                  ok: true,
+                  durationMs,
+                  resultLength: String(res ?? '').length,
+                },
+              });
+            } catch {
+              // ignore telemetry failures
+            }
             results.push(`Step ${i + 1} (${step.action}): ${res}`);
           } catch (e: any) {
+            // If we failed before we could start/emit tool telemetry (e.g. missing url/selector), emit a best-effort tool_call_end.
+            if (!toolCallStarted) {
+              try {
+                const toolCallId = uuidv4();
+                const toolNameForStep = (() => {
+                  switch (step?.action) {
+                    case 'navigate':
+                      return 'browser_navigate';
+                    case 'click':
+                      return 'browser_click';
+                    case 'type':
+                      return 'browser_type';
+                    case 'select':
+                      return 'browser_select';
+                    case 'wait':
+                      return 'browser_wait_for_text';
+                    default:
+                      return 'browser_execute_plan_step';
+                  }
+                })();
+                const argsJson = (() => {
+                  try {
+                    return JSON.stringify(step ?? null);
+                  } catch {
+                    return '[unserializable_args]';
+                  }
+                })();
+                const argsHash = crypto.createHash('sha256').update(argsJson).digest('hex');
+                await telemetryService.emit({
+                  eventId: uuidv4(),
+                  runId,
+                  ts: new Date().toISOString(),
+                  type: 'tool_call_end',
+                  name: toolNameForStep,
+                  data: {
+                    toolCallId,
+                    argsHash,
+                    planId,
+                    stepId,
+                    stepIndex: i,
+                    invokedBy: 'browser_execute_plan',
+                    ok: false,
+                    durationMs: Date.now() - startedAt,
+                    errorMessage: String(e?.message ?? e),
+                  },
+                });
+              } catch {
+                // ignore telemetry failures
+              }
+            }
+            const durationMs = Date.now() - startedAt;
+            try {
+              await telemetryService.emit({
+                eventId: uuidv4(),
+                runId,
+                ts: new Date().toISOString(),
+                type: 'plan_step_end',
+                name: 'browser_execute_plan',
+                data: {
+                  planId,
+                  stepId,
+                  stepIndex: i,
+                  action: String(step?.action ?? ''),
+                  ok: false,
+                  durationMs,
+                  errorMessage: String(e?.message ?? e),
+                },
+              });
+            } catch {
+              // ignore telemetry failures
+            }
             results.push(`Step ${i + 1} (${step.action}) FAILED: ${e.message}`);
             return `Plan execution stopped at step ${i + 1} due to error.\nResults so far:\n${results.join('\n')}`;
           }

@@ -1,11 +1,14 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
+import { v4 as uuidv4 } from 'uuid'
 import { vaultService } from './services/VaultService'
 import { agentService, AVAILABLE_MODELS } from './services/AgentService'
 import { auditService } from './services/AuditService'
 import { toolRegistry } from './services/ToolRegistry'
 import { browserTargetService } from './services/BrowserTargetService'
+import { agentRunContext } from './services/AgentRunContext'
+import { telemetryService } from './services/TelemetryService'
 import './services/CodeReaderService'
 import './integrations/mock/MockJiraConnector'; // Initialize Mock Jira
 import './integrations/mock/MockConfluenceConnector'; // Initialize Mock Confluence
@@ -104,11 +107,37 @@ app.whenReady().then(() => {
 
   // Agent IPC Handlers
   ipcMain.handle('agent:chat', async (event, message) => {
+    const runId = uuidv4();
+
+    // Emit run id to the UI for easy correlation with telemetry files.
+    try {
+      event.sender.send('agent:step', {
+        type: 'observation',
+        content: `Run started: ${runId}`,
+        metadata: { runId },
+      });
+    } catch {
+      // ignore
+    }
+
+    try {
+      await telemetryService.emit({
+        eventId: uuidv4(),
+        runId,
+        ts: new Date().toISOString(),
+        type: 'agent_run_start',
+        name: 'agent:chat',
+        data: { messageLength: String(message ?? '').length },
+      });
+    } catch {
+      // ignore telemetry failures
+    }
+
     // Log User Input
     await auditService.log({
         actor: 'user',
         action: 'chat_message',
-        details: { message },
+        details: { message, runId },
         status: 'success'
     });
     
@@ -144,13 +173,31 @@ app.whenReady().then(() => {
         // Ignore error if no active tab
     }
 
-    const response = await agentService.chat(message, browserContext);
+    let response = '';
+    try {
+      response = await agentRunContext.run(runId, async () => {
+        return await agentService.chat(message, browserContext);
+      });
+    } finally {
+      try {
+        await telemetryService.emit({
+          eventId: uuidv4(),
+          runId,
+          ts: new Date().toISOString(),
+          type: 'agent_run_end',
+          name: 'agent:chat',
+          data: { responseLength: response.length },
+        });
+      } catch {
+        // ignore telemetry failures
+      }
+    }
     
     // Log Agent Response
     await auditService.log({
         actor: 'agent',
         action: 'chat_response',
-        details: { response },
+        details: { response, runId },
         status: 'success'
     });
 

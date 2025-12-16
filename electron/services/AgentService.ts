@@ -2,9 +2,12 @@ import { ChatOpenAI } from "@langchain/openai";
 import { HumanMessage, SystemMessage, BaseMessage, AIMessage } from "@langchain/core/messages";
 import { Runnable } from "@langchain/core/runnables";
 import dotenv from 'dotenv';
+import { v4 as uuidv4 } from 'uuid';
 
 import { toolRegistry } from './ToolRegistry';
 import './TaskKnowledgeService';
+import { agentRunContext } from './AgentRunContext';
+import { telemetryService } from './TelemetryService';
 
 dotenv.config();
 
@@ -382,6 +385,28 @@ export class AgentService {
       
       // ReAct Loop (Max 15 turns)
       for (let i = 0; i < 15; i++) {
+        const runId = agentRunContext.getRunId() ?? undefined;
+        const llmCallId = uuidv4();
+        const llmStartedAt = Date.now();
+        try {
+          await telemetryService.emit({
+            eventId: uuidv4(),
+            runId,
+            ts: new Date().toISOString(),
+            type: 'llm_call_start',
+            name: 'agent_turn',
+            data: {
+              llmCallId,
+              turnIndex: i,
+              modelId: this.currentModelId,
+              modelName: currentConfig?.modelName,
+              timeoutMs,
+            },
+          });
+        } catch {
+          // ignore telemetry failures
+        }
+
         // Add timeout for each LLM call
         const timeoutPromise = new Promise<never>((_, reject) => 
           setTimeout(() => reject(new Error(`LLM call timed out after ${timeoutMs/1000} seconds`)), timeoutMs)
@@ -394,8 +419,47 @@ export class AgentService {
             timeoutPromise
           ]) as AIMessage;
         } catch (timeoutErr: any) {
+          const durationMs = Date.now() - llmStartedAt;
+          try {
+            await telemetryService.emit({
+              eventId: uuidv4(),
+              runId,
+              ts: new Date().toISOString(),
+              type: 'llm_call_end',
+              name: 'agent_turn',
+              data: {
+                llmCallId,
+                turnIndex: i,
+                ok: false,
+                durationMs,
+                errorMessage: String(timeoutErr?.message ?? timeoutErr),
+              },
+            });
+          } catch {
+            // ignore telemetry failures
+          }
           this.emitStep('observation', `Request timed out. Try a simpler request or switch to a faster model.`);
           return "The request timed out. Try breaking it into smaller steps or use a faster model.";
+        }
+
+        try {
+          const durationMs = Date.now() - llmStartedAt;
+          await telemetryService.emit({
+            eventId: uuidv4(),
+            runId,
+            ts: new Date().toISOString(),
+            type: 'llm_call_end',
+            name: 'agent_turn',
+            data: {
+              llmCallId,
+              turnIndex: i,
+              ok: true,
+              durationMs,
+              responseLength: String((response as any)?.content ?? '').length,
+            },
+          });
+        } catch {
+          // ignore telemetry failures
         }
         
         const content = response.content as string;
