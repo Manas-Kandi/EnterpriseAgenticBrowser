@@ -163,5 +163,20 @@ app.whenReady().then(() => {
     return { success: true };
   });
 
+  // Agent model management handlers
+  ipcMain.handle('agent:get-models', async () => {
+    const { AVAILABLE_MODELS } = await import('./services/AgentService');
+    return AVAILABLE_MODELS;
+  });
+
+  ipcMain.handle('agent:get-current-model', async () => {
+    return agentService.getCurrentModelId();
+  });
+
+  ipcMain.handle('agent:set-model', async (_, modelId: string) => {
+    agentService.setModel(modelId);
+    return { success: true, modelId };
+  });
+
   createWindow();
 })

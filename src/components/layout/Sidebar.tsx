@@ -1,7 +1,7 @@
 import ReactMarkdown from 'react-markdown';
 import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
-import { ChevronLeft, ChevronRight, Settings, Send, User, Bot, AlertTriangle, Check, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Settings, Send, User, Bot, AlertTriangle, Check, X, ChevronDown, Brain, Zap, RotateCcw } from 'lucide-react';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -15,15 +15,28 @@ interface ApprovalRequest {
   args: any;
 }
 
+interface ModelInfo {
+  id: string;
+  name: string;
+  supportsThinking: boolean;
+}
+
 export function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [approvalRequest, setApprovalRequest] = useState<ApprovalRequest | null>(null);
+  const [models, setModels] = useState<ModelInfo[]>([]);
+  const [currentModelId, setCurrentModelId] = useState<string>('');
+  const [showModelSelector, setShowModelSelector] = useState(false);
 
   useEffect(() => {
     if (!window.agent) return;
+
+    // Load available models
+    window.agent.getModels().then(setModels).catch(console.error);
+    window.agent.getCurrentModel().then(setCurrentModelId).catch(console.error);
 
     // Listen for approval requests
     const offApproval = window.agent.onApprovalRequest((toolName, args) => {
@@ -48,6 +61,30 @@ export function Sidebar() {
     };
   }, []);
 
+  const handleModelChange = async (modelId: string) => {
+    if (!window.agent) return;
+    try {
+      await window.agent.setModel(modelId);
+      setCurrentModelId(modelId);
+      setShowModelSelector(false);
+      // Clear conversation when switching models
+      await window.agent.resetConversation();
+      setMessages([]);
+    } catch (err) {
+      console.error('Failed to switch model:', err);
+    }
+  };
+
+  const handleResetConversation = async () => {
+    if (!window.agent) return;
+    try {
+      await window.agent.resetConversation();
+      setMessages([]);
+    } catch (err) {
+      console.error('Failed to reset conversation:', err);
+    }
+  };
+
   const handleApproval = (approved: boolean) => {
     if (approvalRequest && window.agent) {
       window.agent.respondApproval(approvalRequest.toolName, approved);
@@ -62,11 +99,7 @@ export function Sidebar() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log('[Sidebar] handleSubmit called, input:', input, 'loading:', loading, 'window.agent:', !!window.agent);
-    if (!input.trim() || loading || !window.agent) {
-      console.log('[Sidebar] Early return - input empty:', !input.trim(), 'loading:', loading, 'no agent:', !window.agent);
-      return;
-    }
+    if (!input.trim() || loading || !window.agent) return;
 
     const userMessage = input;
     setInput('');
@@ -229,9 +262,63 @@ export function Sidebar() {
             </div>
         )}
          {!collapsed && (
-            <div className="flex items-center justify-between text-sm text-muted-foreground mt-2">
-                <span>v0.1.0</span>
-                <Settings size={16} className="cursor-pointer hover:text-foreground" />
+            <div className="mt-2 space-y-2">
+                {/* Model Selector */}
+                <div className="relative">
+                    <button
+                        onClick={() => setShowModelSelector(!showModelSelector)}
+                        className="w-full flex items-center justify-between gap-2 px-2 py-1.5 text-[10px] bg-secondary/30 hover:bg-secondary/50 rounded border border-border/30 transition-colors"
+                    >
+                        <div className="flex items-center gap-1.5 truncate">
+                            {models.find(m => m.id === currentModelId)?.supportsThinking ? (
+                                <Brain size={10} className="text-primary shrink-0" />
+                            ) : (
+                                <Zap size={10} className="text-amber-500 shrink-0" />
+                            )}
+                            <span className="truncate text-muted-foreground">
+                                {models.find(m => m.id === currentModelId)?.name || 'Select Model'}
+                            </span>
+                        </div>
+                        <ChevronDown size={10} className={cn("text-muted-foreground transition-transform", showModelSelector && "rotate-180")} />
+                    </button>
+                    
+                    {showModelSelector && (
+                        <div className="absolute bottom-full left-0 right-0 mb-1 bg-background border border-border rounded-md shadow-lg overflow-hidden z-50">
+                            {models.map((model) => (
+                                <button
+                                    key={model.id}
+                                    onClick={() => handleModelChange(model.id)}
+                                    className={cn(
+                                        "w-full flex items-center gap-2 px-2 py-1.5 text-[10px] hover:bg-secondary/50 transition-colors text-left",
+                                        model.id === currentModelId && "bg-secondary/30"
+                                    )}
+                                >
+                                    {model.supportsThinking ? (
+                                        <Brain size={10} className="text-primary shrink-0" />
+                                    ) : (
+                                        <Zap size={10} className="text-amber-500 shrink-0" />
+                                    )}
+                                    <span className="truncate">{model.name}</span>
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                </div>
+                
+                {/* Footer controls */}
+                <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                    <span>v0.1.0</span>
+                    <div className="flex items-center gap-2">
+                        <button 
+                            onClick={handleResetConversation}
+                            className="p-1 hover:text-foreground hover:bg-secondary/50 rounded transition-colors"
+                            title="Clear conversation"
+                        >
+                            <RotateCcw size={12} />
+                        </button>
+                        <Settings size={12} className="cursor-pointer hover:text-foreground" />
+                    </div>
+                </div>
             </div>
          )}
       </div>

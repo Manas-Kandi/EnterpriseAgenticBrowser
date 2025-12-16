@@ -28,6 +28,9 @@ electron.contextBridge.exposeInMainWorld("vault", {
 electron.contextBridge.exposeInMainWorld("agent", {
   chat: (message) => electron.ipcRenderer.invoke("agent:chat", message),
   resetConversation: () => electron.ipcRenderer.invoke("agent:reset-conversation"),
+  getModels: () => electron.ipcRenderer.invoke("agent:get-models"),
+  getCurrentModel: () => electron.ipcRenderer.invoke("agent:get-current-model"),
+  setModel: (modelId) => electron.ipcRenderer.invoke("agent:set-model", modelId),
   onApprovalRequest: (callback) => {
     const listener = (_, { toolName, args }) => callback(toolName, args);
     electron.ipcRenderer.on("agent:request-approval", listener);

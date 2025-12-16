@@ -9,6 +9,10 @@ interface Window {
   }
   agent?: {
     chat: (message: string) => Promise<string>;
+    resetConversation: () => Promise<{ success: boolean }>;
+    getModels: () => Promise<Array<{ id: string; name: string; supportsThinking: boolean }>>;
+    getCurrentModel: () => Promise<string>;
+    setModel: (modelId: string) => Promise<{ success: boolean; modelId: string }>;
     onApprovalRequest: (callback: (toolName: string, args: unknown) => void) => (() => void);
     respondApproval: (toolName: string, approved: boolean) => void;
     onStep: (callback: (step: unknown) => void) => (() => void);

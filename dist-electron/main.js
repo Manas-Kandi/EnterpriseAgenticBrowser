@@ -41455,28 +41455,58 @@ class TaskKnowledgeService {
 }
 new TaskKnowledgeService();
 dotenv.config();
+const AVAILABLE_MODELS = [
+  {
+    id: "llama-3.1-70b",
+    name: "Llama 3.1 70B (Fast)",
+    modelName: "meta/llama-3.1-70b-instruct",
+    temperature: 0.1,
+    maxTokens: 4096,
+    supportsThinking: false
+  },
+  {
+    id: "deepseek-v3.1",
+    name: "DeepSeek V3.1 Terminus (Thinking)",
+    modelName: "deepseek-ai/deepseek-v3.1-terminus",
+    temperature: 0.2,
+    maxTokens: 8192,
+    supportsThinking: true,
+    extraBody: { chat_template_kwargs: { thinking: true } }
+  },
+  {
+    id: "qwen3-80b",
+    name: "Qwen3 80B (Thinking)",
+    modelName: "qwen/qwen3-next-80b-a3b-thinking",
+    temperature: 0.6,
+    maxTokens: 4096,
+    supportsThinking: true
+  },
+  {
+    id: "kimi-k2",
+    name: "Kimi K2 (Thinking)",
+    modelName: "moonshotai/kimi-k2-thinking",
+    temperature: 1,
+    maxTokens: 16384,
+    supportsThinking: true
+  },
+  {
+    id: "nemotron-nano",
+    name: "Nemotron Nano 30B (Thinking)",
+    modelName: "nvidia/nemotron-3-nano-30b-a3b",
+    temperature: 1,
+    maxTokens: 16384,
+    supportsThinking: true,
+    extraBody: { chat_template_kwargs: { enable_thinking: true } }
+  }
+];
 const _AgentService = class _AgentService {
   constructor() {
     __publicField(this, "model");
+    __publicField(this, "currentModelId", "llama-3.1-70b");
     __publicField(this, "onStep");
     __publicField(this, "conversationHistory", []);
     __publicField(this, "systemPrompt");
-    const apiKey = process.env.NVIDIA_API_KEY;
-    if (!apiKey) {
-      console.warn("NVIDIA_API_KEY is not set in environment variables");
-    }
-    const chatModel = new ChatOpenAI({
-      configuration: {
-        baseURL: "https://integrate.api.nvidia.com/v1",
-        apiKey
-      },
-      modelName: "meta/llama-3.1-70b-instruct",
-      temperature: 0.1,
-      streaming: false,
-      // Force JSON format via prompt + model config if supported, but Llama3 usually follows prompt well
-      modelKwargs: { "response_format": { "type": "json_object" } }
-    });
-    this.model = chatModel;
+    this.model = this.createModel("llama-3.1-70b");
     this.systemPrompt = new SystemMessage("");
   }
   extractJsonObject(input) {
@@ -41531,6 +41561,57 @@ const _AgentService = class _AgentService {
     const messageMatch = cleaned.match(/"message"\s*:\s*"([\s\S]*?)"\s*(?:,|\})/);
     const message = messageMatch ? messageMatch[1] : "";
     return { tool: tool2, args: { message } };
+  }
+  /**
+   * Create a model instance from config
+   */
+  createModel(modelId) {
+    const apiKey = process.env.NVIDIA_API_KEY;
+    if (!apiKey) {
+      console.warn("NVIDIA_API_KEY is not set in environment variables");
+    }
+    const config2 = AVAILABLE_MODELS.find((m) => m.id === modelId) || AVAILABLE_MODELS[0];
+    console.log(`[AgentService] Creating model: ${config2.name} (${config2.modelName})`);
+    const modelKwargs = {
+      response_format: { type: "json_object" },
+      ...config2.extraBody
+    };
+    return new ChatOpenAI({
+      configuration: {
+        baseURL: "https://integrate.api.nvidia.com/v1",
+        apiKey
+      },
+      modelName: config2.modelName,
+      temperature: config2.temperature,
+      maxTokens: config2.maxTokens,
+      streaming: false,
+      modelKwargs
+    });
+  }
+  /**
+   * Switch to a different model
+   */
+  setModel(modelId) {
+    const config2 = AVAILABLE_MODELS.find((m) => m.id === modelId);
+    if (!config2) {
+      console.error(`[AgentService] Unknown model: ${modelId}`);
+      return;
+    }
+    this.currentModelId = modelId;
+    this.model = this.createModel(modelId);
+    console.log(`[AgentService] Switched to model: ${config2.name}`);
+  }
+  /**
+   * Get current model ID
+   */
+  getCurrentModelId() {
+    return this.currentModelId;
+  }
+  /**
+   * Get available models
+   */
+  static getAvailableModels() {
+    return AVAILABLE_MODELS;
   }
   /**
    * Reset conversation history - call this when starting a new session
@@ -41787,6 +41868,12 @@ ${result}`);
 __publicField(_AgentService, "MAX_HISTORY_MESSAGES", 50);
 let AgentService = _AgentService;
 const agentService = new AgentService();
+const AgentService$1 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+  __proto__: null,
+  AVAILABLE_MODELS,
+  AgentService,
+  agentService
+}, Symbol.toStringTag, { value: "Module" }));
 const byteToHex = [];
 for (let i = 0; i < 256; ++i) {
   byteToHex.push((i + 256).toString(16).slice(1));
@@ -43303,6 +43390,17 @@ app.whenReady().then(() => {
   ipcMain.handle("agent:reset-conversation", async () => {
     agentService.resetConversation();
     return { success: true };
+  });
+  ipcMain.handle("agent:get-models", async () => {
+    const { AVAILABLE_MODELS: AVAILABLE_MODELS2 } = await Promise.resolve().then(() => AgentService$1);
+    return AVAILABLE_MODELS2;
+  });
+  ipcMain.handle("agent:get-current-model", async () => {
+    return agentService.getCurrentModelId();
+  });
+  ipcMain.handle("agent:set-model", async (_, modelId) => {
+    agentService.setModel(modelId);
+    return { success: true, modelId };
   });
   createWindow();
 });
