@@ -62,7 +62,11 @@ export function Sidebar() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || loading || !window.agent) return;
+    console.log('[Sidebar] handleSubmit called, input:', input, 'loading:', loading, 'window.agent:', !!window.agent);
+    if (!input.trim() || loading || !window.agent) {
+      console.log('[Sidebar] Early return - input empty:', !input.trim(), 'loading:', loading, 'no agent:', !window.agent);
+      return;
+    }
 
     const userMessage = input;
     setInput('');
