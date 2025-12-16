@@ -1,5 +1,5 @@
 import { useBrowserStore } from '@/lib/store';
-import { X, Plus, Search, RotateCw, ArrowLeft, ArrowRight, Loader2, Globe, Lock, Unlock, MoreVertical, Terminal, ZoomIn, ZoomOut, History as HistoryIcon, Pin, Copy, Trash, RefreshCcw } from 'lucide-react';
+import { X, Plus, Search, RotateCw, ArrowLeft, ArrowRight, Loader2, Globe, Lock, Unlock, MoreVertical, Terminal, History as HistoryIcon, Pin, Copy, Trash, RefreshCcw } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { cn, getFaviconUrl } from '@/lib/utils';
 
@@ -46,12 +46,117 @@ export function BrowserChrome() {
   };
 
   return (
-    <div className="flex flex-col border-b border-border/50 bg-background/80 backdrop-blur-md pt-2">
-      {/* Tabs Row */}
-      <div 
-        className="flex items-center pl-10 pr-3 gap-1 overflow-x-auto no-scrollbar"
-        style={{ WebkitAppRegion: 'drag' } as any}
-      >
+    <div className="flex flex-col bg-background relative z-10">
+      {/* VS Code-style Title Bar & Search */}
+      <div className="h-10 flex items-center justify-between px-3 border-b border-border/40 select-none bg-background">
+        
+        {/* Navigation Controls */}
+        <div className="flex items-center gap-1 min-w-[100px]">
+             <button 
+                onClick={() => activeTabId && updateTab(activeTabId, { action: 'back' })}
+                disabled={!activeTab?.canGoBack}
+                className="p-1.5 hover:bg-secondary rounded-md text-muted-foreground transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+             >
+                <ArrowLeft size={14} />
+             </button>
+             <button 
+                onClick={() => activeTabId && updateTab(activeTabId, { action: 'forward' })}
+                disabled={!activeTab?.canGoForward}
+                className="p-1.5 hover:bg-secondary rounded-md text-muted-foreground transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+             >
+                <ArrowRight size={14} />
+             </button>
+             {activeTab?.loading ? (
+                 <button 
+                    onClick={() => activeTabId && updateTab(activeTabId, { action: 'stop', loading: false })}
+                    className="p-1.5 hover:bg-secondary rounded-md text-muted-foreground transition-colors"
+                 >
+                    <X size={14} />
+                 </button>
+             ) : (
+                 <button 
+                    onClick={() => activeTabId && updateTab(activeTabId, { action: 'reload' })}
+                    className="p-1.5 hover:bg-secondary rounded-md text-muted-foreground transition-colors"
+                 >
+                    <RotateCw size={14} />
+                 </button>
+             )}
+        </div>
+
+        {/* Central Command Palette (Omnibar) */}
+        <div className="flex-1 max-w-2xl px-4">
+            <form onSubmit={handleNavigate} className="w-full">
+                 <div className="relative group">
+                    <div className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/50 transition-colors group-focus-within:text-primary">
+                        {urlInput.startsWith('https://') ? (
+                            <Lock size={12} />
+                        ) : urlInput.startsWith('http://') ? (
+                            <Unlock size={12} />
+                        ) : (
+                            <Search size={12} />
+                        )}
+                    </div>
+                    <input
+                        className="w-full bg-secondary/30 hover:bg-secondary/50 focus:bg-background border border-transparent focus:border-primary/20 rounded-md pl-8 pr-3 py-1.5 text-xs text-foreground placeholder:text-muted-foreground/40 outline-none transition-all font-mono text-center focus:text-left focus:ring-1 focus:ring-primary/10"
+                        value={urlInput}
+                        onChange={(e) => setUrlInput(e.target.value)}
+                        placeholder="Search or enter website name"
+                        onFocus={(e) => e.target.select()}
+                    />
+                 </div>
+            </form>
+        </div>
+
+        {/* Right Actions */}
+        <div className="flex items-center gap-1 min-w-[100px] justify-end" ref={menuRef}>
+             <button
+                onClick={() => setIsMenuOpen(!isMenuOpen)}
+                className={cn("p-1.5 hover:bg-secondary rounded-md text-muted-foreground transition-colors", isMenuOpen && "bg-secondary text-foreground")}
+             >
+                <MoreVertical size={14} />
+             </button>
+
+             {isMenuOpen && (
+                <div className="absolute right-2 top-9 w-56 bg-popover border border-border rounded-lg shadow-xl py-1 z-50">
+                    <button 
+                        onClick={() => { addTab(); setIsMenuOpen(false); }}
+                        className="w-full text-left px-3 py-2 text-sm hover:bg-secondary/50 flex items-center gap-2 text-foreground"
+                    >
+                        <Plus size={14} /> New Tab
+                    </button>
+                    <button 
+                        onClick={() => { setIsMenuOpen(false); }}
+                        className="w-full text-left px-3 py-2 text-sm hover:bg-secondary/50 flex items-center gap-2 text-foreground"
+                    >
+                        <HistoryIcon size={14} /> History
+                    </button>
+                    <div className="h-[1px] bg-border/50 my-1" />
+                    <button 
+                        onClick={() => { 
+                            if (activeTabId) updateTab(activeTabId, { action: 'devtools' });
+                            setIsMenuOpen(false); 
+                        }}
+                        className="w-full text-left px-3 py-2 text-sm hover:bg-secondary/50 flex items-center gap-2 text-muted-foreground hover:text-foreground"
+                    >
+                        <Terminal size={14} /> Developer Tools
+                    </button>
+                    <div className="h-[1px] bg-border/50 my-1" />
+                    <button 
+                        onClick={() => { 
+                            setAppMode(null);
+                            setIsMenuOpen(false); 
+                        }}
+                        className="w-full text-left px-3 py-2 text-sm hover:bg-secondary/50 flex items-center gap-2 text-muted-foreground hover:text-foreground"
+                    >
+                        <RefreshCcw size={14} /> Switch Mode
+                    </button>
+                </div>
+             )}
+        </div>
+      </div>
+
+      {/* Editor-style Tabs */}
+      <div className="flex items-center bg-secondary/10 border-b border-border/40 overflow-x-auto no-scrollbar">
         {tabs.map((tab) => (
           <div
             key={tab.id}
@@ -60,191 +165,55 @@ export function BrowserChrome() {
                 e.preventDefault();
                 setContextMenu({ x: e.clientX, y: e.clientY, tabId: tab.id });
             }}
-            style={{ WebkitAppRegion: 'no-drag' } as any}
             className={cn(
-              "group flex items-center gap-2 px-3 py-1.5 rounded-t-lg text-xs cursor-pointer transition-all border-t border-x relative select-none",
-              tab.pinned ? "min-w-[40px] max-w-[40px] px-0 justify-center" : "min-w-[120px] max-w-[200px]",
+              "group flex items-center gap-2 px-3 py-2 text-xs cursor-pointer select-none border-r border-border/30 min-w-[120px] max-w-[200px]",
               activeTabId === tab.id 
-                ? "bg-background border-border/40 text-foreground shadow-sm z-10" 
-                : "bg-secondary/20 border-transparent text-muted-foreground hover:bg-secondary/40 hover:text-foreground/80"
+                ? "bg-background text-foreground border-t-2 border-t-primary" 
+                : "bg-transparent text-muted-foreground hover:bg-secondary/30 border-t-2 border-t-transparent"
             )}
           >
-            {/* Favicon / Loader */}
-            <div className="flex items-center justify-center w-4 h-4 shrink-0">
+            {/* Favicon */}
+            <div className="flex items-center justify-center w-3.5 h-3.5 shrink-0">
                 {tab.loading ? (
                     <Loader2 size={12} className="animate-spin text-primary" />
                 ) : (
                     <img 
                         src={getFaviconUrl(tab.url)} 
                         onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextElementSibling?.classList.remove('hidden'); }}
-                        className="w-3.5 h-3.5 object-contain"
+                        className="w-3.5 h-3.5 object-contain opacity-80"
                         alt=""
                     />
                 )}
-                {/* Fallback Icon (hidden by default unless img fails or is loading) */}
-                <Globe size={12} className={cn("hidden text-muted-foreground/70", tab.loading ? "hidden" : "hidden group-hover:block")} />
+                <Globe size={12} className="hidden text-muted-foreground/70" />
             </div>
 
-            {!tab.pinned && <span className="truncate flex-1 font-medium">{tab.title || 'New Tab'}</span>}
+            <span className={cn("truncate flex-1 font-medium", activeTabId !== tab.id && "font-normal")}>
+                {tab.title || 'New Tab'}
+            </span>
             
-            {!tab.pinned && (
             <button
               onClick={(e) => { e.stopPropagation(); removeTab(tab.id); }}
               className={cn(
-                  "p-0.5 rounded-md transition-all text-muted-foreground hover:text-destructive hover:bg-background/80 opacity-0 group-hover:opacity-100",
-                  activeTabId === tab.id && "opacity-0 group-hover:opacity-100" // Close button only on hover
+                  "p-0.5 rounded-sm transition-all text-muted-foreground/50 hover:text-foreground hover:bg-secondary opacity-0 group-hover:opacity-100",
+                  activeTabId === tab.id && "opacity-100"
               )}
             >
               <X size={12} />
             </button>
-            )}
-            
-            {/* Active Tab Bottom Hider (blends into toolbar) */}
-            {activeTabId === tab.id && <div className="absolute bottom-[-1px] left-0 right-0 h-[1px] bg-background z-20" />}
           </div>
         ))}
         <button
             onClick={() => addTab()}
-            style={{ WebkitAppRegion: 'no-drag' } as any}
-            className="p-1.5 hover:bg-secondary/50 rounded-md text-muted-foreground hover:text-foreground transition-colors ml-1"
+            className="p-2 hover:bg-secondary/30 text-muted-foreground hover:text-foreground transition-colors"
         >
             <Plus size={14} />
         </button>
       </div>
 
-      {/* Omnibar Toolbar */}
-      <div className="h-10 flex items-center gap-3 px-3 bg-secondary/50 border-y border-border/40 shadow-sm z-0 relative">
-         <div className="flex items-center gap-1">
-             <button 
-                onClick={() => activeTabId && updateTab(activeTabId, { action: 'back' })}
-                disabled={!activeTab?.canGoBack}
-                className="p-1.5 hover:bg-background/50 rounded-md text-muted-foreground transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-             >
-                <ArrowLeft size={14} />
-             </button>
-             <button 
-                onClick={() => activeTabId && updateTab(activeTabId, { action: 'forward' })}
-                disabled={!activeTab?.canGoForward}
-                className="p-1.5 hover:bg-background/50 rounded-md text-muted-foreground transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-             >
-                <ArrowRight size={14} />
-             </button>
-             {activeTab?.loading ? (
-                 <button 
-                    onClick={() => activeTabId && updateTab(activeTabId, { action: 'stop', loading: false })}
-                    className="p-1.5 hover:bg-background/50 rounded-md text-muted-foreground transition-colors"
-                 >
-                    <X size={14} />
-                 </button>
-             ) : (
-                 <button 
-                    onClick={() => activeTabId && updateTab(activeTabId, { action: 'reload' })}
-                    className="p-1.5 hover:bg-background/50 rounded-md text-muted-foreground transition-colors"
-                 >
-                    <RotateCw size={14} />
-                 </button>
-             )}
-         </div>
-         
-         <form onSubmit={handleNavigate} className="flex-1 max-w-3xl">
-             <div className="relative group">
-                <div className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/50">
-                    {urlInput.startsWith('https://') ? (
-                        <Lock size={12} className="text-emerald-500" />
-                    ) : urlInput.startsWith('http://') ? (
-                        <Unlock size={12} className="text-amber-500" />
-                    ) : (
-                        <Search size={12} />
-                    )}
-                </div>
-                <input
-                    className="w-full bg-background border border-border/30 rounded-full pl-8 pr-3 py-1.5 text-xs text-foreground placeholder:text-muted-foreground/40 outline-none focus:border-primary/20 focus:ring-1 focus:ring-primary/10 transition-all shadow-sm font-mono"
-                    value={urlInput}
-                    onChange={(e) => setUrlInput(e.target.value)}
-                    placeholder="Search or enter website name"
-                    onFocus={(e) => e.target.select()}
-                />
-             </div>
-         </form>
-
-         <div className="flex items-center gap-2 ml-auto" ref={menuRef}>
-             {/* Settings Menu */}
-             <div className="relative">
-                 <button
-                    onClick={() => setIsMenuOpen(!isMenuOpen)}
-                    className={cn("p-1.5 hover:bg-background/50 rounded-md text-muted-foreground transition-colors", isMenuOpen && "bg-background text-foreground")}
-                 >
-                    <MoreVertical size={14} />
-                 </button>
-
-                 {isMenuOpen && (
-                    <div className="absolute right-0 top-full mt-2 w-56 bg-popover border border-border rounded-lg shadow-xl py-1 z-50">
-                        {/* New Tab */}
-                        <button 
-                            onClick={() => { addTab(); setIsMenuOpen(false); }}
-                            className="w-full text-left px-3 py-2 text-sm hover:bg-secondary/50 flex items-center gap-2 text-foreground"
-                        >
-                            <Plus size={14} /> New Tab
-                        </button>
-                        
-                        {/* History */}
-                        <button 
-                            onClick={() => { setIsMenuOpen(false); }}
-                            className="w-full text-left px-3 py-2 text-sm hover:bg-secondary/50 flex items-center gap-2 text-foreground"
-                        >
-                            <HistoryIcon size={14} /> History
-                        </button>
-
-                        <div className="h-[1px] bg-border/50 my-1" />
-
-                        {/* Zoom */}
-                        <div className="flex items-center justify-between px-3 py-2 text-sm">
-                            <span className="text-muted-foreground">Zoom</span>
-                            <div className="flex items-center gap-1 bg-secondary/30 rounded-md p-0.5">
-                                <button onClick={() => activeTabId && updateTab(activeTabId, { action: 'zoomOut' })} className="p-1 hover:bg-background rounded">
-                                    <ZoomOut size={14} />
-                                </button>
-                                <button onClick={() => activeTabId && updateTab(activeTabId, { action: 'zoomIn' })} className="p-1 hover:bg-background rounded">
-                                    <ZoomIn size={14} />
-                                </button>
-                            </div>
-                        </div>
-
-                        <div className="h-[1px] bg-border/50 my-1" />
-
-                        {/* DevTools */}
-                        <button 
-                            onClick={() => { 
-                                if (activeTabId) updateTab(activeTabId, { action: 'devtools' });
-                                setIsMenuOpen(false); 
-                            }}
-                            className="w-full text-left px-3 py-2 text-sm hover:bg-secondary/50 flex items-center gap-2 text-muted-foreground hover:text-foreground"
-                        >
-                            <Terminal size={14} /> Developer Tools
-                        </button>
-
-                        <div className="h-[1px] bg-border/50 my-1" />
-
-                        {/* Switch Mode */}
-                        <button 
-                            onClick={() => { 
-                                setAppMode(null);
-                                setIsMenuOpen(false); 
-                            }}
-                            className="w-full text-left px-3 py-2 text-sm hover:bg-secondary/50 flex items-center gap-2 text-muted-foreground hover:text-foreground"
-                        >
-                            <RefreshCcw size={14} /> Switch Mode
-                        </button>
-                    </div>
-                 )}
-             </div>
-         </div>
-
-         {/* Loading Progress Bar */}
-         {activeTab?.loading && (
-            <div className="absolute bottom-[-1px] left-0 h-[2px] bg-blue-500 animate-progress w-full origin-left" style={{ animation: 'progress 2s ease-in-out infinite' }} />
-         )}
-      </div>
+      {/* Loading Bar */}
+      {activeTab?.loading && (
+        <div className="absolute top-[39px] left-0 h-[2px] bg-primary animate-progress w-full origin-left z-20" style={{ animation: 'progress 2s ease-in-out infinite' }} />
+      )}
 
       {/* Context Menu */}
       {contextMenu && (

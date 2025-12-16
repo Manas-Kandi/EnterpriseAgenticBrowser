@@ -1,5 +1,6 @@
 import { useBrowserStore } from '@/lib/store';
 import { X } from 'lucide-react';
+import { AgentPanel } from './AgentPanel';
 
 export function WorkspacePanel() {
     const { activeSidebarPanel, setSidebarPanel } = useBrowserStore();
@@ -27,6 +28,12 @@ export function WorkspacePanel() {
                         // @ts-ignore
                         useragent="Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1"
                      />
+                ) : activeSidebarPanel === 'agent' ? (
+                    <AgentPanel />
+                ) : activeSidebarPanel === 'extensions' ? (
+                    <div className="p-4 text-center text-muted-foreground text-sm">
+                        Extensions Marketplace (Coming Soon)
+                    </div>
                 ) : (
                     <div className="p-4 text-center text-muted-foreground text-sm">
                         Panel content

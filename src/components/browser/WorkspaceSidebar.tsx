@@ -1,15 +1,13 @@
 import { useBrowserStore } from '@/lib/store';
-import { Mail, Calendar, MessageCircle, Folder, Settings, UserCircle, LogOut, ExternalLink, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Mail, Calendar, MessageCircle, Folder, UserCircle, LogOut, ExternalLink, Bot, Puzzle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useState, useRef, useEffect } from 'react';
 
 export function WorkspaceSidebar() {
     const { activeSidebarPanel, setSidebarPanel, addTab, user, setUser } = useBrowserStore();
     const [isProfileOpen, setIsProfileOpen] = useState(false);
-    const [isExpanded, setIsExpanded] = useState(false);
     const profileRef = useRef<HTMLDivElement>(null);
 
-    // Close menu when clicking outside
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
             if (profileRef.current && !profileRef.current.contains(event.target as Node)) {
@@ -21,113 +19,71 @@ export function WorkspaceSidebar() {
     }, []);
 
     const apps = [
+        { id: 'agent', icon: Bot, label: 'Agent', color: 'text-foreground' },
         { id: 'drive', icon: Folder, color: 'text-green-500', label: 'Drive' },
         { id: 'gmail', icon: Mail, color: 'text-red-500', label: 'Gmail', url: 'https://mail.google.com' },
         { id: 'calendar', icon: Calendar, color: 'text-blue-500', label: 'Calendar', url: 'https://calendar.google.com' },
         { id: 'slack', icon: MessageCircle, color: 'text-purple-500', label: 'Slack', url: 'https://slack.com' },
+        { id: 'extensions', icon: Puzzle, color: 'text-muted-foreground', label: 'Extensions' },
     ] as const;
 
     const handleAppClick = (app: typeof apps[number]) => {
-        if (app.id === 'drive') {
-            // Toggle Panel for Drive (Task 3.8)
-            setSidebarPanel(activeSidebarPanel === 'drive' ? null : 'drive');
-        } else if (app.url) {
-            // Open others in new tab for now
+        if (app.id === 'drive' || app.id === 'agent' || app.id === 'extensions') {
+            setSidebarPanel(activeSidebarPanel === app.id ? null : app.id as any);
+        } else if ('url' in app && app.url) {
             addTab(app.url);
         }
     };
 
     const handleLogin = () => {
         addTab('https://accounts.google.com');
-        // Mock Login
         setTimeout(() => {
-            setUser({
-                name: 'Demo User',
-                email: 'user@example.com',
-                avatar: undefined
-            });
+            setUser({ name: 'Demo User', email: 'user@example.com', avatar: undefined });
         }, 2000);
         setIsProfileOpen(false);
     };
 
     return (
         <div 
-            className={cn(
-                "flex flex-col py-4 pt-12 bg-secondary/30 backdrop-blur-md border-r border-border/50 gap-4 z-20 transition-all duration-300 ease-in-out",
-                isExpanded ? "w-48 items-start px-3" : "w-12 items-center"
-            )} 
+            className="flex flex-col w-12 bg-background border-r border-border/50 z-20"
             style={{ WebkitAppRegion: 'drag' } as any}
         >
-            {/* Apps Dock */}
-            <div className="flex-1 flex flex-col gap-3 w-full" style={{ WebkitAppRegion: 'no-drag' } as any}>
+            <div className="h-12 shrink-0" />
+            <div className="flex-1 flex flex-col items-center gap-2 py-2" style={{ WebkitAppRegion: 'no-drag' } as any}>
                 {apps.map((app) => (
                     <button
                         key={app.id}
                         onClick={() => handleAppClick(app)}
                         className={cn(
-                            "p-2 rounded-lg transition-all hover:bg-background group relative flex items-center gap-3 w-full",
-                            activeSidebarPanel === app.id ? "bg-background shadow-sm" : "opacity-70 hover:opacity-100",
-                            !isExpanded && "justify-center"
+                            "relative w-10 h-10 flex items-center justify-center rounded-md transition-all group",
+                            activeSidebarPanel === app.id 
+                                ? "text-foreground" 
+                                : "text-muted-foreground hover:text-foreground hover:bg-secondary/50"
                         )}
-                        title={isExpanded ? '' : app.label}
+                        title={app.label}
                     >
-                        <app.icon size={20} className={cn(app.color, "shrink-0")} />
-                        {isExpanded && (
-                            <span className="text-sm font-medium truncate">
-                                {app.label}
-                            </span>
-                        )}
-                        {activeSidebarPanel === app.id && !isExpanded && (
-                            <div className="absolute left-0 top-2 bottom-2 w-0.5 bg-primary rounded-r-full" />
+                        <app.icon size={20} className={cn("shrink-0 transition-colors", activeSidebarPanel === app.id ? "text-foreground" : app.color)} />
+                        {activeSidebarPanel === app.id && (
+                            <div className="absolute left-0 top-2 bottom-2 w-0.5 bg-foreground rounded-r-full" />
                         )}
                     </button>
                 ))}
             </div>
-
-            {/* Bottom Actions */}
-            <div className={cn("flex flex-col gap-3 w-full", isExpanded ? "items-start" : "items-center")} style={{ WebkitAppRegion: 'no-drag' } as any}>
-                
-                {/* Toggle */}
-                <button 
-                    onClick={() => setIsExpanded(!isExpanded)}
-                    className={cn("p-2 text-muted-foreground hover:text-foreground hover:bg-background rounded-lg transition-colors w-full flex items-center gap-3", !isExpanded && "justify-center")}
-                    title={isExpanded ? "Collapse" : "Expand"}
-                >
-                    {isExpanded ? <ChevronLeft size={20} /> : <ChevronRight size={20} />}
-                    {isExpanded && <span className="text-sm font-medium">Collapse</span>}
-                </button>
-
-                <button className={cn("p-2 text-muted-foreground hover:text-foreground hover:bg-background rounded-lg transition-colors w-full flex items-center gap-3", !isExpanded && "justify-center")}>
-                    <Settings size={20} className="shrink-0" />
-                    {isExpanded && <span className="text-sm font-medium">Settings</span>}
-                </button>
-                
-                {/* User Profile */}
-                <div className="relative w-full" ref={profileRef}>
+            <div className="flex flex-col items-center gap-2 pb-4" style={{ WebkitAppRegion: 'no-drag' } as any}>
+                <div className="relative" ref={profileRef}>
                     <button 
                         onClick={() => setIsProfileOpen(!isProfileOpen)}
                         className={cn(
-                            "p-2 rounded-lg transition-colors relative overflow-hidden w-full flex items-center gap-3",
-                            isProfileOpen ? "bg-background text-foreground" : "text-muted-foreground hover:text-foreground hover:bg-background",
-                            !isExpanded && "justify-center"
+                            "w-10 h-10 flex items-center justify-center rounded-md transition-colors opacity-80 hover:opacity-100",
+                            isProfileOpen ? "bg-secondary/50" : ""
                         )}
                     >
                         {user?.avatar ? (
-                            <img src={user.avatar} className="w-5 h-5 rounded-full shrink-0" alt="User" />
+                            <img src={user.avatar} className="w-6 h-6 rounded-full" alt="User" />
                         ) : (
-                            <UserCircle size={20} className={cn("shrink-0", user ? "text-blue-500" : "")} />
+                            <UserCircle size={20} className={cn(user ? "text-blue-500" : "text-muted-foreground")} />
                         )}
-                        
-                        {isExpanded && (
-                            <div className="flex-1 text-left min-w-0">
-                                <div className="text-sm font-medium truncate">{user ? user.name : 'Guest'}</div>
-                            </div>
-                        )}
-
-                        {/* Status Dot */}
-                        <div className={cn("absolute w-2 h-2 rounded-full border-2 border-secondary", user ? "bg-green-500" : "bg-gray-400", isExpanded ? "right-2 top-1/2 -translate-y-1/2" : "bottom-1.5 right-1.5")} />
                     </button>
-
                     {isProfileOpen && (
                         <div className="absolute left-full bottom-0 ml-2 w-64 bg-popover border border-border rounded-lg shadow-xl py-2 z-50">
                             {user ? (
@@ -140,7 +96,6 @@ export function WorkspaceSidebar() {
                                     Not signed in
                                 </div>
                             )}
-
                             {user ? (
                                 <button 
                                     onClick={() => { setUser(null); setIsProfileOpen(false); }}

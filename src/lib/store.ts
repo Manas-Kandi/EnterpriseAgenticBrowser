@@ -33,7 +33,7 @@ interface BrowserState {
   setActiveTab: (id: string) => void;
   updateTab: (id: string, data: Partial<BrowserTab>) => void;
   addToHistory: (url: string, title: string) => void;
-  setSidebarPanel: (panel: 'drive' | 'gmail' | 'calendar' | 'slack' | null) => void;
+  setSidebarPanel: (panel: 'drive' | 'gmail' | 'calendar' | 'slack' | 'agent' | 'extensions' | null) => void;
   setUser: (user: { name: string; email: string; avatar?: string } | null) => void;
   setAppMode: (mode: 'personal' | 'dev' | null) => void;
 }
