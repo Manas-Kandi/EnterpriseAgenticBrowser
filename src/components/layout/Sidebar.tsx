@@ -23,6 +23,8 @@ export function Sidebar() {
   const [approvalRequest, setApprovalRequest] = useState<ApprovalRequest | null>(null);
 
   useEffect(() => {
+    if (!window.agent) return;
+
     // Listen for approval requests
     const offApproval = window.agent.onApprovalRequest((toolName, args) => {
       setApprovalRequest({ toolName, args });
@@ -47,7 +49,7 @@ export function Sidebar() {
   }, []);
 
   const handleApproval = (approved: boolean) => {
-    if (approvalRequest) {
+    if (approvalRequest && window.agent) {
       window.agent.respondApproval(approvalRequest.toolName, approved);
       setApprovalRequest(null);
       // Optimistically add a system message
@@ -60,7 +62,7 @@ export function Sidebar() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || loading) return;
+    if (!input.trim() || loading || !window.agent) return;
 
     const userMessage = input;
     setInput('');

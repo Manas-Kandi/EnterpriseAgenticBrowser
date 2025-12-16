@@ -59,7 +59,7 @@ This phase focuses on elevating the browser's aesthetic to a commercial standard
             - Show all Enterprise/Mock SaaS features.
     - **Git:** `git add . && git commit -m "feat(core): implement feature gating for personal mode" && git push origin PersonalvsDevDiff`
 
-- [ ] **Task 4.7: Persistent Mode State**
+- [x] **Task 4.7: Persistent Mode State**
     - **Description:**
         - Ensure `appMode` persists in `localStorage`.
         - Add a "Switch Mode" button in the Settings Menu (requires password to enter Dev, free to enter Personal).

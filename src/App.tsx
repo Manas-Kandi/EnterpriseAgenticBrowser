@@ -56,7 +56,7 @@ function App() {
         </main>
         
         {/* Agent Sidebar */}
-        {appMode === 'dev' && <Sidebar />}
+        <Sidebar />
       </div>
       
       {/* Global Status Bar */}
