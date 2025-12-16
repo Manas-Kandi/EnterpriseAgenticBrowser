@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { agentRunContext } from './AgentRunContext';
 import { telemetryService } from './TelemetryService';
 import { auditService } from './AuditService';
+import { PolicyService, PolicyDecision, PolicyContext } from './PolicyService';
 
 export interface AgentTool<T extends z.ZodSchema = z.ZodSchema> {
   name: string;
@@ -16,12 +17,19 @@ export interface AgentTool<T extends z.ZodSchema = z.ZodSchema> {
 
 export type ApprovalHandler = (toolName: string, args: any) => Promise<boolean>;
 
+export type PolicyAwareApprovalHandler = (context: PolicyContext) => Promise<boolean>;
+
 export class ToolRegistry {
   private tools: Map<string, AgentTool> = new Map();
   private approvalHandler: ApprovalHandler | null = null;
+  private policyService: PolicyService | null = null;
 
   setApprovalHandler(handler: ApprovalHandler) {
     this.approvalHandler = handler;
+  }
+
+  setPolicyService(policyService: PolicyService) {
+    this.policyService = policyService;
   }
 
   register(tool: AgentTool) {
@@ -89,7 +97,143 @@ export class ToolRegistry {
           }
 
           const approvalHandler = getApprovalHandler();
-          if (tool.requiresApproval && approvalHandler) {
+          const policyService = this.policyService;
+          
+          // Use PolicyService if available, otherwise fall back to legacy approval
+          if (policyService) {
+            // Build policy context
+            const browserContext = agentRunContext.getBrowserContext();
+            const context: PolicyContext = {
+              toolName: tool.name,
+              args: arg,
+              url: browserContext?.url,
+              domain: browserContext?.domain,
+              userMode: 'standard', // TODO: Map from user settings (personal->standard, dev->developer, add admin mode)
+              runId,
+            };
+            
+            // Evaluate policy
+            const policyEvaluation = await policyService.evaluate(context);
+            
+            // Handle policy decision
+            if (policyEvaluation.decision === PolicyDecision.DENY) {
+              const durationMs = Date.now() - startedAt;
+              try {
+                await telemetryService.emit({
+                  eventId: uuidv4(),
+                  runId,
+                  ts: new Date().toISOString(),
+                  type: 'tool_call_end',
+                  name: tool.name,
+                  data: { toolCallId, argsHash, durationMs, error: 'Policy denied' },
+                });
+              } catch {
+                // ignore telemetry failures
+              }
+              
+              try {
+                auditService
+                  .log({
+                    actor: 'system',
+                    action: 'tool_call_denied',
+                    details: { runId, toolName: tool.name, toolCallId, reason: policyEvaluation.reason },
+                    status: 'failure',
+                  })
+                  .catch(() => undefined);
+              } catch {
+                // ignore
+              }
+              
+              return `Operation denied by policy: ${policyEvaluation.reason}`;
+            }
+            
+            if (policyEvaluation.decision === PolicyDecision.NEEDS_APPROVAL && approvalHandler) {
+              try {
+                await telemetryService.emit({
+                  eventId: uuidv4(),
+                  runId,
+                  ts: new Date().toISOString(),
+                  type: 'approval_request',
+                  name: tool.name,
+                  data: { toolCallId, argsHash, riskLevel: policyEvaluation.riskLevel },
+                });
+              } catch {
+                // ignore telemetry failures
+              }
+
+              try {
+                auditService
+                  .log({
+                    actor: 'system',
+                    action: 'approval_request',
+                    details: { runId, toolName: tool.name, toolCallId, argsHash, reason: policyEvaluation.reason },
+                    status: 'pending',
+                  })
+                  .catch(() => undefined);
+              } catch {
+                // ignore
+              }
+
+              const approved = await approvalHandler(tool.name, arg);
+
+              try {
+                await telemetryService.emit({
+                  eventId: uuidv4(),
+                  runId,
+                  ts: new Date().toISOString(),
+                  type: 'approval_decision',
+                  name: tool.name,
+                  data: { toolCallId, argsHash, approved },
+                });
+              } catch {
+                // ignore telemetry failures
+              }
+
+              try {
+                auditService
+                  .log({
+                    actor: 'system',
+                    action: 'approval_decision',
+                    details: { runId, toolName: tool.name, toolCallId, argsHash, approved },
+                    status: approved ? 'success' : 'failure',
+                  })
+                  .catch(() => undefined);
+              } catch {
+                // ignore
+              }
+
+              if (!approved) {
+                const durationMs = Date.now() - startedAt;
+                try {
+                  await telemetryService.emit({
+                    eventId: uuidv4(),
+                    runId,
+                    ts: new Date().toISOString(),
+                    type: 'tool_call_end',
+                    name: tool.name,
+                    data: { toolCallId, argsHash, durationMs, error: 'User denied' },
+                  });
+                } catch {
+                  // ignore telemetry failures
+                }
+
+                try {
+                  auditService
+                    .log({
+                      actor: 'user',
+                      action: 'tool_call_denied',
+                      details: { runId, toolName: tool.name, toolCallId },
+                      status: 'failure',
+                    })
+                    .catch(() => undefined);
+                } catch {
+                  // ignore
+                }
+
+                return 'User denied execution of this tool.';
+              }
+            }
+          } else if (tool.requiresApproval && approvalHandler) {
             try {
               await telemetryService.emit({
                 eventId: uuidv4(),

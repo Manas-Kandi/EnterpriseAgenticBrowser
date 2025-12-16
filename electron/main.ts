@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain, webContents } from 'electron'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import crypto from 'node:crypto'
@@ -10,6 +10,7 @@ import { toolRegistry } from './services/ToolRegistry'
 import { browserTargetService } from './services/BrowserTargetService'
 import { agentRunContext } from './services/AgentRunContext'
 import { telemetryService } from './services/TelemetryService'
+import { PolicyService } from './services/PolicyService'
 import './services/CodeReaderService'
 import './integrations/mock/MockJiraConnector'; // Initialize Mock Jira
 import './integrations/mock/MockConfluenceConnector'; // Initialize Mock Confluence
@@ -37,6 +38,19 @@ export const RENDERER_DIST = path.join(process.env.APP_ROOT, 'dist')
 process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path.join(process.env.APP_ROOT, 'public') : RENDERER_DIST
 
 let win: BrowserWindow | null
+
+type PendingApproval = {
+  requestId: string;
+  runId: string | null;
+  toolName: string;
+  requesterWebContentsId: number;
+  createdAt: number;
+  timeout: NodeJS.Timeout;
+  resolve: (approved: boolean) => void;
+};
+
+const pendingApprovals = new Map<string, PendingApproval>();
+const APPROVAL_TIMEOUT_MS = 30_000;
 
 function createWindow() {
   win = new BrowserWindow({
@@ -85,6 +99,62 @@ app.on('activate', () => {
 })
 
 app.whenReady().then(() => {
+  // Initialize PolicyService
+  const policyService = new PolicyService(telemetryService, auditService);
+  toolRegistry.setPolicyService(policyService);
+
+  ipcMain.on('agent:approval-response', (event, payload: any) => {
+    const requestId = payload?.requestId;
+    const approved = Boolean(payload?.approved);
+    if (typeof requestId !== 'string') return;
+
+    const pending = pendingApprovals.get(requestId);
+    if (!pending) return;
+    if (event.sender?.id !== pending.requesterWebContentsId) return;
+
+    clearTimeout(pending.timeout);
+    pendingApprovals.delete(requestId);
+    pending.resolve(approved);
+  });
+
+  toolRegistry.setApprovalHandler(async (toolName, args) => {
+    const runId = agentRunContext.getRunId();
+    const requesterWebContentsId = agentRunContext.getRequesterWebContentsId();
+    if (!requesterWebContentsId) return false;
+
+    const wc = webContents.fromId(requesterWebContentsId);
+    if (!wc || wc.isDestroyed()) return false;
+
+    const requestId = uuidv4();
+    const createdAt = Date.now();
+    wc.send('agent:request-approval', { requestId, toolName, args, runId, timeoutMs: APPROVAL_TIMEOUT_MS });
+
+    return await new Promise<boolean>((resolve) => {
+      const timeout = setTimeout(() => {
+        pendingApprovals.delete(requestId);
+        try {
+          const still = webContents.fromId(requesterWebContentsId);
+          if (still && !still.isDestroyed()) {
+            still.send('agent:approval-timeout', { requestId, toolName, runId });
+          }
+        } catch {
+          // ignore
+        }
+        resolve(false);
+      }, APPROVAL_TIMEOUT_MS);
+
+      pendingApprovals.set(requestId, {
+        requestId,
+        runId,
+        toolName,
+        requesterWebContentsId,
+        createdAt,
+        timeout,
+        resolve,
+      });
+    });
+  });
+
   ipcMain.handle('browser:webview-register', async (_, { tabId, webContentsId }) => {
     browserTargetService.registerWebview(tabId, webContentsId);
   });
@@ -134,6 +204,27 @@ app.whenReady().then(() => {
       // ignore
     }
 
+    // Get browser context early for policy evaluation
+    let url: string | undefined;
+    let domain: string | undefined;
+    try {
+      const activeWebview = browserTargetService.getActiveWebview();
+      if (activeWebview && !activeWebview.isDestroyed()) {
+        url = activeWebview.getURL();
+        try {
+          const urlObj = new URL(url);
+          domain = urlObj.hostname;
+          if (urlObj.port) {
+            domain += `:${urlObj.port}`;
+          }
+        } catch {
+          // Invalid URL, ignore domain extraction
+        }
+      }
+    } catch {
+      // Ignore errors getting browser context
+    }
+
     try {
       await telemetryService.emit({
         eventId: uuidv4(),
@@ -155,22 +246,6 @@ app.whenReady().then(() => {
         status: 'success'
     });
     
-    // Set up Approval Handler context
-    toolRegistry.setApprovalHandler(async (toolName, args) => {
-        // Send request to renderer
-        event.sender.send('agent:request-approval', { toolName, args });
-        
-        // Wait for response
-        return new Promise<boolean>((resolve) => {
-            ipcMain.once('agent:approval-response', (_, { toolName: respondedTool, approved }) => {
-                // In a real app we'd verify request IDs to ensure we don't mix up approvals
-                if (respondedTool === toolName) {
-                    resolve(approved);
-                }
-            });
-        });
-    });
-
     // Set up Step Handler
     agentService.setStepHandler((step) => {
         event.sender.send('agent:step', step);
@@ -234,9 +309,12 @@ app.whenReady().then(() => {
 
     let response = '';
     try {
-      response = await agentRunContext.run(runId, async () => {
+      response = await agentRunContext.run(
+        { runId, requesterWebContentsId: event.sender.id, browserContext: { url, domain } },
+        async () => {
         return await agentService.chat(message, browserContext);
-      });
+        }
+      );
     } finally {
       try {
         await telemetryService.emit({

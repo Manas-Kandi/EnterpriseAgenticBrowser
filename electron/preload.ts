@@ -39,13 +39,18 @@ contextBridge.exposeInMainWorld('agent', {
   getModels: () => ipcRenderer.invoke('agent:get-models'),
   getCurrentModel: () => ipcRenderer.invoke('agent:get-current-model'),
   setModel: (modelId: string) => ipcRenderer.invoke('agent:set-model', modelId),
-  onApprovalRequest: (callback: (toolName: string, args: any) => void) => {
-    const listener = (_: unknown, { toolName, args }: { toolName: string; args: unknown }) =>
-      callback(toolName, args);
+  onApprovalRequest: (callback: (payload: any) => void) => {
+    const listener = (_: unknown, payload: unknown) => callback(payload);
     ipcRenderer.on('agent:request-approval', listener);
     return () => ipcRenderer.off('agent:request-approval', listener);
   },
-  respondApproval: (toolName: string, approved: boolean) => ipcRenderer.send('agent:approval-response', { toolName, approved }),
+  onApprovalTimeout: (callback: (payload: any) => void) => {
+    const listener = (_: unknown, payload: unknown) => callback(payload);
+    ipcRenderer.on('agent:approval-timeout', listener);
+    return () => ipcRenderer.off('agent:approval-timeout', listener);
+  },
+  respondApproval: (requestId: string, approved: boolean) =>
+    ipcRenderer.send('agent:approval-response', { requestId, approved }),
   onStep: (callback: (step: any) => void) => {
     const listener = (_: unknown, step: unknown) => callback(step);
     ipcRenderer.on('agent:step', listener);

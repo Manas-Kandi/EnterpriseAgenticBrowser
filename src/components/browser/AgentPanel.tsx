@@ -11,8 +11,11 @@ interface Message {
 }
 
 interface ApprovalRequest {
+  requestId: string;
   toolName: string;
   args: any;
+  runId?: string;
+  timeoutMs?: number;
 }
 
 interface ModelInfo {
@@ -25,10 +28,12 @@ export function AgentPanel() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
-  const [approvalRequest, setApprovalRequest] = useState<ApprovalRequest | null>(null);
+  const [approvalQueue, setApprovalQueue] = useState<ApprovalRequest[]>([]);
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [currentModelId, setCurrentModelId] = useState<string>('');
   const [showModelSelector, setShowModelSelector] = useState(false);
+
+  const approvalRequest = approvalQueue.length > 0 ? approvalQueue[0] : null;
 
   useEffect(() => {
     if (!window.agent) return;
@@ -38,8 +43,22 @@ export function AgentPanel() {
     window.agent.getCurrentModel().then(setCurrentModelId).catch(console.error);
 
     // Listen for approval requests
-    const offApproval = window.agent.onApprovalRequest((toolName, args) => {
-      setApprovalRequest({ toolName, args });
+    const offApproval = window.agent.onApprovalRequest((payload: any) => {
+      const requestId = payload?.requestId;
+      const toolName = payload?.toolName;
+      if (typeof requestId !== 'string' || typeof toolName !== 'string') return;
+      setApprovalQueue((prev) => [...prev, payload as ApprovalRequest]);
+    });
+
+    const offApprovalTimeout = window.agent.onApprovalTimeout?.((payload: any) => {
+      const requestId = payload?.requestId;
+      if (typeof requestId !== 'string') return;
+      setApprovalQueue((prev) => prev.filter((req) => req.requestId !== requestId));
+      const toolName = typeof payload?.toolName === 'string' ? payload.toolName : 'action';
+      setMessages((prev) => [
+        ...prev,
+        { role: 'assistant', content: `Approval timed out for ${toolName}.`, type: 'observation' },
+      ]);
     });
     // Listen for agent steps
     const offStep = window.agent.onStep((step: any) => {
@@ -56,6 +75,7 @@ export function AgentPanel() {
 
     return () => {
       offApproval?.();
+      offApprovalTimeout?.();
       offStep?.();
     };
   }, []);
@@ -86,8 +106,8 @@ export function AgentPanel() {
 
   const handleApproval = (approved: boolean) => {
     if (approvalRequest && window.agent) {
-      window.agent.respondApproval(approvalRequest.toolName, approved);
-      setApprovalRequest(null);
+      window.agent.respondApproval(approvalRequest.requestId, approved);
+      setApprovalQueue((prev) => prev.filter((req) => req.requestId !== approvalRequest.requestId));
       // Optimistically add a system message
       setMessages(prev => [...prev, { 
           role: 'assistant', 
