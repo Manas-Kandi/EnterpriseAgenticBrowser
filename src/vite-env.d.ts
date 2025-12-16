@@ -22,6 +22,9 @@ interface Window {
     get: (account: string) => Promise<string | null>;
     delete: (account: string) => Promise<boolean>;
   }
+  audit?: {
+    getLogs: (limit?: number) => Promise<Array<{ id: string; timestamp: string; actor: string; action: string; details: unknown; status: string }>>;
+  }
   browser?: {
     registerWebview: (tabId: string, webContentsId: number) => Promise<void>;
     setActiveTab: (tabId: string | null) => Promise<void>;

@@ -4,6 +4,7 @@ import { StructuredTool } from "@langchain/core/tools";
 import { v4 as uuidv4 } from 'uuid';
 import { agentRunContext } from './AgentRunContext';
 import { telemetryService } from './TelemetryService';
+import { auditService } from './AuditService';
 
 export interface AgentTool<T extends z.ZodSchema = z.ZodSchema> {
   name: string;
@@ -74,6 +75,19 @@ export class ToolRegistry {
             // ignore telemetry failures
           }
 
+          try {
+            auditService
+              .log({
+                actor: 'agent',
+                action: 'tool_call_start',
+                details: { runId, toolName: tool.name, toolCallId, argsHash },
+                status: 'pending',
+              })
+              .catch(() => undefined);
+          } catch {
+            // ignore
+          }
+
           const approvalHandler = getApprovalHandler();
           if (tool.requiresApproval && approvalHandler) {
             try {
@@ -87,6 +101,19 @@ export class ToolRegistry {
               });
             } catch {
               // ignore telemetry failures
+            }
+
+            try {
+              auditService
+                .log({
+                  actor: 'system',
+                  action: 'approval_request',
+                  details: { runId, toolName: tool.name, toolCallId, argsHash },
+                  status: 'pending',
+                })
+                .catch(() => undefined);
+            } catch {
+              // ignore
             }
 
             const approved = await approvalHandler(tool.name, arg);
@@ -104,6 +131,19 @@ export class ToolRegistry {
               // ignore telemetry failures
             }
 
+            try {
+              auditService
+                .log({
+                  actor: 'system',
+                  action: 'approval_decision',
+                  details: { runId, toolName: tool.name, toolCallId, argsHash, approved },
+                  status: approved ? 'success' : 'failure',
+                })
+                .catch(() => undefined);
+            } catch {
+              // ignore
+            }
+
             if (!approved) {
               const durationMs = Date.now() - startedAt;
               try {
@@ -117,6 +157,19 @@ export class ToolRegistry {
                 });
               } catch {
                 // ignore telemetry failures
+              }
+
+              try {
+                auditService
+                  .log({
+                    actor: 'agent',
+                    action: 'tool_call_end',
+                    details: { runId, toolName: tool.name, toolCallId, argsHash, ok: false, denied: true, durationMs },
+                    status: 'failure',
+                  })
+                  .catch(() => undefined);
+              } catch {
+                // ignore
               }
               return "User denied execution of this tool.";
             }
@@ -143,6 +196,27 @@ export class ToolRegistry {
             } catch {
               // ignore telemetry failures
             }
+
+            try {
+              auditService
+                .log({
+                  actor: 'agent',
+                  action: 'tool_call_end',
+                  details: {
+                    runId,
+                    toolName: tool.name,
+                    toolCallId,
+                    argsHash,
+                    ok: true,
+                    durationMs,
+                    resultLength: String(result ?? '').length,
+                  },
+                  status: 'success',
+                })
+                .catch(() => undefined);
+            } catch {
+              // ignore
+            }
             return result;
           } catch (err: any) {
             const durationMs = Date.now() - startedAt;
@@ -163,6 +237,27 @@ export class ToolRegistry {
               });
             } catch {
               // ignore telemetry failures
+            }
+
+            try {
+              auditService
+                .log({
+                  actor: 'agent',
+                  action: 'tool_call_end',
+                  details: {
+                    runId,
+                    toolName: tool.name,
+                    toolCallId,
+                    argsHash,
+                    ok: false,
+                    durationMs,
+                    errorMessage: String(err?.message ?? err),
+                  },
+                  status: 'failure',
+                })
+                .catch(() => undefined);
+            } catch {
+              // ignore
             }
             throw err;
           }

@@ -29,6 +29,10 @@ contextBridge.exposeInMainWorld('vault', {
   delete: (account: string) => ipcRenderer.invoke('vault:delete', account),
 })
 
+contextBridge.exposeInMainWorld('audit', {
+  getLogs: (limit?: number) => ipcRenderer.invoke('audit:get-logs', limit),
+})
+
 contextBridge.exposeInMainWorld('agent', {
   chat: (message: string) => ipcRenderer.invoke('agent:chat', message),
   resetConversation: () => ipcRenderer.invoke('agent:reset-conversation'),

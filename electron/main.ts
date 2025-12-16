@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
+import crypto from 'node:crypto'
 import { v4 as uuidv4 } from 'uuid'
 import { vaultService } from './services/VaultService'
 import { agentService, AVAILABLE_MODELS } from './services/AgentService'
@@ -105,11 +106,24 @@ app.whenReady().then(() => {
     return await vaultService.deleteSecret(account);
   });
 
+  ipcMain.handle('audit:get-logs', async (_, limit?: number) => {
+    const rows = auditService.getLogs(typeof limit === 'number' ? limit : 100);
+    return rows.map((row: any) => {
+      const details = (() => {
+        try {
+          return JSON.parse(row.details);
+        } catch {
+          return row.details;
+        }
+      })();
+      return { ...row, details };
+    });
+  });
+
   // Agent IPC Handlers
   ipcMain.handle('agent:chat', async (event, message) => {
     const runId = uuidv4();
 
-    // Emit run id to the UI for easy correlation with telemetry files.
     try {
       event.sender.send('agent:step', {
         type: 'observation',
@@ -160,6 +174,51 @@ app.whenReady().then(() => {
     // Set up Step Handler
     agentService.setStepHandler((step) => {
         event.sender.send('agent:step', step);
+        try {
+          const rawMetadata = (step as any)?.metadata;
+          const toolName = rawMetadata?.tool;
+          const args = rawMetadata?.args;
+          const stepContent = String((step as any)?.content ?? '');
+          const contentLength = stepContent.length;
+          const contentHash = crypto.createHash('sha256').update(stepContent).digest('hex');
+          const contentPreview = contentLength > 2000 ? stepContent.slice(0, 2000) : stepContent;
+
+          const argsJson = (() => {
+            try {
+              return JSON.stringify(args ?? null);
+            } catch {
+              return '[unserializable_args]';
+            }
+          })();
+          const argsHash = crypto.createHash('sha256').update(argsJson).digest('hex');
+
+          const sanitizedMetadata = rawMetadata
+            ? {
+                ...rawMetadata,
+                ...(args !== undefined ? { args: undefined, argsHash } : null),
+              }
+            : undefined;
+
+          auditService
+            .log({
+              actor: 'agent',
+              action: 'agent_step',
+              details: {
+                runId,
+                type: (step as any)?.type,
+                toolName,
+                contentPreview,
+                contentLength,
+                contentHash,
+                argsHash: args !== undefined ? argsHash : undefined,
+                metadata: sanitizedMetadata,
+              },
+              status: 'success',
+            })
+            .catch(() => undefined);
+        } catch {
+          // ignore
+        }
     });
 
     // Get current browser context
