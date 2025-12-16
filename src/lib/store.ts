@@ -23,7 +23,7 @@ interface BrowserState {
   tabs: BrowserTab[];
   activeTabId: string | null;
   history: HistoryItem[];
-  activeSidebarPanel: 'drive' | 'gmail' | 'calendar' | 'slack' | null;
+  activeSidebarPanel: 'drive' | 'gmail' | 'calendar' | 'slack' | 'agent' | 'extensions' | null;
   user: { name: string; email: string; avatar?: string } | null;
   appMode: 'personal' | 'dev' | null;
   
@@ -32,6 +32,7 @@ interface BrowserState {
   removeTab: (id: string) => void;
   setActiveTab: (id: string) => void;
   updateTab: (id: string, data: Partial<BrowserTab>) => void;
+  reorderTabs: (fromIndex: number, toIndex: number) => void;
   addToHistory: (url: string, title: string) => void;
   setSidebarPanel: (panel: 'drive' | 'gmail' | 'calendar' | 'slack' | null) => void;
   setUser: (user: { name: string; email: string; avatar?: string } | null) => void;
@@ -74,6 +75,13 @@ export const useBrowserStore = create<BrowserState>()(
       updateTab: (id, data) => set((state) => ({
         tabs: state.tabs.map((tab) => (tab.id === id ? { ...tab, ...data } : tab)),
       })),
+
+      reorderTabs: (fromIndex, toIndex) => set((state) => {
+        const newTabs = [...state.tabs];
+        const [movedTab] = newTabs.splice(fromIndex, 1);
+        newTabs.splice(toIndex, 0, movedTab);
+        return { tabs: newTabs };
+      }),
 
       addToHistory: (url, title) => set((state) => {
           // Avoid duplicates if recent

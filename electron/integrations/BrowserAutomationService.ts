@@ -306,7 +306,26 @@ export class BrowserAutomationService {
         timeoutMs?: number;
       }) => {
         try {
-            const target = await this.getTarget();
+            let target;
+            try {
+              target = await this.getTarget();
+            } catch (noWebviewError) {
+              // No webview exists (e.g., New Tab page). Use IPC to trigger navigation via renderer.
+              const { BrowserWindow } = await import('electron');
+              const win = BrowserWindow.getAllWindows()[0];
+              if (win) {
+                win.webContents.send('browser:navigate-to', url);
+                // Wait for webview to be created and ready
+                await this.delay(1500);
+                try {
+                  target = await this.getTarget();
+                } catch {
+                  return `Navigated to ${url} (webview initializing)`;
+                }
+              } else {
+                return `Failed to navigate: No browser window found`;
+              }
+            }
 
             // Guard against navigating to non-existent mock-saas routes.
             try {

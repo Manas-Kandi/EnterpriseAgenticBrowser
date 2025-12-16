@@ -1,5 +1,3 @@
-import { Sidebar } from '@/components/layout/Sidebar';
-import { StatusBar } from '@/components/layout/StatusBar';
 import { BrowserChrome } from '@/components/browser/BrowserChrome';
 import { BrowserView } from '@/components/browser/BrowserView';
 import { WorkspaceSidebar } from '@/components/browser/WorkspaceSidebar';
@@ -54,13 +52,7 @@ function App() {
           <BrowserChrome />
           <BrowserView />
         </main>
-        
-        {/* Agent Sidebar */}
-        <Sidebar />
       </div>
-      
-      {/* Global Status Bar */}
-      <StatusBar />
     </div>
   )
 }

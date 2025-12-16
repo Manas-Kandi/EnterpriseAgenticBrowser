@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { useAero } from '../../lib/store';
 import { useNavigate } from 'react-router-dom';
-import { MapPin, Activity, Wrench, Plane, Plus, LayoutGrid, CheckCircle } from 'lucide-react';
+import { MapPin, Wrench, Plus, LayoutGrid, CheckCircle, ArrowUpDown } from 'lucide-react';
 import { AddDroneModal } from './AddDroneModal';
+import type { Drone } from '../../lib/types';
 
 function BatteryIndicator({ level }: { level: number }) {
   let colorClass = 'bg-emerald-500';
@@ -116,8 +117,22 @@ export function FleetPage() {
 
         {/* DataGrid */}
         <div className="bg-slate-900 border border-slate-800 rounded-lg overflow-hidden">
-            <div className="px-6 py-4 border-b border-slate-800">
+            <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between">
                 <h3 className="text-sm font-semibold text-white">Drone Fleet Registry</h3>
+                <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-500 uppercase font-semibold">Filter:</span>
+                    <select 
+                        value={filterModel}
+                        onChange={(e) => setFilterModel(e.target.value)}
+                        data-testid="fleet-filter-model"
+                        className="bg-slate-950 border border-slate-800 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-sky-500"
+                    >
+                        <option value="All">All Models</option>
+                        <option value="Sentinel-X">Sentinel-X</option>
+                        <option value="CargoLifter-9">CargoLifter-9</option>
+                        <option value="Scout-Mini">Scout-Mini</option>
+                    </select>
+                </div>
             </div>
             <div className="overflow-x-auto">
                 <table className="w-full text-left">
@@ -126,12 +141,19 @@ export function FleetPage() {
                             <th className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">ID</th>
                             <th className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Model</th>
                             <th className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
-                            <th className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Battery</th>
+                            <th 
+                                className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider cursor-pointer hover:text-white group flex items-center gap-1"
+                                onClick={() => handleSort('battery')}
+                                data-testid="fleet-sort-battery"
+                            >
+                                Battery
+                                <ArrowUpDown size={12} className="opacity-0 group-hover:opacity-100" />
+                            </th>
                             <th className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Location</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-800">
-                        {drones.map((drone) => (
+                        {sortedDrones.map((drone) => (
                             <tr 
                                 key={drone.id} 
                                 data-testid={`fleet-drone-row-${drone.id}`}

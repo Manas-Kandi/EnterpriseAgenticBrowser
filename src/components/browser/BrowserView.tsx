@@ -6,9 +6,30 @@ function WebViewInstance({ tab, active }: { tab: BrowserTab; active: boolean }) 
   const { updateTab, addToHistory } = useBrowserStore();
   const webviewRef = useRef<any>(null);
   const registeredRef = useRef(false);
+  const initialUrlRef = useRef(tab.url); // Track initial URL to prevent reload loops
+  const lastNavigatedUrlRef = useRef(tab.url); // Track last URL we navigated to
 
   // Check if this is a "New Tab" page
   const isNewTab = !tab.url || tab.url === 'about:blank' || tab.url === 'about:newtab';
+
+  // Handle programmatic URL changes (from address bar, etc.)
+  useEffect(() => {
+    const el = webviewRef.current;
+    if (!el || isNewTab) return;
+    
+    // Only navigate if URL changed and it's different from what webview currently has
+    if (tab.url && tab.url !== lastNavigatedUrlRef.current) {
+      try {
+        const currentWebviewUrl = el.getURL?.() || '';
+        if (tab.url !== currentWebviewUrl) {
+          lastNavigatedUrlRef.current = tab.url;
+          el.loadURL(tab.url);
+        }
+      } catch (e) {
+        // Webview not ready yet
+      }
+    }
+  }, [tab.url, isNewTab]);
 
   // Handle Action (Back/Forward/Reload)
   useEffect(() => {
@@ -73,6 +94,9 @@ function WebViewInstance({ tab, active }: { tab: BrowserTab; active: boolean }) 
             const url = el.getURL();
             const title = el.getTitle() || tab.title || url;
             
+            // Update our tracking ref to prevent reload loops
+            lastNavigatedUrlRef.current = url;
+            
             updateTab(tab.id, {
                 canGoBack: el.canGoBack(),
                 canGoForward: el.canGoForward(),
@@ -88,6 +112,19 @@ function WebViewInstance({ tab, active }: { tab: BrowserTab; active: boolean }) 
     el.addEventListener('did-navigate', updateHistory);
     el.addEventListener('did-navigate-in-page', updateHistory);
     el.addEventListener('dom-ready', updateHistory);
+
+    // Title update listener
+    el.addEventListener('page-title-updated', (e: any) => {
+      updateTab(tab.id, { title: e.title });
+    });
+
+    // Loading state listeners
+    el.addEventListener('did-start-loading', () => {
+      updateTab(tab.id, { loading: true });
+    });
+    el.addEventListener('did-stop-loading', () => {
+      updateTab(tab.id, { loading: false });
+    });
   };
 
   if (isNewTab) {
@@ -100,25 +137,32 @@ function WebViewInstance({ tab, active }: { tab: BrowserTab; active: boolean }) 
 
   return (
     <webview
-      src={tab.url}
+      src={initialUrlRef.current}
       className={`absolute inset-0 w-full h-full ${active ? 'flex' : 'hidden'}`}
       // @ts-ignore
       allowpopups="true"
       webpreferences="contextIsolation=true"
       ref={handleRef}
-      onDidStartLoading={() => updateTab(tab.id, { loading: true })}
-      onDidStopLoading={() => updateTab(tab.id, { loading: false })}
-      onPageTitleUpdated={(e: any) => updateTab(tab.id, { title: e.title })}
     />
   );
 }
 
 export function BrowserView() {
-  const { tabs, activeTabId } = useBrowserStore();
+  const { tabs, activeTabId, updateTab } = useBrowserStore();
 
   useEffect(() => {
     window.browser?.setActiveTab(activeTabId);
   }, [activeTabId]);
+
+  // Listen for agent-triggered navigation (when on New Tab page)
+  useEffect(() => {
+    const off = window.browser?.onNavigateTo?.((url: string) => {
+      if (activeTabId) {
+        updateTab(activeTabId, { url, loading: true });
+      }
+    });
+    return () => off?.();
+  }, [activeTabId, updateTab]);
 
   return (
     <div className="flex-1 relative bg-white">

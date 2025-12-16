@@ -53,4 +53,9 @@ contextBridge.exposeInMainWorld('browser', {
   registerWebview: (tabId: string, webContentsId: number) =>
     ipcRenderer.invoke('browser:webview-register', { tabId, webContentsId }),
   setActiveTab: (tabId: string | null) => ipcRenderer.invoke('browser:active-tab', { tabId }),
+  onNavigateTo: (callback: (url: string) => void) => {
+    const listener = (_: unknown, url: string) => callback(url);
+    ipcRenderer.on('browser:navigate-to', listener);
+    return () => ipcRenderer.off('browser:navigate-to', listener);
+  },
 })

@@ -25,5 +25,6 @@ interface Window {
   browser?: {
     registerWebview: (tabId: string, webContentsId: number) => Promise<void>;
     setActiveTab: (tabId: string | null) => Promise<void>;
+    onNavigateTo: (callback: (url: string) => void) => (() => void);
   }
 }
