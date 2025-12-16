@@ -14,8 +14,65 @@ export type AgentStep = {
     metadata?: any;
 };
 
+// Available models configuration
+export interface ModelConfig {
+  id: string;
+  name: string;
+  modelName: string;
+  temperature: number;
+  maxTokens: number;
+  supportsThinking: boolean;
+  extraBody?: Record<string, unknown>;
+}
+
+export const AVAILABLE_MODELS: ModelConfig[] = [
+  {
+    id: 'llama-3.1-70b',
+    name: 'Llama 3.1 70B (Fast)',
+    modelName: 'meta/llama-3.1-70b-instruct',
+    temperature: 0.1,
+    maxTokens: 4096,
+    supportsThinking: false,
+  },
+  {
+    id: 'deepseek-v3.1',
+    name: 'DeepSeek V3.1 Terminus (Thinking)',
+    modelName: 'deepseek-ai/deepseek-v3.1-terminus',
+    temperature: 0.2,
+    maxTokens: 8192,
+    supportsThinking: true,
+    extraBody: { chat_template_kwargs: { thinking: true } },
+  },
+  {
+    id: 'qwen3-80b',
+    name: 'Qwen3 80B (Thinking)',
+    modelName: 'qwen/qwen3-next-80b-a3b-thinking',
+    temperature: 0.6,
+    maxTokens: 4096,
+    supportsThinking: true,
+  },
+  {
+    id: 'kimi-k2',
+    name: 'Kimi K2 (Thinking)',
+    modelName: 'moonshotai/kimi-k2-thinking',
+    temperature: 1,
+    maxTokens: 16384,
+    supportsThinking: true,
+  },
+  {
+    id: 'nemotron-nano',
+    name: 'Nemotron Nano 30B (Thinking)',
+    modelName: 'nvidia/nemotron-3-nano-30b-a3b',
+    temperature: 1,
+    maxTokens: 16384,
+    supportsThinking: true,
+    extraBody: { chat_template_kwargs: { enable_thinking: true } },
+  },
+];
+
 export class AgentService {
   private model: Runnable;
+  private currentModelId: string = 'llama-3.1-70b';
   private onStep?: (step: AgentStep) => void;
   private conversationHistory: BaseMessage[] = [];
   private systemPrompt: SystemMessage;
@@ -92,30 +149,67 @@ export class AgentService {
   }
 
   constructor() {
+    // Initialize with default model
+    this.model = this.createModel('llama-3.1-70b');
+    this.systemPrompt = new SystemMessage('');
+  }
+
+  /**
+   * Create a model instance from config
+   */
+  private createModel(modelId: string): Runnable {
     const apiKey = process.env.NVIDIA_API_KEY;
     if (!apiKey) {
       console.warn('NVIDIA_API_KEY is not set in environment variables');
     }
 
-    // We will use a standard ChatOpenAI instance WITHOUT .bindTools first
-    // This allows us to manually handle the tool calling format via prompting (JSON Mode),
-    // which is more robust for models that might struggle with the native 'tool_calls' schema
-    const chatModel = new ChatOpenAI({
+    const config = AVAILABLE_MODELS.find(m => m.id === modelId) || AVAILABLE_MODELS[0];
+    console.log(`[AgentService] Creating model: ${config.name} (${config.modelName})`);
+
+    const modelKwargs: Record<string, unknown> = {
+      response_format: { type: "json_object" },
+      ...config.extraBody,
+    };
+
+    return new ChatOpenAI({
       configuration: {
         baseURL: "https://integrate.api.nvidia.com/v1",
         apiKey: apiKey,
       },
-      modelName: "meta/llama-3.1-70b-instruct",
-      temperature: 0.1,
-      streaming: false, 
-      // Force JSON format via prompt + model config if supported, but Llama3 usually follows prompt well
-      modelKwargs: { "response_format": { "type": "json_object" } } 
+      modelName: config.modelName,
+      temperature: config.temperature,
+      maxTokens: config.maxTokens,
+      streaming: false,
+      modelKwargs,
     });
+  }
 
-    this.model = chatModel;
-    
-    // Initialize the system prompt (will be set in chat())
-    this.systemPrompt = new SystemMessage('');
+  /**
+   * Switch to a different model
+   */
+  setModel(modelId: string) {
+    const config = AVAILABLE_MODELS.find(m => m.id === modelId);
+    if (!config) {
+      console.error(`[AgentService] Unknown model: ${modelId}`);
+      return;
+    }
+    this.currentModelId = modelId;
+    this.model = this.createModel(modelId);
+    console.log(`[AgentService] Switched to model: ${config.name}`);
+  }
+
+  /**
+   * Get current model ID
+   */
+  getCurrentModelId(): string {
+    return this.currentModelId;
+  }
+
+  /**
+   * Get available models
+   */
+  static getAvailableModels(): ModelConfig[] {
+    return AVAILABLE_MODELS;
   }
 
   /**
@@ -139,22 +233,6 @@ export class AgentService {
     }
   }
 
-  /**
-   * Get current browser URL for context injection
-   */
-  private async getCurrentBrowserContext(): Promise<string> {
-    try {
-      // Import dynamically to avoid circular dependency
-      const { browserTargetService } = await import('./BrowserTargetService');
-      const wc = browserTargetService.getActiveWebContents();
-      const url = wc.getURL();
-      const title = wc.getTitle();
-      return `Current browser state: URL="${url}", Title="${title}"`;
-    } catch {
-      return 'Current browser state: No active tab';
-    }
-  }
-
   setStepHandler(handler: (step: AgentStep) => void) {
       this.onStep = handler;
   }
@@ -165,7 +243,7 @@ export class AgentService {
       }
   }
 
-  async chat(userMessage: string): Promise<string> {
+  async chat(userMessage: string, browserContext?: string): Promise<string> {
     // Fetch tools dynamically to ensure all services have registered their tools
     const tools = toolRegistry.toLangChainTools();
     let usedBrowserTools = false;
@@ -173,8 +251,8 @@ export class AgentService {
     let lastVerified: string | null = null;
     
     try {
-      // Get current browser context to inject into the conversation
-      const browserContext = await this.getCurrentBrowserContext();
+      // Use provided browser context or default
+      const context = browserContext || 'Current browser state: No context provided';
       
       // Build system prompt with tools (refresh each call in case tools changed)
       this.systemPrompt = new SystemMessage(`You are a helpful enterprise assistant integrated into a browser. 
@@ -199,7 +277,7 @@ export class AgentService {
         CONVERSATION CONTEXT:
         - You have memory of the entire conversation. Use previous messages to understand context.
         - If the user refers to "it", "this page", "here", etc., use the conversation history and current browser state to understand what they mean.
-        - ${browserContext}
+        - ${context}
 
         JSON SAFETY:
         - Tool JSON must be valid JSON. If you include a CSS selector string, it MUST NOT contain unescaped double quotes (").
@@ -265,7 +343,7 @@ export class AgentService {
         `);
       
       // Add user message to conversation history with browser context
-      const contextualUserMessage = new HumanMessage(`[${browserContext}]\n\nUser request: ${userMessage}`);
+      const contextualUserMessage = new HumanMessage(`[${context}]\n\nUser request: ${userMessage}`);
       this.conversationHistory.push(contextualUserMessage);
       
       // Trim history if it's getting too long
@@ -381,6 +459,43 @@ export class AgentService {
                   if (typeof result === 'string' && result.startsWith('Found text')) {
                     lastVerified = result;
                   }
+                }
+                
+                // FAST PATH: For simple successful operations, return immediately without another LLM call
+                // This dramatically improves perceived speed for common operations
+                const resultStr = String(result);
+                const toolName = (action as any).tool;
+                
+                if (toolName === 'browser_navigate' && resultStr.includes('Navigated to')) {
+                  const url = (action as any).args?.url || 'the page';
+                  const fastResponse = `Opened ${url}`;
+                  this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: 'final_response', args: { message: fastResponse } })));
+                  return fastResponse;
+                }
+                
+                if (toolName === 'browser_click' && !resultStr.toLowerCase().includes('error') && !resultStr.toLowerCase().includes('failed')) {
+                  const fastResponse = `Clicked the element.`;
+                  this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: 'final_response', args: { message: fastResponse } })));
+                  return fastResponse;
+                }
+                
+                if (toolName === 'browser_type' && !resultStr.toLowerCase().includes('error') && !resultStr.toLowerCase().includes('failed') && !resultStr.toLowerCase().includes('timeout')) {
+                  const text = (action as any).args?.text || '';
+                  const fastResponse = text ? `Typed "${text.slice(0, 50)}${text.length > 50 ? '...' : ''}"` : `Typed the text.`;
+                  this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: 'final_response', args: { message: fastResponse } })));
+                  return fastResponse;
+                }
+                
+                if (toolName === 'browser_scroll' && !resultStr.toLowerCase().includes('error')) {
+                  const fastResponse = `Scrolled the page.`;
+                  this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: 'final_response', args: { message: fastResponse } })));
+                  return fastResponse;
+                }
+                
+                if (toolName === 'browser_go_back' && !resultStr.toLowerCase().includes('error')) {
+                  const fastResponse = `Went back to the previous page.`;
+                  this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: 'final_response', args: { message: fastResponse } })));
+                  return fastResponse;
                 }
                 
                 // Add interaction to both local messages and persistent history

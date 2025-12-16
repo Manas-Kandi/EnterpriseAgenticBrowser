@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain } from 'electron'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { vaultService } from './services/VaultService'
-import { agentService } from './services/AgentService'
+import { agentService, AVAILABLE_MODELS } from './services/AgentService'
 import { auditService } from './services/AuditService'
 import { toolRegistry } from './services/ToolRegistry'
 import { browserTargetService } from './services/BrowserTargetService'
@@ -50,6 +50,8 @@ function createWindow() {
 
   if (VITE_DEV_SERVER_URL) {
     win.loadURL(VITE_DEV_SERVER_URL)
+    // Open DevTools in development mode to see any errors
+    win.webContents.openDevTools()
   } else {
     // win.loadFile('dist/index.html')
     win.loadFile(path.join(RENDERER_DIST, 'index.html'))
@@ -131,7 +133,18 @@ app.whenReady().then(() => {
         event.sender.send('agent:step', step);
     });
 
-    const response = await agentService.chat(message);
+    // Get current browser context
+    let browserContext = 'Current browser state: No active tab';
+    try {
+        const wc = browserTargetService.getActiveWebContents();
+        const url = wc.getURL();
+        const title = wc.getTitle();
+        browserContext = `Current browser state: URL="${url}", Title="${title}"`;
+    } catch (err) {
+        // Ignore error if no active tab
+    }
+
+    const response = await agentService.chat(message, browserContext);
     
     // Log Agent Response
     await auditService.log({
@@ -148,6 +161,20 @@ app.whenReady().then(() => {
   ipcMain.handle('agent:reset-conversation', async () => {
     agentService.resetConversation();
     return { success: true };
+  });
+
+  // Agent model management handlers
+  ipcMain.handle('agent:get-models', async () => {
+    return AVAILABLE_MODELS;
+  });
+
+  ipcMain.handle('agent:get-current-model', async () => {
+    return agentService.getCurrentModelId();
+  });
+
+  ipcMain.handle('agent:set-model', async (_, modelId: string) => {
+    agentService.setModel(modelId);
+    return { success: true, modelId };
   });
 
   createWindow();
