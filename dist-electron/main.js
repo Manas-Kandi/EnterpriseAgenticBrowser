@@ -41455,10 +41455,12 @@ class TaskKnowledgeService {
 }
 new TaskKnowledgeService();
 dotenv.config();
-class AgentService {
+const _AgentService = class _AgentService {
   constructor() {
     __publicField(this, "model");
     __publicField(this, "onStep");
+    __publicField(this, "conversationHistory", []);
+    __publicField(this, "systemPrompt");
     const apiKey = process.env.NVIDIA_API_KEY;
     if (!apiKey) {
       console.warn("NVIDIA_API_KEY is not set in environment variables");
@@ -41475,6 +41477,7 @@ class AgentService {
       modelKwargs: { "response_format": { "type": "json_object" } }
     });
     this.model = chatModel;
+    this.systemPrompt = new SystemMessage("");
   }
   extractJsonObject(input) {
     const text = input.replace(/```json/g, "").replace(/```/g, "").trim();
@@ -41529,6 +41532,38 @@ class AgentService {
     const message = messageMatch ? messageMatch[1] : "";
     return { tool: tool2, args: { message } };
   }
+  /**
+   * Reset conversation history - call this when starting a new session
+   */
+  resetConversation() {
+    this.conversationHistory = [];
+    console.log("[AgentService] Conversation history cleared");
+  }
+  /**
+   * Trim conversation history if it exceeds the max limit
+   * Keeps the most recent messages
+   */
+  trimConversationHistory() {
+    if (this.conversationHistory.length > _AgentService.MAX_HISTORY_MESSAGES) {
+      const excess = this.conversationHistory.length - _AgentService.MAX_HISTORY_MESSAGES;
+      this.conversationHistory = this.conversationHistory.slice(excess);
+      console.log(`[AgentService] Trimmed ${excess} old messages from conversation history`);
+    }
+  }
+  /**
+   * Get current browser URL for context injection
+   */
+  async getCurrentBrowserContext() {
+    try {
+      const { browserTargetService: browserTargetService2 } = await Promise.resolve().then(() => BrowserTargetService$1);
+      const wc = browserTargetService2.getActiveWebContents();
+      const url = wc.getURL();
+      const title = wc.getTitle();
+      return `Current browser state: URL="${url}", Title="${title}"`;
+    } catch {
+      return "Current browser state: No active tab";
+    }
+  }
   setStepHandler(handler) {
     this.onStep = handler;
   }
@@ -41543,14 +41578,14 @@ class AgentService {
     let parseFailures = 0;
     let lastVerified = null;
     try {
-      const messages = [
-        new SystemMessage(`You are a helpful enterprise assistant integrated into a browser. 
+      const browserContext = await this.getCurrentBrowserContext();
+      this.systemPrompt = new SystemMessage(`You are a helpful enterprise assistant integrated into a browser. 
         
         You have access to the following tools:
         ${tools.map((t2) => {
-          var _a3;
-          return `- ${t2.name}: ${t2.description} (Args: ${JSON.stringify(((_a3 = t2.schema) == null ? void 0 : _a3.shape) || {})})`;
-        }).join("\n")}
+        var _a3;
+        return `- ${t2.name}: ${t2.description} (Args: ${JSON.stringify(((_a3 = t2.schema) == null ? void 0 : _a3.shape) || {})})`;
+      }).join("\n")}
 
         CRITICAL INSTRUCTIONS:
         1. You are an agent that MUST use tools to interact with the world.
@@ -41565,6 +41600,11 @@ class AgentService {
              "tool": "final_response",
              "args": { "message": "Your text here" }
            }
+
+        CONVERSATION CONTEXT:
+        - You have memory of the entire conversation. Use previous messages to understand context.
+        - If the user refers to "it", "this page", "here", etc., use the conversation history and current browser state to understand what they mean.
+        - ${browserContext}
 
         JSON SAFETY:
         - Tool JSON must be valid JSON. If you include a CSS selector string, it MUST NOT contain unescaped double quotes (").
@@ -41613,8 +41653,9 @@ class AgentService {
         
         BROWSER AUTOMATION STRATEGY:
         - You have no eyes. You must use "browser_observe" to see the page.
-        - Step 1: ALWAYS call "browser_navigate" to the target URL.
-        - Step 2: ALWAYS call "browser_observe" with scope="main" to see relevant page content (not header noise).
+        - For EXTERNAL WEBSITES (not localhost): Use the current browser state above. If you're already on a site (e.g. youtube.com), interact with it directly using browser_type, browser_click, browser_observe. Do NOT navigate away unless asked.
+        - Step 1: Check current browser state. If already on the target site, skip navigation.
+        - Step 2: Use "browser_observe" with scope="main" to see relevant page content.
         - Step 3: Prefer "browser_click_text" when you can describe a link/button by visible text (more robust than guessing aria-label/href).
         - Step 4: Use selectors returned by "browser_observe" (which are JSON-safe) for "browser_click", "browser_type", "browser_select".
         - Step 5: Verify outcomes using "browser_wait_for_text", "browser_wait_for_text_in", or "browser_extract_main_text".
@@ -41626,8 +41667,15 @@ class AgentService {
         Assistant: { "tool": "browser_observe", "args": { "scope": "main" } }
         User: Tool Output: { "interactiveElements": [...] }
         Assistant: { "tool": "final_response", "args": { "message": "I have navigated to Jira." } }
-        `),
-        new HumanMessage(userMessage)
+        `);
+      const contextualUserMessage = new HumanMessage(`[${browserContext}]
+
+User request: ${userMessage}`);
+      this.conversationHistory.push(contextualUserMessage);
+      this.trimConversationHistory();
+      const messages = [
+        this.systemPrompt,
+        ...this.conversationHistory
       ];
       for (let i = 0; i < 25; i++) {
         const response = await this.model.invoke(messages);
@@ -41688,6 +41736,7 @@ If you are done:
               continue;
             }
           }
+          this.conversationHistory.push(new AIMessage(content));
           return finalMessage;
         }
         const tool2 = tools.find((t2) => t2.name === action.tool);
@@ -41703,18 +41752,30 @@ If you are done:
                 lastVerified = result;
               }
             }
-            messages.push(new AIMessage(content));
-            messages.push(new SystemMessage(`Tool '${action.tool}' Output:
-${result}`));
+            const aiMsg = new AIMessage(content);
+            const toolOutputMsg = new SystemMessage(`Tool '${action.tool}' Output:
+${result}`);
+            messages.push(aiMsg);
+            messages.push(toolOutputMsg);
+            this.conversationHistory.push(aiMsg);
+            this.conversationHistory.push(toolOutputMsg);
           } catch (err) {
             console.error(`Tool execution failed: ${err}`);
-            messages.push(new AIMessage(content));
-            messages.push(new SystemMessage(`Tool Execution Error: ${err.message}`));
+            const aiMsg = new AIMessage(content);
+            const errorMsg = new SystemMessage(`Tool Execution Error: ${err.message}`);
+            messages.push(aiMsg);
+            messages.push(errorMsg);
+            this.conversationHistory.push(aiMsg);
+            this.conversationHistory.push(errorMsg);
           }
         } else {
           console.error(`Tool not found: ${action.tool}`);
-          messages.push(new AIMessage(content));
-          messages.push(new SystemMessage(`Error: Tool '${action.tool}' not found. Available tools: ${tools.map((t2) => t2.name).join(", ")}`));
+          const aiMsg = new AIMessage(content);
+          const errorMsg = new SystemMessage(`Error: Tool '${action.tool}' not found. Available tools: ${tools.map((t2) => t2.name).join(", ")}`);
+          messages.push(aiMsg);
+          messages.push(errorMsg);
+          this.conversationHistory.push(aiMsg);
+          this.conversationHistory.push(errorMsg);
         }
       }
       return "I could not complete the task within the maximum number of steps. Try simplifying the request or check the browser is in the expected state.";
@@ -41733,7 +41794,12 @@ ${result}`));
       yield chunk.content;
     }
   }
-}
+};
+// Limit conversation history to prevent unbounded memory growth
+// Each turn can have ~2-4 messages (user, AI, tool output, etc.)
+// 50 messages ≈ 12-25 turns of context
+__publicField(_AgentService, "MAX_HISTORY_MESSAGES", 50);
+let AgentService = _AgentService;
 const agentService = new AgentService();
 const byteToHex = [];
 for (let i = 0; i < 256; ++i) {
@@ -41886,6 +41952,11 @@ class BrowserTargetService {
   }
 }
 const browserTargetService = new BrowserTargetService();
+const BrowserTargetService$1 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+  __proto__: null,
+  BrowserTargetService,
+  browserTargetService
+}, Symbol.toStringTag, { value: "Module" }));
 const MAX_FILES_DEFAULT = 2e3;
 const MAX_FILE_BYTES_DEFAULT = 2e5;
 const IGNORE_DIRS = /* @__PURE__ */ new Set([
@@ -43238,6 +43309,10 @@ app.whenReady().then(() => {
       status: "success"
     });
     return response;
+  });
+  ipcMain.handle("agent:reset-conversation", async () => {
+    agentService.resetConversation();
+    return { success: true };
   });
   createWindow();
 });

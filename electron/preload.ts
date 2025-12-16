@@ -31,6 +31,7 @@ contextBridge.exposeInMainWorld('vault', {
 
 contextBridge.exposeInMainWorld('agent', {
   chat: (message: string) => ipcRenderer.invoke('agent:chat', message),
+  resetConversation: () => ipcRenderer.invoke('agent:reset-conversation'),
   onApprovalRequest: (callback: (toolName: string, args: any) => void) => {
     const listener = (_: unknown, { toolName, args }: { toolName: string; args: unknown }) =>
       callback(toolName, args);

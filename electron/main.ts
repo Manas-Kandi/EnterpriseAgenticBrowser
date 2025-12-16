@@ -144,5 +144,11 @@ app.whenReady().then(() => {
     return response;
   });
 
+  // Agent conversation reset handler
+  ipcMain.handle('agent:reset-conversation', async () => {
+    agentService.resetConversation();
+    return { success: true };
+  });
+
   createWindow();
 })

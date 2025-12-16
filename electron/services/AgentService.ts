@@ -17,6 +17,13 @@ export type AgentStep = {
 export class AgentService {
   private model: Runnable;
   private onStep?: (step: AgentStep) => void;
+  private conversationHistory: BaseMessage[] = [];
+  private systemPrompt: SystemMessage;
+  
+  // Limit conversation history to prevent unbounded memory growth
+  // Each turn can have ~2-4 messages (user, AI, tool output, etc.)
+  // 50 messages ≈ 12-25 turns of context
+  private static readonly MAX_HISTORY_MESSAGES = 50;
 
   private extractJsonObject(input: string): string | null {
     const text = input.replace(/```json/g, '').replace(/```/g, '').trim();
@@ -106,6 +113,46 @@ export class AgentService {
     });
 
     this.model = chatModel;
+    
+    // Initialize the system prompt (will be set in chat())
+    this.systemPrompt = new SystemMessage('');
+  }
+
+  /**
+   * Reset conversation history - call this when starting a new session
+   */
+  resetConversation() {
+    this.conversationHistory = [];
+    console.log('[AgentService] Conversation history cleared');
+  }
+
+  /**
+   * Trim conversation history if it exceeds the max limit
+   * Keeps the most recent messages
+   */
+  private trimConversationHistory() {
+    if (this.conversationHistory.length > AgentService.MAX_HISTORY_MESSAGES) {
+      // Keep the most recent messages
+      const excess = this.conversationHistory.length - AgentService.MAX_HISTORY_MESSAGES;
+      this.conversationHistory = this.conversationHistory.slice(excess);
+      console.log(`[AgentService] Trimmed ${excess} old messages from conversation history`);
+    }
+  }
+
+  /**
+   * Get current browser URL for context injection
+   */
+  private async getCurrentBrowserContext(): Promise<string> {
+    try {
+      // Import dynamically to avoid circular dependency
+      const { browserTargetService } = await import('./BrowserTargetService');
+      const wc = browserTargetService.getActiveWebContents();
+      const url = wc.getURL();
+      const title = wc.getTitle();
+      return `Current browser state: URL="${url}", Title="${title}"`;
+    } catch {
+      return 'Current browser state: No active tab';
+    }
   }
 
   setStepHandler(handler: (step: AgentStep) => void) {
@@ -126,8 +173,11 @@ export class AgentService {
     let lastVerified: string | null = null;
     
     try {
-      const messages: BaseMessage[] = [
-        new SystemMessage(`You are a helpful enterprise assistant integrated into a browser. 
+      // Get current browser context to inject into the conversation
+      const browserContext = await this.getCurrentBrowserContext();
+      
+      // Build system prompt with tools (refresh each call in case tools changed)
+      this.systemPrompt = new SystemMessage(`You are a helpful enterprise assistant integrated into a browser. 
         
         You have access to the following tools:
         ${tools.map((t: any) => `- ${t.name}: ${t.description} (Args: ${JSON.stringify(t.schema?.shape || {})})`).join('\n')}
@@ -145,6 +195,11 @@ export class AgentService {
              "tool": "final_response",
              "args": { "message": "Your text here" }
            }
+
+        CONVERSATION CONTEXT:
+        - You have memory of the entire conversation. Use previous messages to understand context.
+        - If the user refers to "it", "this page", "here", etc., use the conversation history and current browser state to understand what they mean.
+        - ${browserContext}
 
         JSON SAFETY:
         - Tool JSON must be valid JSON. If you include a CSS selector string, it MUST NOT contain unescaped double quotes (").
@@ -193,8 +248,9 @@ export class AgentService {
         
         BROWSER AUTOMATION STRATEGY:
         - You have no eyes. You must use "browser_observe" to see the page.
-        - Step 1: ALWAYS call "browser_navigate" to the target URL.
-        - Step 2: ALWAYS call "browser_observe" with scope="main" to see relevant page content (not header noise).
+        - For EXTERNAL WEBSITES (not localhost): Use the current browser state above. If you're already on a site (e.g. youtube.com), interact with it directly using browser_type, browser_click, browser_observe. Do NOT navigate away unless asked.
+        - Step 1: Check current browser state. If already on the target site, skip navigation.
+        - Step 2: Use "browser_observe" with scope="main" to see relevant page content.
         - Step 3: Prefer "browser_click_text" when you can describe a link/button by visible text (more robust than guessing aria-label/href).
         - Step 4: Use selectors returned by "browser_observe" (which are JSON-safe) for "browser_click", "browser_type", "browser_select".
         - Step 5: Verify outcomes using "browser_wait_for_text", "browser_wait_for_text_in", or "browser_extract_main_text".
@@ -206,8 +262,19 @@ export class AgentService {
         Assistant: { "tool": "browser_observe", "args": { "scope": "main" } }
         User: Tool Output: { "interactiveElements": [...] }
         Assistant: { "tool": "final_response", "args": { "message": "I have navigated to Jira." } }
-        `),
-        new HumanMessage(userMessage),
+        `);
+      
+      // Add user message to conversation history with browser context
+      const contextualUserMessage = new HumanMessage(`[${browserContext}]\n\nUser request: ${userMessage}`);
+      this.conversationHistory.push(contextualUserMessage);
+      
+      // Trim history if it's getting too long
+      this.trimConversationHistory();
+      
+      // Build messages array: system prompt + conversation history
+      const messages: BaseMessage[] = [
+        this.systemPrompt,
+        ...this.conversationHistory,
       ];
 
       // ReAct Loop (Max 15 turns)
@@ -290,6 +357,8 @@ export class AgentService {
                 continue;
               }
             }
+            // Save final response to conversation history
+            this.conversationHistory.push(new AIMessage(content));
             return finalMessage;
         }
 
@@ -314,20 +383,31 @@ export class AgentService {
                   }
                 }
                 
-                // Add interaction to history
-                // We add the assistant's JSON response
-                messages.push(new AIMessage(content));
-                // Treat tool output as untrusted system data (reduces prompt-injection risk)
-                messages.push(new SystemMessage(`Tool '${(action as any).tool}' Output:\n${result}`));
+                // Add interaction to both local messages and persistent history
+                const aiMsg = new AIMessage(content);
+                const toolOutputMsg = new SystemMessage(`Tool '${(action as any).tool}' Output:\n${result}`);
+                messages.push(aiMsg);
+                messages.push(toolOutputMsg);
+                // Persist to conversation history for future calls
+                this.conversationHistory.push(aiMsg);
+                this.conversationHistory.push(toolOutputMsg);
             } catch (err: any) {
                 console.error(`Tool execution failed: ${err}`);
-                messages.push(new AIMessage(content));
-                messages.push(new SystemMessage(`Tool Execution Error: ${err.message}`));
+                const aiMsg = new AIMessage(content);
+                const errorMsg = new SystemMessage(`Tool Execution Error: ${err.message}`);
+                messages.push(aiMsg);
+                messages.push(errorMsg);
+                this.conversationHistory.push(aiMsg);
+                this.conversationHistory.push(errorMsg);
             }
         } else {
             console.error(`Tool not found: ${(action as any).tool}`);
-            messages.push(new AIMessage(content));
-            messages.push(new SystemMessage(`Error: Tool '${(action as any).tool}' not found. Available tools: ${tools.map((t: any) => t.name).join(', ')}`));
+            const aiMsg = new AIMessage(content);
+            const errorMsg = new SystemMessage(`Error: Tool '${(action as any).tool}' not found. Available tools: ${tools.map((t: any) => t.name).join(', ')}`);
+            messages.push(aiMsg);
+            messages.push(errorMsg);
+            this.conversationHistory.push(aiMsg);
+            this.conversationHistory.push(errorMsg);
         }
       }
 
