@@ -48,7 +48,7 @@ This phase focuses on elevating the browser's aesthetic to a commercial standard
         - If correct, unlock Dev Mode. If cancelled, fallback to Personal Mode.
     - **Git:** `git add . && git commit -m "feat(security): add password protection for dev mode" && git push origin PersonalvsDevDiff`
 
-- [ ] **Task 4.6: Feature Gating (Mock SaaS)**
+- [x] **Task 4.6: Feature Gating (Mock SaaS)**
     - **Description:**
         - Update `useBrowserStore` to store `appMode`: `'personal' | 'dev'`.
         - **Personal Mode:**

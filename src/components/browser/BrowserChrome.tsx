@@ -1,10 +1,10 @@
 import { useBrowserStore } from '@/lib/store';
-import { X, Plus, Search, RotateCw, ArrowLeft, ArrowRight, Loader2, Globe, Lock, Unlock, MoreVertical, Terminal, ZoomIn, ZoomOut, History as HistoryIcon, Pin, Copy, Trash } from 'lucide-react';
+import { X, Plus, Search, RotateCw, ArrowLeft, ArrowRight, Loader2, Globe, Lock, Unlock, MoreVertical, Terminal, ZoomIn, ZoomOut, History as HistoryIcon, Pin, Copy, Trash, RefreshCcw } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { cn, getFaviconUrl } from '@/lib/utils';
 
 export function BrowserChrome() {
-  const { tabs, activeTabId, addTab, removeTab, setActiveTab, updateTab } = useBrowserStore();
+  const { tabs, activeTabId, addTab, removeTab, setActiveTab, updateTab, appMode, setAppMode } = useBrowserStore();
   const activeTab = tabs.find(t => t.id === activeTabId);
   const [urlInput, setUrlInput] = useState('');
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -221,6 +221,19 @@ export function BrowserChrome() {
                             className="w-full text-left px-3 py-2 text-sm hover:bg-secondary/50 flex items-center gap-2 text-muted-foreground hover:text-foreground"
                         >
                             <Terminal size={14} /> Developer Tools
+                        </button>
+
+                        <div className="h-[1px] bg-border/50 my-1" />
+
+                        {/* Switch Mode */}
+                        <button 
+                            onClick={() => { 
+                                setAppMode(null);
+                                setIsMenuOpen(false); 
+                            }}
+                            className="w-full text-left px-3 py-2 text-sm hover:bg-secondary/50 flex items-center gap-2 text-muted-foreground hover:text-foreground"
+                        >
+                            <RefreshCcw size={14} /> Switch Mode
                         </button>
                     </div>
                  )}
