@@ -17,6 +17,7 @@ export type TelemetryEvent = {
     | 'plan_step_end'
     | 'approval_request'
     | 'approval_decision'
+    | 'policy_evaluation'
     | 'error';
   name?: string;
   data?: Record<string, unknown>;

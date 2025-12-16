@@ -50,6 +50,7 @@ export class ToolRegistry {
   // Convert to LangChain tools format
   toLangChainTools(): StructuredTool[] {
     const getApprovalHandler = () => this.approvalHandler;
+    const policyService = this.policyService;
 
     return this.getAllTools().map(tool => {
        return new class extends StructuredTool {
@@ -97,7 +98,6 @@ export class ToolRegistry {
           }
 
           const approvalHandler = getApprovalHandler();
-          const policyService = this.policyService;
           
           // Use PolicyService if available, otherwise fall back to legacy approval
           if (policyService) {

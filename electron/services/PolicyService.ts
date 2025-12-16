@@ -1,5 +1,6 @@
 import { TelemetryService } from './TelemetryService';
 import { AuditService } from './AuditService';
+import { v4 as uuidv4 } from 'uuid';
 
 export enum RiskLevel {
   LOW = 0,
@@ -140,7 +141,7 @@ export class PolicyService {
         const dangerousTools = ['system_execute', 'system_delete_file', 'code_execute'];
         return dangerousTools.includes(ctx.toolName);
       },
-      evaluate: (ctx) => ({
+      evaluate: (_ctx) => ({
         decision: PolicyDecision.DENY,
         riskLevel: RiskLevel.HIGH,
         reason: 'Dangerous system operations are not allowed',
@@ -201,7 +202,8 @@ export class PolicyService {
       priority: 70,
       match: (ctx) => {
         const fileOps = ['browser_upload_file', 'code_write_file', 'code_delete_file'];
-        const isExternal = ctx.domain && !DOMAIN_RISK_LEVELS[ctx.domain];
+        // Check if domain is present but NOT in our known domain list
+        const isExternal = Boolean(ctx.domain && !(ctx.domain in DOMAIN_RISK_LEVELS));
         return fileOps.includes(ctx.toolName) && isExternal;
       },
       evaluate: (ctx) => ({
@@ -260,6 +262,45 @@ export class PolicyService {
     
     if (!args || typeof args !== 'object') return RiskLevel.LOW;
     
+    if (context.toolName === 'browser_navigate') {
+      if (args && typeof args.url === 'string') {
+        try {
+          const u = new URL(args.url);
+          const domain = u.port ? `${u.hostname}:${u.port}` : u.hostname;
+          const domainRisk = DOMAIN_RISK_LEVELS[domain];
+          // If domain is unknown (undefined) or explicitly HIGH risk
+          if (domainRisk === RiskLevel.HIGH || domainRisk === undefined) {
+            return RiskLevel.HIGH;
+          }
+        } catch {
+          // Invalid URL is high risk
+          return RiskLevel.HIGH;
+        }
+      }
+    }
+
+    if (context.toolName === 'browser_execute_plan') {
+      try {
+        const steps = Array.isArray((args as any)?.steps) ? (args as any).steps : [];
+        for (const step of steps) {
+          if (step?.action === 'navigate' && typeof step?.url === 'string') {
+            try {
+              const u = new URL(step.url);
+              const domain = u.port ? `${u.hostname}:${u.port}` : u.hostname;
+              const domainRisk = DOMAIN_RISK_LEVELS[domain];
+              if (domainRisk === RiskLevel.HIGH || domainRisk === undefined) {
+                return RiskLevel.HIGH;
+              }
+            } catch {
+              return RiskLevel.HIGH;
+            }
+          }
+        }
+      } catch {
+        return RiskLevel.MEDIUM;
+      }
+    }
+
     // Check for risky patterns
     const riskyPatterns = [
       /password/i,
@@ -299,44 +340,61 @@ export class PolicyService {
 
   async evaluate(context: PolicyContext): Promise<PolicyEvaluation> {
     const startTime = Date.now();
-    const runId = context.runId || AgentRunContext.getRunId();
+    const runId = context.runId;
     
     // Find the first matching rule
     for (const rule of this.rules) {
       if (rule.match(context)) {
         const evaluation = rule.evaluate(context);
-        
-        // Log telemetry
-        await this.telemetryService.emit({
-          type: 'policy_evaluation',
-          timestamp: new Date().toISOString(),
-          runId,
-          data: {
-            toolName: context.toolName,
-            domain: context.domain,
-            userMode: context.userMode,
-            decision: evaluation.decision,
-            riskLevel: evaluation.riskLevel,
-            matchedRule: rule.name,
-            duration: Date.now() - startTime,
-          },
-        });
-        
-        // Log audit
-        await this.auditService.log({
-          type: 'policy_evaluation',
-          timestamp: new Date().toISOString(),
-          runId,
-          data: {
-            toolName: context.toolName,
-            domain: context.domain,
-            decision: evaluation.decision,
-            riskLevel: evaluation.riskLevel,
-            reason: evaluation.reason,
-            matchedRule: rule.name,
-            argsHash: this.hashArgs(context.args),
-          },
-        }).catch(() => undefined);
+
+        const durationMs = Date.now() - startTime;
+        const argsHash = this.hashArgs(context.args);
+
+        try {
+          await this.telemetryService.emit({
+            eventId: uuidv4(),
+            runId,
+            ts: new Date().toISOString(),
+            type: 'policy_evaluation',
+            name: 'PolicyService',
+            data: {
+              toolName: context.toolName,
+              domain: context.domain,
+              userMode: context.userMode,
+              decision: evaluation.decision,
+              riskLevel: evaluation.riskLevel,
+              matchedRule: rule.name,
+              durationMs,
+              argsHash,
+            },
+          });
+        } catch {
+          // ignore telemetry failures
+        }
+
+        try {
+          await this.auditService
+            .log({
+              actor: 'system',
+              action: 'policy_evaluation',
+              details: {
+                runId,
+                toolName: context.toolName,
+                domain: context.domain,
+                userMode: context.userMode,
+                decision: evaluation.decision,
+                riskLevel: evaluation.riskLevel,
+                reason: evaluation.reason,
+                matchedRule: rule.name,
+                durationMs,
+                argsHash,
+              },
+              status: 'success',
+            })
+            .catch(() => undefined);
+        } catch {
+          // ignore
+        }
         
         return evaluation;
       }
