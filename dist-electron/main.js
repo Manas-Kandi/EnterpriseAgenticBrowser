@@ -42891,22 +42891,52 @@ class BrowserAutomationService {
       execute: async ({ selector }) => {
         try {
           const target = await this.getTarget();
-          const matches = await this.querySelectorCount(target, selector);
-          if (matches > 1) {
-            return `Refusing to click non-unique selector (matches=${matches}): ${selector}`;
-          }
           await this.waitForSelector(target, selector, 5e3);
           await target.executeJavaScript(
             `(() => {
-                const el = document.querySelector(${JSON.stringify(selector)});
+                // Helper to find element including shadow DOM
+                const findElement = (sel) => {
+                  const queryDeep = (root) => {
+                    const el = root.querySelector(sel);
+                    if (el) return el;
+                    if (root.shadowRoot) {
+                      const found = queryDeep(root.shadowRoot);
+                      if (found) return found;
+                    }
+                    const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
+                    while (walker.nextNode()) {
+                      const node = walker.currentNode;
+                      if (node.shadowRoot) {
+                        const found = queryDeep(node.shadowRoot);
+                        if (found) return found;
+                      }
+                    }
+                    return null;
+                  };
+                  return queryDeep(document);
+                };
+
+                const el = findElement(${JSON.stringify(selector)}) || document.querySelector(${JSON.stringify(selector)});
                 if (!el) throw new Error('Element not found');
+                
                 const isDisabled = ('disabled' in el && Boolean(el.disabled)) || el.getAttribute?.('aria-disabled') === 'true';
                 if (isDisabled) throw new Error('Element is disabled');
+                
                 el.scrollIntoView({ block: 'center', inline: 'center' });
-                el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
-                el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-                el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
-                el.click();
+                
+                // Try multiple click strategies
+                try {
+                  el.click(); // Standard click
+                } catch (e) { console.error('Standard click failed', e); }
+                
+                // Dispatch events (crucial for React/Angular/Vue apps)
+                const eventOpts = { bubbles: true, cancelable: true, view: window };
+                el.dispatchEvent(new MouseEvent('mouseover', eventOpts));
+                el.dispatchEvent(new MouseEvent('mousedown', eventOpts));
+                el.dispatchEvent(new MouseEvent('mouseup', eventOpts));
+                el.dispatchEvent(new MouseEvent('click', eventOpts));
+                
+                return true;
               })()`,
             true
           );
