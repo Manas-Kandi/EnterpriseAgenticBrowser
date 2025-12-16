@@ -10,6 +10,7 @@ export interface BrowserTab {
   action?: 'back' | 'forward' | 'reload' | 'stop' | 'devtools' | 'zoomIn' | 'zoomOut' | null;
   canGoBack?: boolean;
   canGoForward?: boolean;
+  pinned?: boolean;
 }
 
 export interface HistoryItem {

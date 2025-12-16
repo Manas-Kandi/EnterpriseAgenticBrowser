@@ -1,5 +1,5 @@
 import { useBrowserStore } from '@/lib/store';
-import { X, Plus, Search, RotateCw, ArrowLeft, ArrowRight, Loader2, Globe, Lock, Unlock, MoreVertical, Terminal, ZoomIn, ZoomOut, History as HistoryIcon } from 'lucide-react';
+import { X, Plus, Search, RotateCw, ArrowLeft, ArrowRight, Loader2, Globe, Lock, Unlock, MoreVertical, Terminal, ZoomIn, ZoomOut, History as HistoryIcon, Pin, Copy, Trash } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { cn, getFaviconUrl } from '@/lib/utils';
 
@@ -9,12 +9,18 @@ export function BrowserChrome() {
   const [urlInput, setUrlInput] = useState('');
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  
+  const [contextMenu, setContextMenu] = useState<{ x: number, y: number, tabId: string } | null>(null);
+  const contextMenuRef = useRef<HTMLDivElement>(null);
 
   // Close menu when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
         setIsMenuOpen(false);
+      }
+      if (contextMenuRef.current && !contextMenuRef.current.contains(event.target as Node)) {
+        setContextMenu(null);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -50,9 +56,14 @@ export function BrowserChrome() {
           <div
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
+            onContextMenu={(e) => {
+                e.preventDefault();
+                setContextMenu({ x: e.clientX, y: e.clientY, tabId: tab.id });
+            }}
             style={{ WebkitAppRegion: 'no-drag' } as any}
             className={cn(
-              "group flex items-center gap-2 px-3 py-1.5 rounded-t-lg text-xs min-w-[120px] max-w-[200px] cursor-pointer transition-all border-t border-x relative select-none",
+              "group flex items-center gap-2 px-3 py-1.5 rounded-t-lg text-xs cursor-pointer transition-all border-t border-x relative select-none",
+              tab.pinned ? "min-w-[40px] max-w-[40px] px-0 justify-center" : "min-w-[120px] max-w-[200px]",
               activeTabId === tab.id 
                 ? "bg-background border-border/40 text-foreground shadow-sm z-10" 
                 : "bg-secondary/20 border-transparent text-muted-foreground hover:bg-secondary/40 hover:text-foreground/80"
@@ -74,17 +85,19 @@ export function BrowserChrome() {
                 <Globe size={12} className={cn("hidden text-muted-foreground/70", tab.loading ? "hidden" : "hidden group-hover:block")} />
             </div>
 
-            <span className="truncate flex-1 font-medium">{tab.title || 'New Tab'}</span>
+            {!tab.pinned && <span className="truncate flex-1 font-medium">{tab.title || 'New Tab'}</span>}
             
+            {!tab.pinned && (
             <button
               onClick={(e) => { e.stopPropagation(); removeTab(tab.id); }}
               className={cn(
                   "p-0.5 rounded-md transition-all text-muted-foreground hover:text-destructive hover:bg-background/80 opacity-0 group-hover:opacity-100",
-                  activeTabId === tab.id && "opacity-100" // Always show close button on active tab
+                  activeTabId === tab.id && "opacity-0 group-hover:opacity-100" // Close button only on hover
               )}
             >
               <X size={12} />
             </button>
+            )}
             
             {/* Active Tab Bottom Hider (blends into toolbar) */}
             {activeTabId === tab.id && <div className="absolute bottom-[-1px] left-0 right-0 h-[1px] bg-background z-20" />}
@@ -219,6 +232,37 @@ export function BrowserChrome() {
             <div className="absolute bottom-[-1px] left-0 h-[2px] bg-blue-500 animate-progress w-full origin-left" style={{ animation: 'progress 2s ease-in-out infinite' }} />
          )}
       </div>
+
+      {/* Context Menu */}
+      {contextMenu && (
+        <div 
+            ref={contextMenuRef}
+            className="fixed bg-popover border border-border rounded-lg shadow-xl py-1 z-50 min-w-[160px] animate-in fade-in duration-200"
+            style={{ top: contextMenu.y, left: contextMenu.x }}
+        >
+            <button onClick={() => { 
+                const t = tabs.find(t => t.id === contextMenu.tabId);
+                if(t) updateTab(t.id, { pinned: !t.pinned });
+                setContextMenu(null);
+            }} className="w-full text-left px-3 py-2 text-sm hover:bg-secondary/50 flex items-center gap-2 text-foreground">
+                <Pin size={14} /> {tabs.find(t => t.id === contextMenu.tabId)?.pinned ? 'Unpin Tab' : 'Pin Tab'}
+            </button>
+            <button onClick={() => {
+                const t = tabs.find(t => t.id === contextMenu.tabId);
+                if(t) addTab(t.url);
+                setContextMenu(null);
+            }} className="w-full text-left px-3 py-2 text-sm hover:bg-secondary/50 flex items-center gap-2 text-foreground">
+                <Copy size={14} /> Duplicate Tab
+            </button>
+            <div className="h-[1px] bg-border/50 my-1" />
+            <button onClick={() => {
+                removeTab(contextMenu.tabId);
+                setContextMenu(null);
+            }} className="w-full text-left px-3 py-2 text-sm hover:bg-secondary/50 flex items-center gap-2 text-destructive">
+                <Trash size={14} /> Close Tab
+            </button>
+        </div>
+      )}
     </div>
   );
 }

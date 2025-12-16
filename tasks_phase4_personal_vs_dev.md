@@ -11,7 +11,7 @@ This phase focuses on elevating the browser's aesthetic to a commercial standard
 
 ## Phase 1: High-Fidelity UI/UX Polish
 
-- [ ] **Task 4.1: Professional Window Controls & Layout**
+- [x] **Task 4.1: Professional Window Controls & Layout**
     - **Description:**
         - **Mac Traffic Lights:** Ensure the top bar properly accommodates macOS window controls (padding-left). Make the top bar draggable (`-webkit-app-region: drag`).
         - **Glassmorphism:** Apply subtle backdrop-blur and translucency to the Sidebar and Top Bar.
