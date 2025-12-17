@@ -1,7 +1,7 @@
 import ReactMarkdown from 'react-markdown';
 import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
-import { Send, User, Bot, AlertTriangle, Check, X, ChevronDown, Brain, Zap, RotateCcw, ThumbsUp, ThumbsDown } from 'lucide-react';
+import { Send, User, Bot, AlertTriangle, Check, X, ChevronDown, Brain, Zap, RotateCcw } from 'lucide-react';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -32,7 +32,7 @@ export function AgentPanel() {
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [currentModelId, setCurrentModelId] = useState<string>('');
   const [showModelSelector, setShowModelSelector] = useState(false);
-  const [feedbackMap, setFeedbackMap] = useState<Record<number, 'up' | 'down'>>({});
+  const [feedbackMap, setFeedbackMap] = useState<Record<number, 'worked' | 'failed' | 'partial'>>({});
   const [showTrace, setShowTrace] = useState(false);
 
   const approvalRequest = approvalQueue.length > 0 ? approvalQueue[0] : null;
@@ -51,11 +51,24 @@ export function AgentPanel() {
     }
   };
 
-  const handleFeedback = async (skillId: string, success: boolean, index: number) => {
+  const getSkillVersionFromMessage = (content: string): number | null => {
+    try {
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      const jsonStr = jsonMatch ? jsonMatch[0] : content;
+      const data = JSON.parse(jsonStr);
+      const v = data?.skill?.currentVersion;
+      return typeof v === 'number' ? v : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const handleFeedback = async (skillId: string, label: 'worked' | 'failed' | 'partial', index: number) => {
     if (!window.agent) return;
     try {
-        await window.agent.sendFeedback(skillId, success);
-        setFeedbackMap(prev => ({ ...prev, [index]: success ? 'up' : 'down' }));
+        const skillVersion = getSkillVersionFromMessage(messages[index]?.content ?? '') ?? undefined;
+        await window.agent.sendFeedback(skillId, label, skillVersion);
+        setFeedbackMap(prev => ({ ...prev, [index]: label }));
     } catch (err) {
         console.error('Failed to send feedback:', err);
     }
@@ -244,28 +257,48 @@ export function AgentPanel() {
                                     </details>
                                     {/* Feedback Buttons for Skills */}
                                     {getSkillIdFromMessage(msg.content) && (
-                                        <div className="flex gap-2 mt-1 ml-2 opacity-50 hover:opacity-100 transition-opacity">
-                                            <button 
+                                        <div className="flex gap-2 mt-1 ml-2 opacity-60 hover:opacity-100 transition-opacity">
+                                            <button
                                                 onClick={() => {
                                                     const id = getSkillIdFromMessage(msg.content);
-                                                    if (id) handleFeedback(id, true, i);
+                                                    if (id) handleFeedback(id, 'worked', i);
                                                 }}
-                                                className={cn("p-1 hover:text-green-500 hover:bg-green-500/10 rounded transition-colors", feedbackMap[i] === 'up' && "text-green-500 bg-green-500/10")}
+                                                className={cn(
+                                                  "px-2 py-0.5 rounded border border-border/40 hover:bg-green-500/10 hover:text-green-500 transition-colors",
+                                                  feedbackMap[i] === 'worked' && "bg-green-500/10 text-green-500"
+                                                )}
                                                 disabled={!!feedbackMap[i]}
-                                                title="This skill worked"
+                                                title="Worked"
                                             >
-                                                <ThumbsUp size={10} />
+                                                Worked
                                             </button>
-                                            <button 
+                                            <button
                                                 onClick={() => {
                                                     const id = getSkillIdFromMessage(msg.content);
-                                                    if (id) handleFeedback(id, false, i);
+                                                    if (id) handleFeedback(id, 'partial', i);
                                                 }}
-                                                className={cn("p-1 hover:text-red-500 hover:bg-red-500/10 rounded transition-colors", feedbackMap[i] === 'down' && "text-red-500 bg-red-500/10")}
+                                                className={cn(
+                                                  "px-2 py-0.5 rounded border border-border/40 hover:bg-amber-500/10 hover:text-amber-500 transition-colors",
+                                                  feedbackMap[i] === 'partial' && "bg-amber-500/10 text-amber-500"
+                                                )}
                                                 disabled={!!feedbackMap[i]}
-                                                title="This skill failed"
+                                                title="Partially"
                                             >
-                                                <ThumbsDown size={10} />
+                                                Partial
+                                            </button>
+                                            <button
+                                                onClick={() => {
+                                                    const id = getSkillIdFromMessage(msg.content);
+                                                    if (id) handleFeedback(id, 'failed', i);
+                                                }}
+                                                className={cn(
+                                                  "px-2 py-0.5 rounded border border-border/40 hover:bg-red-500/10 hover:text-red-500 transition-colors",
+                                                  feedbackMap[i] === 'failed' && "bg-red-500/10 text-red-500"
+                                                )}
+                                                disabled={!!feedbackMap[i]}
+                                                title="Didn’t work"
+                                            >
+                                                Didn’t work
                                             </button>
                                         </div>
                                     )}

@@ -5,6 +5,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { AgentTool, toolRegistry } from './ToolRegistry';
 import { agentRunContext } from './AgentRunContext';
 
+export type SkillFeedbackLabel = 'worked' | 'failed' | 'partial';
+
 export type SkillStep = {
   action: 'navigate' | 'click' | 'type' | 'select' | 'wait';
   url?: string;
@@ -21,13 +23,23 @@ export type Skill = {
   fingerprint?: string; // Optional URL pattern
   steps: SkillStep[];
   currentVersion: number;
+  embedding?: number[];
   stats: {
     successes: number;
     failures: number;
+    partials?: number;
     lastUsed: number;
     lastOutcomeAt?: number;
     lastOutcomeSuccess?: boolean;
   };
+  feedback?: Array<{
+    ts: number;
+    label: SkillFeedbackLabel;
+    version?: number;
+    runId?: string;
+    domain?: string;
+    fingerprint?: string;
+  }>;
   versions: Array<{
     version: number;
     steps: SkillStep[];
@@ -88,9 +100,71 @@ export class TaskKnowledgeService {
       }
       if (typeof s.stats.successes !== 'number') (s as any).stats.successes = 0;
       if (typeof s.stats.failures !== 'number') (s as any).stats.failures = 0;
+      if (typeof (s.stats as any).partials !== 'number') (s as any).stats.partials = 0;
       if (typeof s.stats.lastUsed !== 'number') (s as any).stats.lastUsed = Date.now();
       if (!Array.isArray(s.tags)) (s as any).tags = [];
+
+      if (!Array.isArray((s as any).feedback)) (s as any).feedback = [];
+      if (!Array.isArray((s as any).embedding) || (s as any).embedding.length === 0) {
+        (s as any).embedding = this.computeEmbedding(this.buildSkillText(s));
+      }
     }
+
+    try {
+      await this.save();
+    } catch {
+      // ignore
+    }
+  }
+
+  private normalizeText(text: string): string {
+    return String(text ?? '')
+      .toLowerCase()
+      .replace(/[^a-z0-9_\-\s/.:]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  private tokenize(text: string): string[] {
+    const normalized = this.normalizeText(text);
+    if (!normalized) return [];
+    return normalized.split(' ').filter(Boolean).slice(0, 400);
+  }
+
+  private computeEmbedding(text: string): number[] {
+    const dim = 256;
+    const vec = new Array(dim).fill(0);
+    const tokens = this.tokenize(text);
+    for (const tok of tokens) {
+      let h = 2166136261;
+      for (let i = 0; i < tok.length; i++) {
+        h ^= tok.charCodeAt(i);
+        h = Math.imul(h, 16777619);
+      }
+      const idx = Math.abs(h) % dim;
+      vec[idx] += 1;
+    }
+    let norm = 0;
+    for (const x of vec) norm += x * x;
+    norm = Math.sqrt(norm) || 1;
+    return vec.map((x) => x / norm);
+  }
+
+  private cosineSimilarity(a: number[] | undefined, b: number[] | undefined): number {
+    if (!a || !b || a.length === 0 || b.length === 0) return 0;
+    const n = Math.min(a.length, b.length);
+    let dot = 0;
+    for (let i = 0; i < n; i++) dot += a[i] * b[i];
+    return dot;
+  }
+
+  private buildSkillText(skill: Skill): string {
+    const stepBits = (skill.steps || [])
+      .map((s) => [s.action, s.url, s.selector, s.value, s.text].filter(Boolean).join(' '))
+      .join(' ');
+    return [skill.name, skill.description, skill.domain, skill.fingerprint ?? '', ...(skill.tags || []), stepBits]
+      .filter(Boolean)
+      .join(' ');
   }
 
   private async save() {
@@ -122,6 +196,7 @@ export class TaskKnowledgeService {
     }
 
     // Score candidates
+    const queryEmbedding = this.computeEmbedding(query);
     const scored = candidates.map(skill => {
       let score = 0;
       // Exact name match
@@ -132,14 +207,27 @@ export class TaskKnowledgeService {
       if (skill.tags.some(t => q.includes(t.toLowerCase()))) score += 3;
       
       // Prefer high success rate
-      const total = skill.stats.successes + skill.stats.failures;
+      const partials = (skill.stats as any).partials ?? 0;
+      const total = skill.stats.successes + skill.stats.failures + partials;
       if (total > 0) {
-        score += (skill.stats.successes / total) * 2;
+        const weightedSuccess = (skill.stats.successes + 0.5 * partials) / total;
+        score += weightedSuccess * 2;
       }
 
       if (fingerprint && skill.fingerprint) {
         if (fingerprint === skill.fingerprint) score += 3;
         else if (fingerprint.includes(skill.fingerprint) || skill.fingerprint.includes(fingerprint)) score += 1;
+      }
+
+      const sim = this.cosineSimilarity(skill.embedding, queryEmbedding);
+      score += sim * 10;
+
+      const fb = Array.isArray(skill.feedback) ? skill.feedback : [];
+      const recent = fb.slice(-6);
+      for (const e of recent) {
+        if (e.label === 'worked') score += 0.6;
+        if (e.label === 'partial') score += 0.2;
+        if (e.label === 'failed') score -= 0.6;
       }
 
       return { skill, score };
@@ -186,6 +274,7 @@ export class TaskKnowledgeService {
       existing.stats.successes += 1;
       existing.stats.lastOutcomeAt = Date.now();
       existing.stats.lastOutcomeSuccess = true;
+      existing.embedding = this.computeEmbedding(this.buildSkillText(existing));
       
       this.skills[existingIndex] = existing;
     } else {
@@ -198,7 +287,20 @@ export class TaskKnowledgeService {
         fingerprint: input.fingerprint,
         steps: input.steps,
         currentVersion: 1,
-        stats: { successes: 1, failures: 0, lastUsed: Date.now(), lastOutcomeAt: Date.now(), lastOutcomeSuccess: true },
+        embedding: this.computeEmbedding(this.buildSkillText({
+          id: 'tmp',
+          name: input.name,
+          description: input.description,
+          domain: input.domain,
+          fingerprint: input.fingerprint,
+          steps: input.steps,
+          currentVersion: 1,
+          stats: { successes: 1, failures: 0, partials: 0, lastUsed: Date.now(), lastOutcomeAt: Date.now(), lastOutcomeSuccess: true },
+          versions: [{ version: 1, steps: input.steps, createdAt: Date.now() }],
+          tags: input.tags,
+        } as Skill)),
+        stats: { successes: 1, failures: 0, partials: 0, lastUsed: Date.now(), lastOutcomeAt: Date.now(), lastOutcomeSuccess: true },
+        feedback: [],
         versions: [{ version: 1, steps: input.steps, createdAt: Date.now() }],
         tags: input.tags,
       };
@@ -208,15 +310,44 @@ export class TaskKnowledgeService {
   }
 
   recordOutcome(skillId: string, success: boolean) {
-    const skill = this.skills.find(s => s.id === skillId);
-    if (skill) {
-      if (success) skill.stats.successes++;
-      else skill.stats.failures++;
-      skill.stats.lastUsed = Date.now();
-      skill.stats.lastOutcomeAt = Date.now();
-      skill.stats.lastOutcomeSuccess = success;
-      this.save();
-    }
+    this.recordFeedback(skillId, success ? 'worked' : 'failed');
+  }
+
+  recordFeedback(skillId: string, label: SkillFeedbackLabel, version?: number) {
+    const skill = this.skills.find((s) => s.id === skillId);
+    if (!skill) return;
+    if (label === 'worked') skill.stats.successes++;
+    if (label === 'failed') skill.stats.failures++;
+    if (label === 'partial') (skill.stats as any).partials = ((skill.stats as any).partials ?? 0) + 1;
+
+    skill.stats.lastUsed = Date.now();
+    skill.stats.lastOutcomeAt = Date.now();
+    skill.stats.lastOutcomeSuccess = label === 'worked';
+
+    const runId = agentRunContext.getRunId() ?? undefined;
+    const ctx = agentRunContext.getBrowserContext();
+    const entry = {
+      ts: Date.now(),
+      label,
+      version: version ?? skill.currentVersion,
+      runId,
+      domain: ctx?.domain,
+      fingerprint: (() => {
+        const url = ctx?.url;
+        if (!url) return undefined;
+        try {
+          const u = new URL(url);
+          return u.pathname || undefined;
+        } catch {
+          return undefined;
+        }
+      })(),
+    };
+
+    if (!Array.isArray(skill.feedback)) skill.feedback = [];
+    skill.feedback.push(entry);
+    if (skill.feedback.length > 200) skill.feedback = skill.feedback.slice(-200);
+    this.save();
   }
 
   rollbackSkill(skillId: string, version: number): boolean {
@@ -329,12 +460,21 @@ export class TaskKnowledgeService {
       description: 'Record whether a skill execution succeeded or failed.',
       schema: z.object({
         skillId: z.string(),
-        success: z.boolean(),
+        success: z.boolean().optional(),
+        label: z.enum(['worked', 'failed', 'partial']).optional(),
+        version: z.number().optional(),
       }),
       execute: async (args: unknown) => {
-        const { skillId, success } = args as { skillId: string; success: boolean };
-        this.recordOutcome(skillId, success);
-        return `Recorded ${success ? 'success' : 'failure'} for skill ${skillId}.`;
+        const { skillId, success, label, version } = args as {
+          skillId: string;
+          success?: boolean;
+          label?: SkillFeedbackLabel;
+          version?: number;
+        };
+        const resolvedLabel: SkillFeedbackLabel =
+          label ?? (success === true ? 'worked' : success === false ? 'failed' : 'worked');
+        this.recordFeedback(skillId, resolvedLabel, version);
+        return `Recorded ${resolvedLabel} for skill ${skillId}.`;
       },
     };
 

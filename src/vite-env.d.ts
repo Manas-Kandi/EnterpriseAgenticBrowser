@@ -16,7 +16,7 @@ interface Window {
     onApprovalRequest: (callback: (payload: { requestId: string; toolName: string; args: unknown; runId?: string; timeoutMs?: number }) => void) => (() => void);
     onApprovalTimeout: (callback: (payload: any) => void) => () => void;
     respondApproval: (requestId: string, approved: boolean) => void;
-    sendFeedback: (skillId: string, success: boolean) => Promise<boolean>;
+    sendFeedback: (skillId: string, outcome: boolean | 'worked' | 'failed' | 'partial', version?: number) => Promise<boolean>;
     onStep: (callback: (step: any) => void) => () => void;
   }
   vault?: {

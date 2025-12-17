@@ -192,11 +192,41 @@ app.whenReady().then(() => {
     });
   });
 
-  ipcMain.handle('agent:feedback', async (_, { skillId, success }) => {
-    if (typeof skillId === 'string' && typeof success === 'boolean') {
-      taskKnowledgeService.recordOutcome(skillId, success);
+  ipcMain.handle('agent:feedback', async (_event, payload: unknown) => {
+    const p = payload as {
+      skillId?: unknown;
+      success?: unknown;
+      label?: unknown;
+      version?: unknown;
+    };
+
+    const id = p?.skillId;
+    if (typeof id !== 'string') return false;
+
+    const label = p?.label;
+    const version = p?.version;
+    const successVal = p?.success;
+
+    if (label === 'worked' || label === 'failed' || label === 'partial') {
+      const v = typeof version === 'number' ? version : undefined;
+      if (typeof (taskKnowledgeService as unknown as { recordFeedback?: unknown }).recordFeedback === 'function') {
+        (taskKnowledgeService as unknown as { recordFeedback: (skillId: string, l: 'worked' | 'failed' | 'partial', version?: number) => void }).recordFeedback(
+          id,
+          label,
+          v
+        );
+        return true;
+      }
+      taskKnowledgeService.recordOutcome(id, label === 'worked');
+      return true;
     }
-    return true;
+
+    if (typeof successVal === 'boolean') {
+      taskKnowledgeService.recordOutcome(id, successVal);
+      return true;
+    }
+
+    return false;
   });
 
   ipcMain.handle('telemetry:export', async () => {
