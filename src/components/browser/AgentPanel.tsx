@@ -1,7 +1,8 @@
 import ReactMarkdown from 'react-markdown';
 import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
-import { Settings, Send, User, Bot, AlertTriangle, Check, X, ChevronDown, Brain, Zap, RotateCcw } from 'lucide-react';
+import { Send, User, Bot, AlertTriangle, Check, X, ChevronDown, Brain, Zap, RotateCcw, MessageSquare, Eye, Play, Shield, Rocket } from 'lucide-react';
+import { useBrowserStore } from '@/lib/store';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -11,8 +12,11 @@ interface Message {
 }
 
 interface ApprovalRequest {
+  requestId: string;
   toolName: string;
   args: any;
+  runId?: string;
+  timeoutMs?: number;
 }
 
 interface ModelInfo {
@@ -22,13 +26,55 @@ interface ModelInfo {
 }
 
 export function AgentPanel() {
+  const { agentMode, agentPermissionMode, setAgentMode, setAgentPermissionMode } = useBrowserStore();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
-  const [approvalRequest, setApprovalRequest] = useState<ApprovalRequest | null>(null);
+  const [approvalQueue, setApprovalQueue] = useState<ApprovalRequest[]>([]);
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [currentModelId, setCurrentModelId] = useState<string>('');
   const [showModelSelector, setShowModelSelector] = useState(false);
+  const [feedbackMap, setFeedbackMap] = useState<Record<number, 'worked' | 'failed' | 'partial'>>({});
+  const [showTrace, setShowTrace] = useState(false);
+
+  const approvalRequest = approvalQueue.length > 0 ? approvalQueue[0] : null;
+
+  // Helper to extract skill ID from observation
+  const getSkillIdFromMessage = (content: string): string | null => {
+    try {
+      if (!content.includes('"skill"') || !content.includes('"id"')) return null;
+      // Try to find the JSON object if it's wrapped in text
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      const jsonStr = jsonMatch ? jsonMatch[0] : content;
+      const data = JSON.parse(jsonStr);
+      return data?.skill?.id || null;
+    } catch {
+      return null;
+    }
+  };
+
+  const getSkillVersionFromMessage = (content: string): number | null => {
+    try {
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      const jsonStr = jsonMatch ? jsonMatch[0] : content;
+      const data = JSON.parse(jsonStr);
+      const v = data?.skill?.currentVersion;
+      return typeof v === 'number' ? v : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const handleFeedback = async (skillId: string, label: 'worked' | 'failed' | 'partial', index: number) => {
+    if (!window.agent) return;
+    try {
+        const skillVersion = getSkillVersionFromMessage(messages[index]?.content ?? '') ?? undefined;
+        await window.agent.sendFeedback(skillId, label, skillVersion);
+        setFeedbackMap(prev => ({ ...prev, [index]: label }));
+    } catch (err) {
+        console.error('Failed to send feedback:', err);
+    }
+  };
 
   useEffect(() => {
     if (!window.agent) return;
@@ -38,8 +84,22 @@ export function AgentPanel() {
     window.agent.getCurrentModel().then(setCurrentModelId).catch(console.error);
 
     // Listen for approval requests
-    const offApproval = window.agent.onApprovalRequest((toolName, args) => {
-      setApprovalRequest({ toolName, args });
+    const offApproval = window.agent.onApprovalRequest((payload: any) => {
+      const requestId = payload?.requestId;
+      const toolName = payload?.toolName;
+      if (typeof requestId !== 'string' || typeof toolName !== 'string') return;
+      setApprovalQueue((prev) => [...prev, payload as ApprovalRequest]);
+    });
+
+    const offApprovalTimeout = window.agent.onApprovalTimeout?.((payload: any) => {
+      const requestId = payload?.requestId;
+      if (typeof requestId !== 'string') return;
+      setApprovalQueue((prev) => prev.filter((req) => req.requestId !== requestId));
+      const toolName = typeof payload?.toolName === 'string' ? payload.toolName : 'action';
+      setMessages((prev) => [
+        ...prev,
+        { role: 'assistant', content: `Approval timed out for ${toolName}.`, type: 'observation' },
+      ]);
     });
     // Listen for agent steps
     const offStep = window.agent.onStep((step: any) => {
@@ -56,6 +116,7 @@ export function AgentPanel() {
 
     return () => {
       offApproval?.();
+      offApprovalTimeout?.();
       offStep?.();
     };
   }, []);
@@ -86,13 +147,33 @@ export function AgentPanel() {
 
   const handleApproval = (approved: boolean) => {
     if (approvalRequest && window.agent) {
-      window.agent.respondApproval(approvalRequest.toolName, approved);
-      setApprovalRequest(null);
+      window.agent.respondApproval(approvalRequest.requestId, approved);
+      setApprovalQueue((prev) => prev.filter((req) => req.requestId !== approvalRequest.requestId));
       // Optimistically add a system message
       setMessages(prev => [...prev, { 
           role: 'assistant', 
           content: approved ? `✅ Approved execution of ${approvalRequest.toolName}` : `❌ Denied execution of ${approvalRequest.toolName}` 
       }]);
+    }
+  };
+
+  const handleModeChange = async (mode: 'chat' | 'read' | 'do') => {
+    if (!window.agent) return;
+    try {
+      await window.agent.setMode(mode);
+      setAgentMode(mode);
+    } catch (err) {
+      console.error('Failed to change agent mode:', err);
+    }
+  };
+
+  const handlePermissionModeChange = async (mode: 'yolo' | 'permissions') => {
+    if (!window.agent) return;
+    try {
+      await window.agent.setPermissionMode(mode);
+      setAgentPermissionMode(mode);
+    } catch (err) {
+      console.error('Failed to change permission mode:', err);
     }
   };
 
@@ -128,7 +209,7 @@ export function AgentPanel() {
         ) : (
             messages.map((msg, i) => (
                 <div key={i} className={cn("flex flex-col gap-0.5 text-xs", msg.role === 'user' ? "items-end" : "items-start")}>
-                    <div className={cn("flex gap-2 max-w-full", msg.role === 'user' ? "flex-row-reverse" : "")}>
+                    <div className={cn("flex gap-2 max-w-full", msg.role === 'user' ? "flex-row-reverse" : "")}> 
                         {msg.role === 'user' && (
                            <div className="shrink-0 w-6 h-6 rounded-full flex items-center justify-center border bg-primary/10 border-primary/20 text-primary">
                                <User size={12} />
@@ -147,6 +228,24 @@ export function AgentPanel() {
                                             ? "font-mono text-[11px] bg-secondary/10 border border-border/20 text-muted-foreground px-2 py-1 rounded-sm w-full"
                                             : "text-foreground/90 w-full"
                         )}>
+                            {msg.role === 'assistant' && msg.type && msg.type !== 'text' && msg.metadata ? (
+                              <div className="flex items-center justify-between gap-2 text-[10px] font-mono opacity-70 mb-1">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  {typeof msg.metadata?.tool === 'string' ? (
+                                    <span className="truncate">{msg.metadata.tool}</span>
+                                  ) : null}
+                                  {typeof msg.metadata?.durationMs === 'number' ? (
+                                    <span className="shrink-0">{Math.round(msg.metadata.durationMs)}ms</span>
+                                  ) : null}
+                                </div>
+                                {typeof msg.metadata?.ts === 'string' ? (
+                                  <span className="shrink-0">
+                                    {new Date(msg.metadata.ts).toLocaleTimeString()}
+                                  </span>
+                                ) : null}
+                              </div>
+                            ) : null}
+
                             {msg.role === 'assistant' && (!msg.type || msg.type === 'text') ? (
                                 <ReactMarkdown
                                     components={{
@@ -170,13 +269,62 @@ export function AgentPanel() {
                                     {msg.content}
                                 </ReactMarkdown>
                             ) : msg.type === 'observation' ? (
-                                <details className="group">
-                                    <summary className="cursor-pointer hover:text-foreground list-none flex items-center gap-1 select-none opacity-70 hover:opacity-100 transition-opacity">
-                                        <div className="w-1 h-1 rounded-full bg-current" />
-                                        <span>Output</span>
-                                    </summary>
-                                    <div className="mt-1 pl-2 border-l border-border/30 whitespace-pre-wrap opacity-90">{msg.content}</div>
-                                </details>
+                                <div className="group">
+                                    <details>
+                                        <summary className="cursor-pointer hover:text-foreground list-none flex items-center gap-1 select-none opacity-70 hover:opacity-100 transition-opacity">
+                                            <div className="w-1 h-1 rounded-full bg-current" />
+                                            <span>Output</span>
+                                        </summary>
+                                        <div className="mt-1 pl-2 border-l border-border/30 whitespace-pre-wrap opacity-90">{msg.content}</div>
+                                    </details>
+                                    {/* Feedback Buttons for Skills */}
+                                    {getSkillIdFromMessage(msg.content) && (
+                                        <div className="flex gap-2 mt-1 ml-2 opacity-60 hover:opacity-100 transition-opacity">
+                                            <button
+                                                onClick={() => {
+                                                    const id = getSkillIdFromMessage(msg.content);
+                                                    if (id) handleFeedback(id, 'worked', i);
+                                                }}
+                                                className={cn(
+                                                  "px-2 py-0.5 rounded border border-border/40 hover:bg-green-500/10 hover:text-green-500 transition-colors",
+                                                  feedbackMap[i] === 'worked' && "bg-green-500/10 text-green-500"
+                                                )}
+                                                disabled={!!feedbackMap[i]}
+                                                title="Worked"
+                                            >
+                                                Worked
+                                            </button>
+                                            <button
+                                                onClick={() => {
+                                                    const id = getSkillIdFromMessage(msg.content);
+                                                    if (id) handleFeedback(id, 'partial', i);
+                                                }}
+                                                className={cn(
+                                                  "px-2 py-0.5 rounded border border-border/40 hover:bg-amber-500/10 hover:text-amber-500 transition-colors",
+                                                  feedbackMap[i] === 'partial' && "bg-amber-500/10 text-amber-500"
+                                                )}
+                                                disabled={!!feedbackMap[i]}
+                                                title="Partially"
+                                            >
+                                                Partial
+                                            </button>
+                                            <button
+                                                onClick={() => {
+                                                    const id = getSkillIdFromMessage(msg.content);
+                                                    if (id) handleFeedback(id, 'failed', i);
+                                                }}
+                                                className={cn(
+                                                  "px-2 py-0.5 rounded border border-border/40 hover:bg-red-500/10 hover:text-red-500 transition-colors",
+                                                  feedbackMap[i] === 'failed' && "bg-red-500/10 text-red-500"
+                                                )}
+                                                disabled={!!feedbackMap[i]}
+                                                title="Didn’t work"
+                                            >
+                                                Didn’t work
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
                             ) : msg.content}
                         </div>
                     </div>
@@ -284,6 +432,74 @@ export function AgentPanel() {
                     </div>
                 )}
             </div>
+
+            {/* Agent Mode Selector */}
+            <div className="flex items-center gap-1 p-1 bg-secondary/20 rounded-md border border-border/30">
+                <button
+                    onClick={() => handleModeChange('chat')}
+                    className={cn(
+                        "flex-1 flex items-center justify-center gap-1 px-2 py-1 text-[10px] rounded transition-colors",
+                        agentMode === 'chat' ? "bg-primary/20 text-primary" : "text-muted-foreground hover:text-foreground hover:bg-secondary/50"
+                    )}
+                    title="Chat mode - Regular chatbot, no browser access"
+                >
+                    <MessageSquare size={10} />
+                    <span>Chat</span>
+                </button>
+                <button
+                    onClick={() => handleModeChange('read')}
+                    className={cn(
+                        "flex-1 flex items-center justify-center gap-1 px-2 py-1 text-[10px] rounded transition-colors",
+                        agentMode === 'read' ? "bg-primary/20 text-primary" : "text-muted-foreground hover:text-foreground hover:bg-secondary/50"
+                    )}
+                    title="Read mode - Can see browser, no actions"
+                >
+                    <Eye size={10} />
+                    <span>Read</span>
+                </button>
+                <button
+                    onClick={() => handleModeChange('do')}
+                    className={cn(
+                        "flex-1 flex items-center justify-center gap-1 px-2 py-1 text-[10px] rounded transition-colors",
+                        agentMode === 'do' ? "bg-primary/20 text-primary" : "text-muted-foreground hover:text-foreground hover:bg-secondary/50"
+                    )}
+                    title="Do mode - Full agentic actions"
+                >
+                    <Play size={10} />
+                    <span>Do</span>
+                </button>
+            </div>
+
+            {/* YOLO Toggle - Only visible in Do mode */}
+            {agentMode === 'do' && (
+                <div className="flex items-center gap-2 p-1.5 bg-secondary/10 rounded-md border border-border/20">
+                    <span className="text-[10px] text-muted-foreground">Permissions:</span>
+                    <div className="flex items-center gap-1 flex-1">
+                        <button
+                            onClick={() => handlePermissionModeChange('permissions')}
+                            className={cn(
+                                "flex-1 flex items-center justify-center gap-1 px-2 py-0.5 text-[10px] rounded transition-colors",
+                                agentPermissionMode === 'permissions' ? "bg-blue-500/20 text-blue-400" : "text-muted-foreground hover:text-foreground hover:bg-secondary/50"
+                            )}
+                            title="Ask for permission before actions"
+                        >
+                            <Shield size={9} />
+                            <span>Safe</span>
+                        </button>
+                        <button
+                            onClick={() => handlePermissionModeChange('yolo')}
+                            className={cn(
+                                "flex-1 flex items-center justify-center gap-1 px-2 py-0.5 text-[10px] rounded transition-colors",
+                                agentPermissionMode === 'yolo' ? "bg-amber-500/20 text-amber-400" : "text-muted-foreground hover:text-foreground hover:bg-secondary/50"
+                            )}
+                            title="YOLO mode - No permission prompts"
+                        >
+                            <Rocket size={9} />
+                            <span>YOLO</span>
+                        </button>
+                    </div>
+                </div>
+            )}
             
             {/* Footer controls */}
             <div className="flex items-center justify-between text-[10px] text-muted-foreground">
@@ -295,8 +511,65 @@ export function AgentPanel() {
                     >
                         <RotateCcw size={12} />
                     </button>
+                    <button
+                        onClick={() => setShowTrace((v) => !v)}
+                        className={cn(
+                          "p-1 hover:text-foreground hover:bg-secondary/50 rounded transition-colors",
+                          showTrace && "text-foreground"
+                        )}
+                        title="Toggle trace view"
+                    >
+                        <ChevronDown size={12} className={cn("transition-transform", showTrace && "rotate-180")} />
+                    </button>
                 </div>
             </div>
+
+
+            {showTrace && (
+              <div className="mt-2 border border-border/40 rounded-md bg-secondary/10">
+                <div className="px-2 py-1 text-[10px] uppercase tracking-wider text-muted-foreground border-b border-border/30">
+                  Trace
+                </div>
+                <div className="max-h-40 overflow-y-auto">
+                  {messages
+                    .filter((m) => m.role === 'assistant' && m.type && m.type !== 'text')
+                    .map((m, idx) => {
+                      const ts = m?.metadata?.ts;
+                      const durationMs = m?.metadata?.durationMs;
+                      const tool = m?.metadata?.tool;
+                      const timeLabel = typeof ts === 'string' ? new Date(ts).toLocaleTimeString() : '';
+                      return (
+                        <div key={idx} className="px-2 py-1 text-[10px] border-b border-border/20 last:border-b-0">
+                          <div className="flex items-center gap-2 font-mono text-muted-foreground">
+                            <span className="opacity-70 shrink-0">{timeLabel}</span>
+                            <span className={cn(
+                              "shrink-0",
+                              m.type === 'action' ? "text-primary" : m.type === 'thought' ? "text-primary/70" : "text-muted-foreground"
+                            )}>
+                              {m.type}
+                            </span>
+                            {tool ? <span className="shrink-0">{tool}</span> : null}
+                            {typeof durationMs === 'number' ? (
+                              <span className="shrink-0 opacity-70">{Math.round(durationMs)}ms</span>
+                            ) : null}
+                          </div>
+                          <div className="font-mono text-[10px] text-foreground/80 whitespace-pre-wrap break-words">
+                            {m.content}
+                          </div>
+                          {m.metadata && (
+                            <details className="mt-1">
+                              <summary className="cursor-pointer text-[10px] text-muted-foreground/70 hover:text-muted-foreground select-none">metadata</summary>
+                              <pre className="mt-1 text-[10px] font-mono bg-secondary/30 p-2 rounded border border-border/30 overflow-x-auto text-muted-foreground">
+                                {JSON.stringify(m.metadata, null, 2)}
+                              </pre>
+                            </details>
+                          )}
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+            )}
         </div>
       </div>
     </div>

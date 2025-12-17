@@ -5,14 +5,49 @@ var _a2;
 import { app, webContents, BrowserWindow, ipcMain } from "electron";
 import { URL as URL$2, fileURLToPath } from "node:url";
 import path$2 from "node:path";
-import keytar from "keytar";
 import crypto$2, { randomFillSync, randomUUID } from "node:crypto";
+import keytar from "keytar";
 import require$$0 from "fs";
 import require$$1 from "path";
 import require$$2 from "os";
 import crypto$3 from "crypto";
+import { AsyncLocalStorage } from "node:async_hooks";
 import fs$1 from "node:fs/promises";
 import Database from "better-sqlite3";
+const byteToHex$2 = [];
+for (let i = 0; i < 256; ++i) {
+  byteToHex$2.push((i + 256).toString(16).slice(1));
+}
+function unsafeStringify$2(arr2, offset = 0) {
+  return (byteToHex$2[arr2[offset + 0]] + byteToHex$2[arr2[offset + 1]] + byteToHex$2[arr2[offset + 2]] + byteToHex$2[arr2[offset + 3]] + "-" + byteToHex$2[arr2[offset + 4]] + byteToHex$2[arr2[offset + 5]] + "-" + byteToHex$2[arr2[offset + 6]] + byteToHex$2[arr2[offset + 7]] + "-" + byteToHex$2[arr2[offset + 8]] + byteToHex$2[arr2[offset + 9]] + "-" + byteToHex$2[arr2[offset + 10]] + byteToHex$2[arr2[offset + 11]] + byteToHex$2[arr2[offset + 12]] + byteToHex$2[arr2[offset + 13]] + byteToHex$2[arr2[offset + 14]] + byteToHex$2[arr2[offset + 15]]).toLowerCase();
+}
+const rnds8Pool$2 = new Uint8Array(256);
+let poolPtr$2 = rnds8Pool$2.length;
+function rng$2() {
+  if (poolPtr$2 > rnds8Pool$2.length - 16) {
+    randomFillSync(rnds8Pool$2);
+    poolPtr$2 = 0;
+  }
+  return rnds8Pool$2.slice(poolPtr$2, poolPtr$2 += 16);
+}
+const native$2 = { randomUUID };
+function _v4(options, buf, offset) {
+  var _a3;
+  options = options || {};
+  const rnds = options.random ?? ((_a3 = options.rng) == null ? void 0 : _a3.call(options)) ?? rng$2();
+  if (rnds.length < 16) {
+    throw new Error("Random bytes length must be >= 16");
+  }
+  rnds[6] = rnds[6] & 15 | 64;
+  rnds[8] = rnds[8] & 63 | 128;
+  return unsafeStringify$2(rnds);
+}
+function v4$2(options, buf, offset) {
+  if (native$2.randomUUID && true && !options) {
+    return native$2.randomUUID();
+  }
+  return _v4(options);
+}
 class VaultService {
   constructor() {
     __publicField(this, "serviceName", "EnterpriseAgenticBrowser");
@@ -9302,34 +9337,34 @@ const REGEX$1 = /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-
 function validate$3(uuid2) {
   return typeof uuid2 === "string" && REGEX$1.test(uuid2);
 }
-const byteToHex$2 = [];
+const byteToHex$1 = [];
 for (let i = 0; i < 256; ++i) {
-  byteToHex$2.push((i + 256).toString(16).slice(1));
+  byteToHex$1.push((i + 256).toString(16).slice(1));
 }
-function unsafeStringify$2(arr2, offset = 0) {
-  return (byteToHex$2[arr2[offset + 0]] + byteToHex$2[arr2[offset + 1]] + byteToHex$2[arr2[offset + 2]] + byteToHex$2[arr2[offset + 3]] + "-" + byteToHex$2[arr2[offset + 4]] + byteToHex$2[arr2[offset + 5]] + "-" + byteToHex$2[arr2[offset + 6]] + byteToHex$2[arr2[offset + 7]] + "-" + byteToHex$2[arr2[offset + 8]] + byteToHex$2[arr2[offset + 9]] + "-" + byteToHex$2[arr2[offset + 10]] + byteToHex$2[arr2[offset + 11]] + byteToHex$2[arr2[offset + 12]] + byteToHex$2[arr2[offset + 13]] + byteToHex$2[arr2[offset + 14]] + byteToHex$2[arr2[offset + 15]]).toLowerCase();
+function unsafeStringify$1(arr2, offset = 0) {
+  return (byteToHex$1[arr2[offset + 0]] + byteToHex$1[arr2[offset + 1]] + byteToHex$1[arr2[offset + 2]] + byteToHex$1[arr2[offset + 3]] + "-" + byteToHex$1[arr2[offset + 4]] + byteToHex$1[arr2[offset + 5]] + "-" + byteToHex$1[arr2[offset + 6]] + byteToHex$1[arr2[offset + 7]] + "-" + byteToHex$1[arr2[offset + 8]] + byteToHex$1[arr2[offset + 9]] + "-" + byteToHex$1[arr2[offset + 10]] + byteToHex$1[arr2[offset + 11]] + byteToHex$1[arr2[offset + 12]] + byteToHex$1[arr2[offset + 13]] + byteToHex$1[arr2[offset + 14]] + byteToHex$1[arr2[offset + 15]]).toLowerCase();
 }
-const rnds8Pool$2 = new Uint8Array(256);
-let poolPtr$2 = rnds8Pool$2.length;
-function rng$2() {
-  if (poolPtr$2 > rnds8Pool$2.length - 16) {
-    crypto$2.randomFillSync(rnds8Pool$2);
-    poolPtr$2 = 0;
+const rnds8Pool$1 = new Uint8Array(256);
+let poolPtr$1 = rnds8Pool$1.length;
+function rng$1() {
+  if (poolPtr$1 > rnds8Pool$1.length - 16) {
+    crypto$2.randomFillSync(rnds8Pool$1);
+    poolPtr$1 = 0;
   }
-  return rnds8Pool$2.slice(poolPtr$2, poolPtr$2 += 16);
+  return rnds8Pool$1.slice(poolPtr$1, poolPtr$1 += 16);
 }
-const native$2 = {
+const native$1 = {
   randomUUID: crypto$2.randomUUID
 };
-function v4$2(options, buf, offset) {
-  if (native$2.randomUUID && true && !options) {
-    return native$2.randomUUID();
+function v4$1(options, buf, offset) {
+  if (native$1.randomUUID && true && !options) {
+    return native$1.randomUUID();
   }
   options = options || {};
-  const rnds = options.random || (options.rng || rng$2)();
+  const rnds = options.random || (options.rng || rng$1)();
   rnds[6] = rnds[6] & 15 | 64;
   rnds[8] = rnds[8] & 63 | 128;
-  return unsafeStringify$2(rnds);
+  return unsafeStringify$1(rnds);
 }
 var base_exports$2 = {};
 __export(base_exports$2, {
@@ -9412,7 +9447,7 @@ var BaseCallbackHandler = class extends BaseCallbackHandlerMethodsClass {
     class Handler extends BaseCallbackHandler {
       constructor() {
         super();
-        __publicField(this, "name", v4$2());
+        __publicField(this, "name", v4$1());
         Object.assign(this, methods);
       }
     }
@@ -9451,21 +9486,21 @@ function parse$3(uuid2) {
   arr2[15] = v & 255;
   return arr2;
 }
-const byteToHex$1 = [];
+const byteToHex = [];
 for (let i = 0; i < 256; ++i) {
-  byteToHex$1.push((i + 256).toString(16).slice(1));
+  byteToHex.push((i + 256).toString(16).slice(1));
 }
-function unsafeStringify$1(arr2, offset = 0) {
-  return (byteToHex$1[arr2[offset + 0]] + byteToHex$1[arr2[offset + 1]] + byteToHex$1[arr2[offset + 2]] + byteToHex$1[arr2[offset + 3]] + "-" + byteToHex$1[arr2[offset + 4]] + byteToHex$1[arr2[offset + 5]] + "-" + byteToHex$1[arr2[offset + 6]] + byteToHex$1[arr2[offset + 7]] + "-" + byteToHex$1[arr2[offset + 8]] + byteToHex$1[arr2[offset + 9]] + "-" + byteToHex$1[arr2[offset + 10]] + byteToHex$1[arr2[offset + 11]] + byteToHex$1[arr2[offset + 12]] + byteToHex$1[arr2[offset + 13]] + byteToHex$1[arr2[offset + 14]] + byteToHex$1[arr2[offset + 15]]).toLowerCase();
+function unsafeStringify(arr2, offset = 0) {
+  return (byteToHex[arr2[offset + 0]] + byteToHex[arr2[offset + 1]] + byteToHex[arr2[offset + 2]] + byteToHex[arr2[offset + 3]] + "-" + byteToHex[arr2[offset + 4]] + byteToHex[arr2[offset + 5]] + "-" + byteToHex[arr2[offset + 6]] + byteToHex[arr2[offset + 7]] + "-" + byteToHex[arr2[offset + 8]] + byteToHex[arr2[offset + 9]] + "-" + byteToHex[arr2[offset + 10]] + byteToHex[arr2[offset + 11]] + byteToHex[arr2[offset + 12]] + byteToHex[arr2[offset + 13]] + byteToHex[arr2[offset + 14]] + byteToHex[arr2[offset + 15]]).toLowerCase();
 }
-const rnds8Pool$1 = new Uint8Array(256);
-let poolPtr$1 = rnds8Pool$1.length;
-function rng$1() {
-  if (poolPtr$1 > rnds8Pool$1.length - 16) {
-    crypto$2.randomFillSync(rnds8Pool$1);
-    poolPtr$1 = 0;
+const rnds8Pool = new Uint8Array(256);
+let poolPtr = rnds8Pool.length;
+function rng() {
+  if (poolPtr > rnds8Pool.length - 16) {
+    crypto$2.randomFillSync(rnds8Pool);
+    poolPtr = 0;
   }
-  return rnds8Pool$1.slice(poolPtr$1, poolPtr$1 += 16);
+  return rnds8Pool.slice(poolPtr, poolPtr += 16);
 }
 function stringToBytes(str2) {
   str2 = unescape(encodeURIComponent(str2));
@@ -9502,7 +9537,7 @@ function v35(name, version2, hashfunc) {
       }
       return buf;
     }
-    return unsafeStringify$1(bytes);
+    return unsafeStringify(bytes);
   }
   try {
     generateUUID.name = name;
@@ -9512,18 +9547,18 @@ function v35(name, version2, hashfunc) {
   generateUUID.URL = URL$1;
   return generateUUID;
 }
-const native$1 = {
+const native = {
   randomUUID: crypto$2.randomUUID
 };
-function v4$1(options, buf, offset) {
-  if (native$1.randomUUID && true && !options) {
-    return native$1.randomUUID();
+function v4(options, buf, offset) {
+  if (native.randomUUID && true && !options) {
+    return native.randomUUID();
   }
   options = options || {};
-  const rnds = options.random || (options.rng || rng$1)();
+  const rnds = options.random || (options.rng || rng)();
   rnds[6] = rnds[6] & 15 | 64;
   rnds[8] = rnds[8] & 63 | 128;
-  return unsafeStringify$1(rnds);
+  return unsafeStringify(rnds);
 }
 function sha1(bytes) {
   if (Array.isArray(bytes)) {
@@ -9541,7 +9576,7 @@ function v7(options, buf, offset) {
   options = options || {};
   let i = 0;
   const b = new Uint8Array(16);
-  const rnds = options.random || (options.rng || rng$1)();
+  const rnds = options.random || (options.rng || rng)();
   const msecs = options.msecs !== void 0 ? options.msecs : Date.now();
   let seq = options.seq !== void 0 ? options.seq : null;
   let seqHigh = _seqHigh;
@@ -9596,7 +9631,7 @@ function v7(options, buf, offset) {
   b[i++] = rnds[13];
   b[i++] = rnds[14];
   b[i++] = rnds[15];
-  return buf || unsafeStringify$1(b);
+  return buf || unsafeStringify(b);
 }
 const GEN_AI_OPERATION_NAME = "gen_ai.operation.name";
 const GEN_AI_SYSTEM = "gen_ai.system";
@@ -13936,7 +13971,7 @@ Context: ${context}`);
   async shareRun(runId, { shareId } = {}) {
     const data = {
       run_id: runId,
-      share_token: shareId || v4$1()
+      share_token: shareId || v4()
     };
     assertUuid(runId);
     const body = JSON.stringify(data);
@@ -14706,7 +14741,7 @@ Message: ${Array.isArray(result.detail) ? result.detail.join("\n") : "Unspecifie
       data = inputsOrUpdate;
     }
     const response = await this._uploadExamplesMultipart(datasetId_, [data]);
-    const example = await this.readExample(((_a3 = response.example_ids) == null ? void 0 : _a3[0]) ?? v4$1());
+    const example = await this.readExample(((_a3 = response.example_ids) == null ? void 0 : _a3[0]) ?? v4());
     return example;
   }
   async createExamples(propsOrUploads) {
@@ -15081,7 +15116,7 @@ Message: ${Array.isArray(result.detail) ? result.detail.join("\n") : "Unspecifie
       assertUuid(feedback_source.metadata["__run"].run_id);
     }
     const feedback = {
-      id: feedbackId ?? v4$1(),
+      id: feedbackId ?? v4(),
       run_id: runId,
       key,
       score: _formatFeedbackScore(score),
@@ -15363,7 +15398,7 @@ Message: ${Array.isArray(result.detail) ? result.detail.join("\n") : "Unspecifie
     const body = {
       name,
       description,
-      id: queueId || v4$1(),
+      id: queueId || v4(),
       rubric_instructions: rubricInstructions
     };
     const serializedBody = JSON.stringify(Object.fromEntries(Object.entries(body).filter(([_, v]) => v !== void 0)));
@@ -15781,7 +15816,7 @@ Message: ${Array.isArray(result.detail) ? result.detail.join("\n") : "Unspecifie
     }
     const formData = new FormData();
     for (const example of uploads) {
-      const exampleId = (example.id ?? v4$1()).toString();
+      const exampleId = (example.id ?? v4()).toString();
       const exampleBody = {
         created_at: example.created_at,
         ...example.metadata && { metadata: example.metadata },
@@ -18162,7 +18197,7 @@ var CallbackManager = class CallbackManager2 extends BaseCallbackManager {
   }
   async handleLLMStart(llm, prompts, runId = void 0, _parentRunId = void 0, extraParams = void 0, _tags = void 0, _metadata = void 0, runName = void 0) {
     return Promise.all(prompts.map(async (prompt, idx) => {
-      const runId_ = idx === 0 && runId ? runId : v4$2();
+      const runId_ = idx === 0 && runId ? runId : v4$1();
       await Promise.all(this.handlers.map((handler) => {
         if (handler.ignoreLLM) return;
         if (isBaseTracer(handler)) handler._createRunForLLMStart(llm, [prompt], runId_, this._parentRunId, extraParams, this.tags, this.metadata, runName);
@@ -18182,7 +18217,7 @@ var CallbackManager = class CallbackManager2 extends BaseCallbackManager {
   }
   async handleChatModelStart(llm, messages, runId = void 0, _parentRunId = void 0, extraParams = void 0, _tags = void 0, _metadata = void 0, runName = void 0) {
     return Promise.all(messages.map(async (messageGroup, idx) => {
-      const runId_ = idx === 0 && runId ? runId : v4$2();
+      const runId_ = idx === 0 && runId ? runId : v4$1();
       await Promise.all(this.handlers.map((handler) => {
         if (handler.ignoreLLM) return;
         if (isBaseTracer(handler)) handler._createRunForChatModelStart(llm, [messageGroup], runId_, this._parentRunId, extraParams, this.tags, this.metadata, runName);
@@ -18204,7 +18239,7 @@ var CallbackManager = class CallbackManager2 extends BaseCallbackManager {
       return new CallbackManagerForLLMRun(runId_, this.handlers, this.inheritableHandlers, this.tags, this.inheritableTags, this.metadata, this.inheritableMetadata, this._parentRunId);
     }));
   }
-  async handleChainStart(chain, inputs, runId = v4$2(), runType = void 0, _tags = void 0, _metadata = void 0, runName = void 0) {
+  async handleChainStart(chain, inputs, runId = v4$1(), runType = void 0, _tags = void 0, _metadata = void 0, runName = void 0) {
     await Promise.all(this.handlers.map((handler) => {
       if (handler.ignoreChain) return;
       if (isBaseTracer(handler)) handler._createRunForChainStart(chain, inputs, runId, this._parentRunId, this.tags, this.metadata, runType, runName);
@@ -18221,7 +18256,7 @@ var CallbackManager = class CallbackManager2 extends BaseCallbackManager {
     }));
     return new CallbackManagerForChainRun(runId, this.handlers, this.inheritableHandlers, this.tags, this.inheritableTags, this.metadata, this.inheritableMetadata, this._parentRunId);
   }
-  async handleToolStart(tool2, input, runId = v4$2(), _parentRunId = void 0, _tags = void 0, _metadata = void 0, runName = void 0) {
+  async handleToolStart(tool2, input, runId = v4$1(), _parentRunId = void 0, _tags = void 0, _metadata = void 0, runName = void 0) {
     await Promise.all(this.handlers.map((handler) => {
       if (handler.ignoreAgent) return;
       if (isBaseTracer(handler)) handler._createRunForToolStart(tool2, input, runId, this._parentRunId, this.tags, this.metadata, runName);
@@ -18238,7 +18273,7 @@ var CallbackManager = class CallbackManager2 extends BaseCallbackManager {
     }));
     return new CallbackManagerForToolRun(runId, this.handlers, this.inheritableHandlers, this.tags, this.inheritableTags, this.metadata, this.inheritableMetadata, this._parentRunId);
   }
-  async handleRetrieverStart(retriever, query, runId = v4$2(), _parentRunId = void 0, _tags = void 0, _metadata = void 0, runName = void 0) {
+  async handleRetrieverStart(retriever, query, runId = v4$1(), _parentRunId = void 0, _tags = void 0, _metadata = void 0, runName = void 0) {
     await Promise.all(this.handlers.map((handler) => {
       if (handler.ignoreRetriever) return;
       if (isBaseTracer(handler)) handler._createRunForRetrieverStart(retriever, query, runId, this._parentRunId, this.tags, this.metadata, runName);
@@ -18329,7 +18364,7 @@ var CallbackManager = class CallbackManager2 extends BaseCallbackManager {
     class Handler extends BaseCallbackHandler {
       constructor() {
         super();
-        __publicField(this, "name", v4$2());
+        __publicField(this, "name", v4$1());
         Object.assign(this, handlers);
       }
     }
@@ -29786,7 +29821,7 @@ var Graph = class Graph2 {
   }
   addNode(data, id, metadata) {
     if (id !== void 0 && this.nodes[id] !== void 0) throw new Error(`Node with id ${id} already exists`);
-    const nodeId = id ?? v4$2();
+    const nodeId = id ?? v4$1();
     const node = {
       id: nodeId,
       data,
@@ -30312,7 +30347,7 @@ var Runnable = class extends Serializable {
       autoClose: false
     });
     const config2 = ensureConfig(options);
-    const runId = config2.runId ?? v4$2();
+    const runId = config2.runId ?? v4$1();
     config2.runId = runId;
     const callbacks = config2.callbacks;
     if (callbacks === void 0) config2.callbacks = [eventStreamer];
@@ -41331,13 +41366,620 @@ main.exports.populate = DotenvModule.populate;
 main.exports = DotenvModule;
 var mainExports = main.exports;
 const dotenv = /* @__PURE__ */ getDefaultExportFromCjs(mainExports);
+class AgentRunContext {
+  constructor() {
+    __publicField(this, "storage", new AsyncLocalStorage());
+  }
+  run(store, fn) {
+    return this.storage.run(store, fn);
+  }
+  getRunId() {
+    var _a3;
+    return ((_a3 = this.storage.getStore()) == null ? void 0 : _a3.runId) ?? null;
+  }
+  getRequesterWebContentsId() {
+    var _a3;
+    return ((_a3 = this.storage.getStore()) == null ? void 0 : _a3.requesterWebContentsId) ?? null;
+  }
+  getBrowserContext() {
+    var _a3;
+    return ((_a3 = this.storage.getStore()) == null ? void 0 : _a3.browserContext) ?? null;
+  }
+  setBrowserContext(context) {
+    const store = this.storage.getStore();
+    if (store) {
+      store.browserContext = context;
+    }
+  }
+  getObserveOnly() {
+    var _a3;
+    return ((_a3 = this.storage.getStore()) == null ? void 0 : _a3.observeOnly) ?? false;
+  }
+  setObserveOnly(observeOnly) {
+    const store = this.storage.getStore();
+    if (store) {
+      store.observeOnly = observeOnly;
+    }
+  }
+  getYoloMode() {
+    var _a3;
+    return ((_a3 = this.storage.getStore()) == null ? void 0 : _a3.yoloMode) ?? false;
+  }
+  setYoloMode(yoloMode) {
+    const store = this.storage.getStore();
+    if (store) {
+      store.yoloMode = yoloMode;
+    }
+  }
+}
+const agentRunContext = new AgentRunContext();
+class TelemetryService {
+  constructor() {
+    __publicField(this, "baseDir", null);
+  }
+  getBaseDir() {
+    if (this.baseDir) return this.baseDir;
+    const userData = app.getPath("userData");
+    this.baseDir = path$2.join(userData, "telemetry");
+    return this.baseDir;
+  }
+  async ensureDir() {
+    await fs$1.mkdir(this.getBaseDir(), { recursive: true });
+  }
+  fileForRun(runId) {
+    return path$2.join(this.getBaseDir(), `agent-run-${runId}.jsonl`);
+  }
+  async appendLine(filePath, event) {
+    await this.ensureDir();
+    await fs$1.appendFile(filePath, JSON.stringify(event) + "\n", "utf8");
+  }
+  async emit(event) {
+    const runId = event.runId;
+    if (runId) {
+      await this.appendLine(this.fileForRun(runId), event);
+    }
+    await this.appendLine(path$2.join(this.getBaseDir(), "agent-events.jsonl"), event);
+  }
+  async exportTrajectories(outputPath) {
+    await this.ensureDir();
+    const dir = this.getBaseDir();
+    const files = await fs$1.readdir(dir);
+    const runFiles = files.filter((f) => f.startsWith("agent-run-") && f.endsWith(".jsonl"));
+    const trajectories = [];
+    for (const file of runFiles) {
+      try {
+        const content = await fs$1.readFile(path$2.join(dir, file), "utf8");
+        const events = content.trim().split("\n").map((line) => {
+          try {
+            return JSON.parse(line);
+          } catch {
+            return null;
+          }
+        }).filter((e) => e !== null);
+        if (events.length > 0) {
+          trajectories.push({
+            runId: events[0].runId,
+            timestamp: events[0].ts,
+            eventCount: events.length,
+            events
+          });
+        }
+      } catch (err) {
+        console.error(`Failed to process trajectory file ${file}:`, err);
+      }
+    }
+    await fs$1.writeFile(outputPath, JSON.stringify(trajectories, null, 2));
+    return trajectories.length;
+  }
+}
+const telemetryService = new TelemetryService();
+class AuditService {
+  constructor() {
+    __publicField(this, "db");
+    __publicField(this, "encryptionKey", null);
+    __publicField(this, "DB_FILENAME", "audit_logs.db");
+    const userDataPath = app.getPath("userData");
+    const dbPath = require$$1.join(userDataPath, this.DB_FILENAME);
+    this.db = new Database(dbPath);
+    this.init();
+  }
+  async init() {
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS audit_logs (
+        id TEXT PRIMARY KEY,
+        timestamp TEXT NOT NULL,
+        actor TEXT NOT NULL,
+        action TEXT NOT NULL,
+        details TEXT,
+        status TEXT NOT NULL
+      )
+    `);
+    await this.loadOrGenerateKey();
+  }
+  async loadOrGenerateKey() {
+    let keyHex = await vaultService.getSecret("audit_db_key");
+    if (!keyHex) {
+      keyHex = crypto$3.randomBytes(32).toString("hex");
+      await vaultService.setSecret("audit_db_key", keyHex);
+    }
+    this.encryptionKey = Buffer.from(keyHex, "hex");
+  }
+  encrypt(text) {
+    if (!this.encryptionKey) return text;
+    const iv = crypto$3.randomBytes(16);
+    const cipher = crypto$3.createCipheriv("aes-256-cbc", this.encryptionKey, iv);
+    let encrypted = cipher.update(text);
+    encrypted = Buffer.concat([encrypted, cipher.final()]);
+    return iv.toString("hex") + ":" + encrypted.toString("hex");
+  }
+  decrypt(text) {
+    if (!this.encryptionKey) return text;
+    try {
+      const textParts = text.split(":");
+      const iv = Buffer.from(textParts.shift(), "hex");
+      const encryptedText = Buffer.from(textParts.join(":"), "hex");
+      const decipher = crypto$3.createDecipheriv("aes-256-cbc", this.encryptionKey, iv);
+      let decrypted = decipher.update(encryptedText);
+      decrypted = Buffer.concat([decrypted, decipher.final()]);
+      return decrypted.toString();
+    } catch (e) {
+      console.error("Failed to decrypt log:", e);
+      return "[Encrypted Content]";
+    }
+  }
+  async log(entry) {
+    if (!this.encryptionKey) await this.loadOrGenerateKey();
+    const id = v4$2();
+    const timestamp = (/* @__PURE__ */ new Date()).toISOString();
+    const detailsStr = JSON.stringify(entry.details);
+    const encryptedDetails = this.encrypt(detailsStr);
+    const stmt = this.db.prepare(`
+      INSERT INTO audit_logs (id, timestamp, actor, action, details, status)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+    stmt.run(id, timestamp, entry.actor, entry.action, encryptedDetails, entry.status);
+    return id;
+  }
+  getLogs(limit2 = 100) {
+    const stmt = this.db.prepare("SELECT * FROM audit_logs ORDER BY timestamp DESC LIMIT ?");
+    const rows = stmt.all(limit2);
+    return rows.map((row) => ({
+      ...row,
+      details: this.decrypt(row.details)
+      // Attempt to decrypt on read
+    }));
+  }
+}
+const auditService = new AuditService();
+var PolicyDecision = /* @__PURE__ */ ((PolicyDecision2) => {
+  PolicyDecision2["ALLOW"] = "allow";
+  PolicyDecision2["DENY"] = "deny";
+  PolicyDecision2["NEEDS_APPROVAL"] = "needs_approval";
+  return PolicyDecision2;
+})(PolicyDecision || {});
+const TOOL_RISK_LEVELS = {
+  // Browser observation tools - LOW risk
+  "browser_observe": 0,
+  "browser_wait_for_selector": 0,
+  "browser_wait_for_url": 0,
+  "browser_wait_for_text": 0,
+  "browser_wait_for_text_in": 0,
+  "browser_find_text": 0,
+  "browser_get_text": 0,
+  "browser_extract_main_text": 1,
+  // Extraction is risky but read-only
+  // Browser navigation - LOW to MEDIUM risk
+  "browser_navigate": 0,
+  "browser_go_back": 0,
+  "browser_go_forward": 0,
+  "browser_reload": 0,
+  // Browser interaction - MEDIUM risk
+  "browser_click": 1,
+  "browser_click_text": 1,
+  "browser_type": 1,
+  "browser_select": 1,
+  "browser_scroll": 1,
+  "browser_press_key": 1,
+  "browser_focus": 1,
+  "browser_clear": 1,
+  // Complex browser operations - HIGH risk
+  "browser_execute_plan": 2,
+  "browser_screenshot": 1,
+  // Mock SaaS operations - MEDIUM to HIGH risk
+  "jira_create_issue": 2,
+  "jira_update_issue": 1,
+  "jira_delete_issue": 2,
+  "confluence_create_page": 2,
+  "confluence_update_page": 1,
+  "confluence_delete_page": 2,
+  "trello_create_card": 1,
+  "trello_move_card": 1,
+  "trello_delete_card": 2,
+  // Code and file operations - MEDIUM to HIGH risk
+  "code_read_file": 0,
+  "code_list_files": 0,
+  "code_search": 0,
+  "code_execute": 2,
+  "code_write_file": 2,
+  "code_delete_file": 2,
+  // System operations - HIGH risk
+  "system_execute": 2,
+  "system_write_file": 2,
+  "system_delete_file": 2
+  /* HIGH */
+};
+const DOMAIN_RISK_LEVELS = {
+  // Local development - LOW risk
+  "localhost": 0,
+  "127.0.0.1": 0,
+  "0.0.0.0": 0,
+  // Mock SaaS - LOW risk (sandboxed)
+  "mock-saas.com": 0,
+  "localhost:3000": 0,
+  // Trusted domains - LOW risk
+  "docs.example.com": 0,
+  "help.example.com": 0,
+  // Production domains - MEDIUM to HIGH risk
+  "app.example.com": 1,
+  "admin.example.com": 2,
+  "api.example.com": 1,
+  // External domains - HIGH risk
+  "github.com": 1,
+  "stackoverflow.com": 0,
+  "google.com": 0
+  /* LOW */
+};
+class PolicyService {
+  constructor(telemetryService2, auditService2) {
+    __publicField(this, "rules", []);
+    __publicField(this, "telemetryService");
+    __publicField(this, "auditService");
+    this.telemetryService = telemetryService2;
+    this.auditService = auditService2;
+    this.initializeDefaultRules();
+  }
+  initializeDefaultRules() {
+    this.addRule({
+      name: "observe-only-enforcement",
+      description: "Block state-modifying tools in observe-only mode",
+      priority: 1e3,
+      match: (ctx) => Boolean(ctx.observeOnly),
+      evaluate: (ctx) => {
+        const allowedTools = [
+          "browser_observe",
+          "browser_navigate",
+          // Allowed to move around to observe
+          "browser_go_back",
+          "browser_go_forward",
+          "browser_reload",
+          "browser_scroll",
+          "browser_wait_for_selector",
+          "browser_wait_for_url",
+          "browser_wait_for_text",
+          "browser_wait_for_text_in",
+          "browser_get_text",
+          "browser_find_text",
+          "browser_extract_main_text",
+          "browser_screenshot",
+          "code_read_file",
+          "code_list_files",
+          "code_search"
+        ];
+        if (!allowedTools.includes(ctx.toolName)) {
+          return {
+            decision: "deny",
+            riskLevel: 2,
+            reason: "Tool execution denied: Observe-only mode is active",
+            matchedRule: "observe-only-enforcement"
+          };
+        }
+        return {
+          decision: "allow",
+          riskLevel: 0,
+          reason: "Tool allowed in observe-only mode (pending further checks)",
+          matchedRule: "observe-only-enforcement"
+        };
+      }
+    });
+    this.addRule({
+      name: "dangerous-operations-deny",
+      description: "Deny dangerous system operations",
+      priority: 100,
+      match: (ctx) => {
+        const dangerousTools = ["system_execute", "system_delete_file", "code_execute"];
+        return dangerousTools.includes(ctx.toolName);
+      },
+      evaluate: (_ctx) => ({
+        decision: "deny",
+        riskLevel: 2,
+        reason: "Dangerous system operations are not allowed",
+        matchedRule: "dangerous-operations-deny"
+      })
+    });
+    this.addRule({
+      name: "admin-bypass",
+      description: "Allow low/medium risk operations in admin mode",
+      priority: 90,
+      match: (ctx) => ctx.userMode === "admin",
+      evaluate: (ctx) => {
+        const toolRisk = TOOL_RISK_LEVELS[ctx.toolName] || 1;
+        const domainRisk = ctx.domain ? DOMAIN_RISK_LEVELS[ctx.domain] || 1 : 1;
+        const finalRisk = toolRisk > domainRisk ? toolRisk : domainRisk;
+        if (finalRisk === 2) {
+          return {
+            decision: "needs_approval",
+            riskLevel: 2,
+            reason: "High risk operation requires approval even in admin mode",
+            matchedRule: "admin-bypass"
+          };
+        }
+        return {
+          decision: "allow",
+          riskLevel: finalRisk,
+          reason: "Allowed in admin mode",
+          matchedRule: "admin-bypass"
+        };
+      }
+    });
+    this.addRule({
+      name: "high-risk-domains",
+      description: "Require approval for operations on high-risk domains",
+      priority: 80,
+      match: (ctx) => {
+        const domainRisk = ctx.domain ? DOMAIN_RISK_LEVELS[ctx.domain] : 1;
+        return domainRisk === 2;
+      },
+      evaluate: (ctx) => ({
+        decision: "needs_approval",
+        riskLevel: 2,
+        reason: `High risk domain: ${ctx.domain}`,
+        matchedRule: "high-risk-domains"
+      })
+    });
+    this.addRule({
+      name: "extract-main-text-gating",
+      description: "Gate browser_extract_main_text to reduce sensitive data exposure",
+      priority: 85,
+      match: (ctx) => ctx.toolName === "browser_extract_main_text",
+      evaluate: (ctx) => {
+        const domainRisk = ctx.domain ? DOMAIN_RISK_LEVELS[ctx.domain] : void 0;
+        const effectiveRisk = domainRisk === void 0 ? 2 : domainRisk;
+        if (effectiveRisk === 0) {
+          return {
+            decision: "needs_approval",
+            riskLevel: 1,
+            reason: "Extract main text requires approval",
+            matchedRule: "extract-main-text-gating"
+          };
+        }
+        return {
+          decision: "needs_approval",
+          riskLevel: 2,
+          reason: `Extract main text on non-low-risk domain: ${ctx.domain ?? "unknown"}`,
+          matchedRule: "extract-main-text-gating"
+        };
+      }
+    });
+    this.addRule({
+      name: "external-file-operations",
+      description: "File uploads/downloads on external domains need approval",
+      priority: 70,
+      match: (ctx) => {
+        const fileOps = ["code_write_file", "code_delete_file"];
+        const isExternal = Boolean(ctx.domain && !(ctx.domain in DOMAIN_RISK_LEVELS));
+        return fileOps.includes(ctx.toolName) && isExternal;
+      },
+      evaluate: (_ctx) => ({
+        decision: "needs_approval",
+        riskLevel: 2,
+        reason: "File operations on external domains require approval",
+        matchedRule: "external-file-operations"
+      })
+    });
+    this.addRule({
+      name: "default-risk-evaluation",
+      description: "Default evaluation based on tool and domain risk",
+      priority: 0,
+      match: () => true,
+      // Always matches as fallback
+      evaluate: (ctx) => {
+        const toolRisk = TOOL_RISK_LEVELS[ctx.toolName] || 1;
+        const domainRisk = ctx.domain ? DOMAIN_RISK_LEVELS[ctx.domain] || 1 : 1;
+        const finalRisk = toolRisk > domainRisk ? toolRisk : domainRisk;
+        const argsRisk = this.evaluateArgsRisk(ctx);
+        const escalatedRisk = argsRisk > finalRisk ? argsRisk : finalRisk;
+        if (escalatedRisk === 2) {
+          return {
+            decision: "needs_approval",
+            riskLevel: 2,
+            reason: "High risk operation detected",
+            matchedRule: "default-risk-evaluation"
+          };
+        }
+        if (escalatedRisk === 1 && ctx.userMode !== "developer") {
+          return {
+            decision: "needs_approval",
+            riskLevel: 1,
+            reason: "Medium risk operation requires approval in standard mode",
+            matchedRule: "default-risk-evaluation"
+          };
+        }
+        return {
+          decision: "allow",
+          riskLevel: escalatedRisk,
+          reason: "Low risk operation allowed",
+          matchedRule: "default-risk-evaluation"
+        };
+      }
+    });
+  }
+  evaluateArgsRisk(context) {
+    const { args } = context;
+    if (!args || typeof args !== "object") return 0;
+    if (context.toolName === "browser_navigate") {
+      if (args && typeof args.url === "string") {
+        try {
+          const u = new URL(args.url);
+          const domain = u.port ? `${u.hostname}:${u.port}` : u.hostname;
+          const domainRisk = DOMAIN_RISK_LEVELS[domain];
+          if (domainRisk === 2 || domainRisk === void 0) {
+            return 2;
+          }
+        } catch {
+          return 2;
+        }
+      }
+    }
+    if (context.toolName === "browser_execute_plan") {
+      try {
+        const steps = Array.isArray(args == null ? void 0 : args.steps) ? args.steps : [];
+        for (const step of steps) {
+          if ((step == null ? void 0 : step.action) === "navigate" && typeof (step == null ? void 0 : step.url) === "string") {
+            try {
+              const u = new URL(step.url);
+              const domain = u.port ? `${u.hostname}:${u.port}` : u.hostname;
+              const domainRisk = DOMAIN_RISK_LEVELS[domain];
+              if (domainRisk === 2 || domainRisk === void 0) {
+                return 2;
+              }
+            } catch {
+              return 2;
+            }
+          }
+        }
+      } catch {
+        return 1;
+      }
+    }
+    const riskyPatterns = [
+      /password/i,
+      /token/i,
+      /secret/i,
+      /key/i,
+      /delete/i,
+      /drop\s+table/i,
+      /rm\s+-rf/i,
+      /sudo/i
+    ];
+    const argsStr = JSON.stringify(args).toLowerCase();
+    for (const pattern of riskyPatterns) {
+      if (pattern.test(argsStr)) {
+        return 2;
+      }
+    }
+    if (args.value && typeof args.value === "string" && args.value.length > 1e4) {
+      return 1;
+    }
+    return 0;
+  }
+  addRule(rule) {
+    this.rules.push(rule);
+    this.rules.sort((a, b) => b.priority - a.priority);
+  }
+  removeRule(name) {
+    this.rules = this.rules.filter((rule) => rule.name !== name);
+  }
+  async evaluate(context) {
+    const startTime = Date.now();
+    const runId = context.runId;
+    for (const rule of this.rules) {
+      if (rule.match(context)) {
+        const evaluation = rule.evaluate(context);
+        const durationMs = Date.now() - startTime;
+        const argsHash = this.hashArgs(context.args);
+        try {
+          await this.telemetryService.emit({
+            eventId: v4$2(),
+            runId,
+            ts: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "policy_evaluation",
+            name: "PolicyService",
+            data: {
+              toolName: context.toolName,
+              domain: context.domain,
+              userMode: context.userMode,
+              decision: evaluation.decision,
+              riskLevel: evaluation.riskLevel,
+              matchedRule: rule.name,
+              durationMs,
+              argsHash
+            }
+          });
+        } catch {
+        }
+        try {
+          await this.auditService.log({
+            actor: "system",
+            action: "policy_evaluation",
+            details: {
+              runId,
+              toolName: context.toolName,
+              domain: context.domain,
+              userMode: context.userMode,
+              decision: evaluation.decision,
+              riskLevel: evaluation.riskLevel,
+              reason: evaluation.reason,
+              matchedRule: rule.name,
+              durationMs,
+              argsHash
+            },
+            status: "success"
+          }).catch(() => void 0);
+        } catch {
+        }
+        return evaluation;
+      }
+    }
+    return {
+      decision: "needs_approval",
+      riskLevel: 1,
+      reason: "No policy rule matched"
+    };
+  }
+  hashArgs(args) {
+    if (!args) return "";
+    const str2 = JSON.stringify(args);
+    let hash = 0;
+    for (let i = 0; i < str2.length; i++) {
+      const char = str2.charCodeAt(i);
+      hash = (hash << 5) - hash + char;
+      hash = hash & hash;
+    }
+    return hash.toString(36);
+  }
+  // Helper methods for policy management
+  getRules() {
+    return [...this.rules];
+  }
+  getToolRiskLevel(toolName) {
+    return TOOL_RISK_LEVELS[toolName] || 1;
+  }
+  getDomainRiskLevel(domain) {
+    return DOMAIN_RISK_LEVELS[domain] || 1;
+  }
+  // Update domain risk levels at runtime
+  updateDomainRiskLevel(domain, riskLevel) {
+    DOMAIN_RISK_LEVELS[domain] = riskLevel;
+  }
+  // Update tool risk levels at runtime
+  updateToolRiskLevel(toolName, riskLevel) {
+    TOOL_RISK_LEVELS[toolName] = riskLevel;
+  }
+}
 class ToolRegistry {
   constructor() {
     __publicField(this, "tools", /* @__PURE__ */ new Map());
     __publicField(this, "approvalHandler", null);
+    __publicField(this, "policyService", null);
   }
   setApprovalHandler(handler) {
     this.approvalHandler = handler;
+  }
+  setPolicyService(policyService) {
+    this.policyService = policyService;
+  }
+  getPolicyService() {
+    return this.policyService;
   }
   register(tool2) {
     if (this.tools.has(tool2.name)) {
@@ -41351,10 +41993,294 @@ class ToolRegistry {
   getAllTools() {
     return Array.from(this.tools.values());
   }
+  async invokeToolInternal(tool2, arg) {
+    var _a3;
+    const runId = agentRunContext.getRunId() ?? void 0;
+    const argsJson = (() => {
+      try {
+        return JSON.stringify(arg ?? null);
+      } catch {
+        return "[unserializable_args]";
+      }
+    })();
+    const argsHash = crypto$2.createHash("sha256").update(argsJson).digest("hex");
+    const toolCallId = v4$2();
+    const startedAt = Date.now();
+    try {
+      await telemetryService.emit({
+        eventId: v4$2(),
+        runId,
+        ts: (/* @__PURE__ */ new Date()).toISOString(),
+        type: "tool_call_start",
+        name: tool2.name,
+        data: { toolCallId, argsHash }
+      });
+    } catch {
+    }
+    try {
+      auditService.log({
+        actor: "agent",
+        action: "tool_call_start",
+        details: { runId, toolName: tool2.name, toolCallId, argsHash },
+        status: "pending"
+      }).catch(() => void 0);
+    } catch {
+    }
+    const approvalHandler = this.approvalHandler;
+    const policyService = this.policyService;
+    if (policyService) {
+      const browserContext = agentRunContext.getBrowserContext();
+      const context = {
+        toolName: tool2.name,
+        args: arg,
+        url: browserContext == null ? void 0 : browserContext.url,
+        domain: browserContext == null ? void 0 : browserContext.domain,
+        userMode: "standard",
+        observeOnly: agentRunContext.getObserveOnly(),
+        runId
+      };
+      const policyEvaluation = await policyService.evaluate(context);
+      if (policyEvaluation.decision === PolicyDecision.DENY) {
+        const durationMs = Date.now() - startedAt;
+        try {
+          await telemetryService.emit({
+            eventId: v4$2(),
+            runId,
+            ts: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "tool_call_end",
+            name: tool2.name,
+            data: { toolCallId, argsHash, durationMs, error: "Policy denied" }
+          });
+        } catch {
+        }
+        try {
+          auditService.log({
+            actor: "system",
+            action: "tool_call_denied",
+            details: { runId, toolName: tool2.name, toolCallId, reason: policyEvaluation.reason },
+            status: "failure"
+          }).catch(() => void 0);
+        } catch {
+        }
+        return `Operation denied by policy: ${policyEvaluation.reason}`;
+      }
+      if (policyEvaluation.decision === PolicyDecision.NEEDS_APPROVAL && approvalHandler) {
+        if (agentRunContext.getYoloMode()) {
+          try {
+            auditService.log({
+              actor: "system",
+              action: "approval_auto_granted",
+              details: { runId, toolName: tool2.name, toolCallId, reason: "YOLO mode" },
+              status: "success"
+            }).catch(() => void 0);
+          } catch {
+          }
+        } else {
+          try {
+            await telemetryService.emit({
+              eventId: v4$2(),
+              runId,
+              ts: (/* @__PURE__ */ new Date()).toISOString(),
+              type: "approval_request",
+              name: tool2.name,
+              data: { toolCallId, argsHash, riskLevel: policyEvaluation.riskLevel }
+            });
+          } catch {
+          }
+          try {
+            auditService.log({
+              actor: "system",
+              action: "approval_request",
+              details: { runId, toolName: tool2.name, toolCallId, argsHash, reason: policyEvaluation.reason },
+              status: "pending"
+            }).catch(() => void 0);
+          } catch {
+          }
+          const approved = await approvalHandler(tool2.name, arg);
+          try {
+            await telemetryService.emit({
+              eventId: v4$2(),
+              runId,
+              ts: (/* @__PURE__ */ new Date()).toISOString(),
+              type: "approval_decision",
+              name: tool2.name,
+              data: { toolCallId, argsHash, approved }
+            });
+          } catch {
+          }
+          try {
+            auditService.log({
+              actor: "system",
+              action: "approval_decision",
+              details: { runId, toolName: tool2.name, toolCallId, argsHash, approved },
+              status: approved ? "success" : "failure"
+            }).catch(() => void 0);
+          } catch {
+          }
+          if (!approved) {
+            const durationMs = Date.now() - startedAt;
+            try {
+              await telemetryService.emit({
+                eventId: v4$2(),
+                runId,
+                ts: (/* @__PURE__ */ new Date()).toISOString(),
+                type: "tool_call_end",
+                name: tool2.name,
+                data: { toolCallId, argsHash, durationMs, error: "User denied" }
+              });
+            } catch {
+            }
+            try {
+              auditService.log({
+                actor: "user",
+                action: "tool_call_denied",
+                details: { runId, toolName: tool2.name, toolCallId },
+                status: "failure"
+              }).catch(() => void 0);
+            } catch {
+            }
+            return "User denied execution of this tool.";
+          }
+        }
+      }
+    } else if (tool2.requiresApproval && approvalHandler) {
+      if (agentRunContext.getYoloMode()) {
+        try {
+          auditService.log({
+            actor: "system",
+            action: "approval_auto_granted",
+            details: { runId, toolName: tool2.name, toolCallId, reason: "YOLO mode" },
+            status: "success"
+          }).catch(() => void 0);
+        } catch {
+        }
+      } else {
+        try {
+          await telemetryService.emit({
+            eventId: v4$2(),
+            runId,
+            ts: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "approval_request",
+            name: tool2.name,
+            data: { toolCallId, argsHash }
+          });
+        } catch {
+        }
+        try {
+          auditService.log({
+            actor: "system",
+            action: "approval_request",
+            details: { runId, toolName: tool2.name, toolCallId, argsHash },
+            status: "pending"
+          }).catch(() => void 0);
+        } catch {
+        }
+        const approved = await approvalHandler(tool2.name, arg);
+        try {
+          await telemetryService.emit({
+            eventId: v4$2(),
+            runId,
+            ts: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "approval_decision",
+            name: tool2.name,
+            data: { toolCallId, argsHash, approved }
+          });
+        } catch {
+        }
+        try {
+          auditService.log({
+            actor: "system",
+            action: "approval_decision",
+            details: { runId, toolName: tool2.name, toolCallId, argsHash, approved },
+            status: approved ? "success" : "failure"
+          }).catch(() => void 0);
+        } catch {
+        }
+        if (!approved) {
+          const durationMs = Date.now() - startedAt;
+          try {
+            await telemetryService.emit({
+              eventId: v4$2(),
+              runId,
+              ts: (/* @__PURE__ */ new Date()).toISOString(),
+              type: "tool_call_end",
+              name: tool2.name,
+              data: { toolCallId, argsHash, durationMs, error: "User denied" }
+            });
+          } catch {
+          }
+          try {
+            auditService.log({
+              actor: "user",
+              action: "tool_call_denied",
+              details: { runId, toolName: tool2.name, toolCallId },
+              status: "failure"
+            }).catch(() => void 0);
+          } catch {
+          }
+          return "User denied execution of this tool.";
+        }
+      }
+    }
+    try {
+      const parsedArgs = ((_a3 = tool2.schema) == null ? void 0 : _a3.parse) ? tool2.schema.parse(arg ?? {}) : arg;
+      const result = await tool2.execute(parsedArgs);
+      const durationMs = Date.now() - startedAt;
+      try {
+        await telemetryService.emit({
+          eventId: v4$2(),
+          runId,
+          ts: (/* @__PURE__ */ new Date()).toISOString(),
+          type: "tool_call_end",
+          name: tool2.name,
+          data: { toolCallId, argsHash, durationMs, resultLength: String(result ?? "").length }
+        });
+      } catch {
+      }
+      try {
+        auditService.log({
+          actor: "agent",
+          action: "tool_call_end",
+          details: { runId, toolName: tool2.name, toolCallId, durationMs },
+          status: "success"
+        }).catch(() => void 0);
+      } catch {
+      }
+      return result;
+    } catch (e) {
+      const durationMs = Date.now() - startedAt;
+      try {
+        await telemetryService.emit({
+          eventId: v4$2(),
+          runId,
+          ts: (/* @__PURE__ */ new Date()).toISOString(),
+          type: "tool_call_end",
+          name: tool2.name,
+          data: { toolCallId, argsHash, durationMs, error: String((e == null ? void 0 : e.message) ?? e) }
+        });
+      } catch {
+      }
+      try {
+        auditService.log({
+          actor: "agent",
+          action: "tool_call_end",
+          details: { runId, toolName: tool2.name, toolCallId, durationMs, error: String((e == null ? void 0 : e.message) ?? e) },
+          status: "failure"
+        }).catch(() => void 0);
+      } catch {
+      }
+      return `Tool execution failed: ${String((e == null ? void 0 : e.message) ?? e)}`;
+    }
+  }
+  async invokeTool(toolName, arg) {
+    const tool2 = this.tools.get(toolName);
+    if (!tool2) return `Error: Tool '${toolName}' not found.`;
+    return this.invokeToolInternal(tool2, arg);
+  }
   // Convert to LangChain tools format
   toLangChainTools() {
+    const registry2 = this;
     return this.getAllTools().map((tool2) => {
-      const self2 = this;
       return new class extends StructuredTool {
         constructor() {
           super(...arguments);
@@ -41363,13 +42289,7 @@ class ToolRegistry {
           __publicField(this, "schema", tool2.schema);
         }
         async _call(arg) {
-          if (tool2.requiresApproval && self2.approvalHandler) {
-            const approved = await self2.approvalHandler(tool2.name, arg);
-            if (!approved) {
-              return "User denied execution of this tool.";
-            }
-          }
-          return await tool2.execute(arg);
+          return registry2.invokeToolInternal(tool2, arg);
         }
       }();
     });
@@ -41379,41 +42299,262 @@ const toolRegistry = new ToolRegistry();
 class TaskKnowledgeService {
   constructor() {
     __publicField(this, "storageFile");
-    __publicField(this, "plans", []);
-    this.storageFile = path$2.resolve(process.cwd(), "task_knowledge.json");
+    __publicField(this, "skills", []);
+    this.storageFile = path$2.resolve(process.cwd(), "skill_library.json");
     this.load();
     this.registerTools();
   }
   async load() {
+    var _a3;
     try {
       const data = await fs$1.readFile(this.storageFile, "utf8");
-      this.plans = JSON.parse(data);
+      this.skills = JSON.parse(data);
     } catch {
-      this.plans = [];
+      try {
+        const legacyPath = path$2.resolve(process.cwd(), "task_knowledge.json");
+        const legacyData = await fs$1.readFile(legacyPath, "utf8");
+        const plans = JSON.parse(legacyData);
+        this.skills = plans.map((p) => {
+          const createdAt = Date.now();
+          return {
+            id: v4$2(),
+            name: p.goal.toLowerCase().replace(/\s+/g, "_").slice(0, 50),
+            description: p.goal,
+            domain: "unknown",
+            steps: p.steps,
+            currentVersion: 1,
+            stats: { successes: 0, failures: 0, lastUsed: createdAt },
+            versions: [{ version: 1, steps: p.steps, createdAt }],
+            tags: p.trigger_keywords || []
+          };
+        });
+        await this.save();
+      } catch {
+        this.skills = [];
+      }
     }
+    for (const s of this.skills) {
+      const v = Array.isArray(s == null ? void 0 : s.versions) ? s.versions : [];
+      if (typeof s.currentVersion !== "number") {
+        const latest = v.length > 0 ? Number(((_a3 = v[v.length - 1]) == null ? void 0 : _a3.version) ?? v.length) : 1;
+        s.currentVersion = latest;
+      }
+      if (!s.stats || typeof s.stats !== "object") {
+        s.stats = { successes: 0, failures: 0, lastUsed: Date.now() };
+      }
+      if (typeof s.stats.successes !== "number") s.stats.successes = 0;
+      if (typeof s.stats.failures !== "number") s.stats.failures = 0;
+      if (typeof s.stats.partials !== "number") s.stats.partials = 0;
+      if (typeof s.stats.lastUsed !== "number") s.stats.lastUsed = Date.now();
+      if (!Array.isArray(s.tags)) s.tags = [];
+      if (!Array.isArray(s.feedback)) s.feedback = [];
+      if (!Array.isArray(s.embedding) || s.embedding.length === 0) {
+        s.embedding = this.computeEmbedding(this.buildSkillText(s));
+      }
+    }
+    try {
+      await this.save();
+    } catch {
+    }
+  }
+  normalizeText(text) {
+    return String(text ?? "").toLowerCase().replace(/[^a-z0-9_\-\s/.:]+/g, " ").replace(/\s+/g, " ").trim();
+  }
+  tokenize(text) {
+    const normalized = this.normalizeText(text);
+    if (!normalized) return [];
+    return normalized.split(" ").filter(Boolean).slice(0, 400);
+  }
+  computeEmbedding(text) {
+    const dim2 = 256;
+    const vec = new Array(dim2).fill(0);
+    const tokens = this.tokenize(text);
+    for (const tok of tokens) {
+      let h = 2166136261;
+      for (let i = 0; i < tok.length; i++) {
+        h ^= tok.charCodeAt(i);
+        h = Math.imul(h, 16777619);
+      }
+      const idx = Math.abs(h) % dim2;
+      vec[idx] += 1;
+    }
+    let norm = 0;
+    for (const x of vec) norm += x * x;
+    norm = Math.sqrt(norm) || 1;
+    return vec.map((x) => x / norm);
+  }
+  cosineSimilarity(a, b) {
+    if (!a || !b || a.length === 0 || b.length === 0) return 0;
+    const n = Math.min(a.length, b.length);
+    let dot = 0;
+    for (let i = 0; i < n; i++) dot += a[i] * b[i];
+    return dot;
+  }
+  buildSkillText(skill) {
+    const stepBits = (skill.steps || []).map((s) => [s.action, s.url, s.selector, s.value, s.text].filter(Boolean).join(" ")).join(" ");
+    return [skill.name, skill.description, skill.domain, skill.fingerprint ?? "", ...skill.tags || [], stepBits].filter(Boolean).join(" ");
   }
   async save() {
     try {
-      await fs$1.writeFile(this.storageFile, JSON.stringify(this.plans, null, 2));
+      await fs$1.writeFile(this.storageFile, JSON.stringify(this.skills, null, 2));
     } catch (err) {
-      console.error("Failed to save task knowledge:", err);
+      console.error("Failed to save skill library:", err);
     }
   }
-  findPlan(query) {
+  findSkill(query, domain, fingerprint) {
     const q = query.toLowerCase();
-    return this.plans.find(
-      (p) => p.trigger_keywords.some((k) => q.includes(k.toLowerCase()))
-    ) || null;
+    let candidates = this.skills;
+    if (domain) {
+      candidates = candidates.filter(
+        (s) => s.domain === domain || domain.includes(s.domain) || s.domain === "unknown"
+      );
+    }
+    if (fingerprint) {
+      candidates = candidates.filter((s) => {
+        if (!s.fingerprint) return true;
+        return fingerprint.includes(s.fingerprint) || s.fingerprint.includes(fingerprint);
+      });
+    }
+    const queryEmbedding = this.computeEmbedding(query);
+    const scored = candidates.map((skill) => {
+      let score = 0;
+      if (skill.name.replace(/_/g, " ").includes(q)) score += 10;
+      if (skill.description.toLowerCase().includes(q)) score += 5;
+      if (skill.tags.some((t2) => q.includes(t2.toLowerCase()))) score += 3;
+      const partials = skill.stats.partials ?? 0;
+      const total = skill.stats.successes + skill.stats.failures + partials;
+      if (total > 0) {
+        const weightedSuccess = (skill.stats.successes + 0.5 * partials) / total;
+        score += weightedSuccess * 2;
+      }
+      if (fingerprint && skill.fingerprint) {
+        if (fingerprint === skill.fingerprint) score += 3;
+        else if (fingerprint.includes(skill.fingerprint) || skill.fingerprint.includes(fingerprint)) score += 1;
+      }
+      const sim = this.cosineSimilarity(skill.embedding, queryEmbedding);
+      score += sim * 10;
+      const fb = Array.isArray(skill.feedback) ? skill.feedback : [];
+      const recent = fb.slice(-6);
+      for (const e of recent) {
+        if (e.label === "worked") score += 0.6;
+        if (e.label === "partial") score += 0.2;
+        if (e.label === "failed") score -= 0.6;
+      }
+      return { skill, score };
+    });
+    scored.sort((a, b) => b.score - a.score);
+    if (scored.length > 0 && scored[0].score > 0) {
+      return scored[0].skill;
+    }
+    return null;
   }
-  addPlan(plan) {
-    this.plans = this.plans.filter((p) => p.goal !== plan.goal);
-    this.plans.push(plan);
+  addSkill(input) {
+    const existingIndex = this.skills.findIndex(
+      (s) => s.name === input.name && s.domain === input.domain
+    );
+    if (existingIndex >= 0) {
+      const existing = this.skills[existingIndex];
+      const newVersion = (existing.versions.length > 0 ? existing.versions[existing.versions.length - 1].version : 0) + 1;
+      existing.versions.push({
+        version: newVersion,
+        steps: input.steps,
+        createdAt: Date.now()
+      });
+      existing.steps = input.steps;
+      existing.description = input.description;
+      existing.domain = input.domain;
+      existing.fingerprint = input.fingerprint ?? existing.fingerprint;
+      existing.currentVersion = newVersion;
+      existing.tags = Array.from(/* @__PURE__ */ new Set([...existing.tags, ...input.tags]));
+      existing.stats.lastUsed = Date.now();
+      existing.stats.successes += 1;
+      existing.stats.lastOutcomeAt = Date.now();
+      existing.stats.lastOutcomeSuccess = true;
+      existing.embedding = this.computeEmbedding(this.buildSkillText(existing));
+      this.skills[existingIndex] = existing;
+    } else {
+      const newSkill = {
+        id: v4$2(),
+        name: input.name,
+        description: input.description,
+        domain: input.domain,
+        fingerprint: input.fingerprint,
+        steps: input.steps,
+        currentVersion: 1,
+        embedding: this.computeEmbedding(this.buildSkillText({
+          id: "tmp",
+          name: input.name,
+          description: input.description,
+          domain: input.domain,
+          fingerprint: input.fingerprint,
+          steps: input.steps,
+          currentVersion: 1,
+          stats: { successes: 1, failures: 0, partials: 0, lastUsed: Date.now(), lastOutcomeAt: Date.now(), lastOutcomeSuccess: true },
+          versions: [{ version: 1, steps: input.steps, createdAt: Date.now() }],
+          tags: input.tags
+        })),
+        stats: { successes: 1, failures: 0, partials: 0, lastUsed: Date.now(), lastOutcomeAt: Date.now(), lastOutcomeSuccess: true },
+        feedback: [],
+        versions: [{ version: 1, steps: input.steps, createdAt: Date.now() }],
+        tags: input.tags
+      };
+      this.skills.push(newSkill);
+    }
     this.save();
   }
+  recordOutcome(skillId, success) {
+    this.recordFeedback(skillId, success ? "worked" : "failed");
+  }
+  recordFeedback(skillId, label, version2) {
+    const skill = this.skills.find((s) => s.id === skillId);
+    if (!skill) return;
+    if (label === "worked") skill.stats.successes++;
+    if (label === "failed") skill.stats.failures++;
+    if (label === "partial") skill.stats.partials = (skill.stats.partials ?? 0) + 1;
+    skill.stats.lastUsed = Date.now();
+    skill.stats.lastOutcomeAt = Date.now();
+    skill.stats.lastOutcomeSuccess = label === "worked";
+    const runId = agentRunContext.getRunId() ?? void 0;
+    const ctx = agentRunContext.getBrowserContext();
+    const entry = {
+      ts: Date.now(),
+      label,
+      version: version2 ?? skill.currentVersion,
+      runId,
+      domain: ctx == null ? void 0 : ctx.domain,
+      fingerprint: (() => {
+        const url = ctx == null ? void 0 : ctx.url;
+        if (!url) return void 0;
+        try {
+          const u = new URL(url);
+          return u.pathname || void 0;
+        } catch {
+          return void 0;
+        }
+      })()
+    };
+    if (!Array.isArray(skill.feedback)) skill.feedback = [];
+    skill.feedback.push(entry);
+    if (skill.feedback.length > 200) skill.feedback = skill.feedback.slice(-200);
+    this.save();
+  }
+  rollbackSkill(skillId, version2) {
+    const skill = this.skills.find((s) => s.id === skillId);
+    if (!skill) return false;
+    const v = skill.versions.find((x) => x.version === version2);
+    if (!v) return false;
+    skill.steps = v.steps;
+    skill.currentVersion = v.version;
+    skill.stats.lastUsed = Date.now();
+    this.save();
+    return true;
+  }
   registerTools() {
-    const savePlanSchema = object({
-      goal: string().describe('Short description of the task (e.g. "Create Jira Ticket")'),
-      keywords: array(string()).describe('Keywords that trigger this plan (e.g. ["jira", "ticket", "create"])'),
+    const saveSkillSchema = object({
+      name: string().describe('Short identifier for the skill (e.g. "create_jira_issue")'),
+      description: string().describe("Description of what the skill does"),
+      domain: string().optional().describe('Domain where this skill applies (e.g. "localhost:3000")'),
+      fingerprint: string().optional().describe('Optional page fingerprint (e.g. "/jira" or "/aerocore/admin")'),
       steps: array(
         object({
           action: _enum(["navigate", "click", "type", "select", "wait"]),
@@ -41422,38 +42563,148 @@ class TaskKnowledgeService {
           value: string().optional(),
           text: string().optional()
         })
-      ).describe("The successful sequence of actions")
+      ),
+      tags: array(string()).describe("Keywords for retrieval")
     });
-    const savePlanTool = {
-      name: "knowledge_save_plan",
-      description: "Save a successful execution plan for future reuse. Call this AFTER you have verified the task was completed successfully.",
-      schema: savePlanSchema,
+    const saveSkillTool = {
+      name: "knowledge_save_skill",
+      description: "Save a verified execution plan as a reusable skill.",
+      schema: saveSkillSchema,
       execute: async (args) => {
-        const { goal, keywords, steps } = savePlanSchema.parse(args);
-        this.addPlan({ goal, trigger_keywords: keywords, steps });
-        return `Saved plan for "${goal}". I will remember how to do this next time.`;
+        const input = saveSkillSchema.parse(args);
+        const ctx = agentRunContext.getBrowserContext();
+        const domain = input.domain ?? (ctx == null ? void 0 : ctx.domain) ?? "unknown";
+        const fingerprint = (() => {
+          if (input.fingerprint) return input.fingerprint;
+          const url = ctx == null ? void 0 : ctx.url;
+          if (!url) return void 0;
+          try {
+            const u = new URL(url);
+            return u.pathname || void 0;
+          } catch {
+            return void 0;
+          }
+        })();
+        this.addSkill({
+          name: input.name,
+          description: input.description,
+          domain,
+          fingerprint,
+          steps: input.steps,
+          tags: input.tags
+        });
+        return `Saved skill "${input.name}" for domain ${domain}.`;
       }
     };
-    const searchPlanTool = {
-      name: "knowledge_search_plan",
-      description: "Search for a saved plan that matches the user request. Use this BEFORE planning from scratch.",
+    const searchSkillTool = {
+      name: "knowledge_search_skill",
+      description: "Search for a saved skill matching the user request and domain.",
       schema: object({
-        query: string().describe("User request string")
+        query: string().describe("User request description"),
+        domain: string().optional().describe("Current domain context"),
+        fingerprint: string().optional().describe("Optional page fingerprint for disambiguation")
       }),
       execute: async (args) => {
-        const { query } = args;
-        const plan = this.findPlan(query);
-        if (plan) {
-          return JSON.stringify({ found: true, plan });
+        const { query, domain, fingerprint } = args;
+        const ctx = agentRunContext.getBrowserContext();
+        const effectiveDomain = domain ?? (ctx == null ? void 0 : ctx.domain);
+        const effectiveFingerprint = fingerprint ?? (() => {
+          const url = ctx == null ? void 0 : ctx.url;
+          if (!url) return void 0;
+          try {
+            const u = new URL(url);
+            return u.pathname || void 0;
+          } catch {
+            return void 0;
+          }
+        })();
+        const skill = this.findSkill(query, effectiveDomain, effectiveFingerprint);
+        if (skill) {
+          return JSON.stringify({
+            found: true,
+            skill: {
+              id: skill.id,
+              name: skill.name,
+              description: skill.description,
+              domain: skill.domain,
+              fingerprint: skill.fingerprint,
+              currentVersion: skill.currentVersion,
+              steps: skill.steps,
+              stats: skill.stats
+            }
+          });
         }
         return JSON.stringify({ found: false });
       }
     };
-    toolRegistry.register(savePlanTool);
-    toolRegistry.register(searchPlanTool);
+    const recordOutcomeTool = {
+      name: "knowledge_record_outcome",
+      description: "Record whether a skill execution succeeded or failed.",
+      schema: object({
+        skillId: string(),
+        success: boolean().optional(),
+        label: _enum(["worked", "failed", "partial"]).optional(),
+        version: number().optional()
+      }),
+      execute: async (args) => {
+        const { skillId, success, label, version: version2 } = args;
+        const resolvedLabel = label ?? (success === true ? "worked" : success === false ? "failed" : "worked");
+        this.recordFeedback(skillId, resolvedLabel, version2);
+        return `Recorded ${resolvedLabel} for skill ${skillId}.`;
+      }
+    };
+    const rollbackTool = {
+      name: "knowledge_rollback_skill",
+      description: "Rollback a skill to a previous version.",
+      schema: object({
+        skillId: string(),
+        version: number().describe("Version number to restore")
+      }),
+      execute: async (args) => {
+        const { skillId, version: version2 } = args;
+        const ok = this.rollbackSkill(skillId, version2);
+        return ok ? `Rolled back skill ${skillId} to version ${version2}.` : `Failed to rollback skill ${skillId} to version ${version2}.`;
+      }
+    };
+    const listSkillsTool = {
+      name: "knowledge_list_skills",
+      description: "List saved skills for debugging and evaluation.",
+      schema: object({
+        domain: string().optional()
+      }),
+      execute: async (args) => {
+        const { domain } = args ?? {};
+        const ctx = agentRunContext.getBrowserContext();
+        const effectiveDomain = domain ?? (ctx == null ? void 0 : ctx.domain);
+        const skills = effectiveDomain ? this.skills.filter((s) => s.domain === effectiveDomain || s.domain === "unknown") : this.skills;
+        const out = skills.map((s) => {
+          const total = s.stats.successes + s.stats.failures;
+          const rate = total > 0 ? s.stats.successes / total : null;
+          return {
+            id: s.id,
+            name: s.name,
+            domain: s.domain,
+            fingerprint: s.fingerprint,
+            currentVersion: s.currentVersion,
+            successes: s.stats.successes,
+            failures: s.stats.failures,
+            successRate: rate,
+            versions: s.versions.map((v) => v.version),
+            lastUsed: s.stats.lastUsed,
+            tags: s.tags
+          };
+        }).sort((a, b) => (b.successRate ?? -1) - (a.successRate ?? -1));
+        return JSON.stringify({ count: out.length, skills: out }, null, 2);
+      }
+    };
+    toolRegistry.register(saveSkillTool);
+    toolRegistry.register(searchSkillTool);
+    toolRegistry.register(recordOutcomeTool);
+    toolRegistry.register(rollbackTool);
+    toolRegistry.register(listSkillsTool);
   }
 }
-new TaskKnowledgeService();
+const taskKnowledgeService = new TaskKnowledgeService();
 dotenv.config();
 const AVAILABLE_MODELS = [
   // Fast models
@@ -41515,17 +42766,62 @@ const AVAILABLE_MODELS = [
     maxTokens: 16384,
     supportsThinking: true,
     extraBody: { chat_template_kwargs: { enable_thinking: true } }
+  },
+  // Specialized models
+  {
+    id: "actions-policy-v1",
+    name: "Actions Policy (Beta)",
+    modelName: "custom/actions-policy-v1",
+    temperature: 0,
+    maxTokens: 2048,
+    supportsThinking: false
   }
 ];
 const _AgentService = class _AgentService {
   constructor() {
     __publicField(this, "model");
     __publicField(this, "currentModelId", "llama-3.1-70b");
+    __publicField(this, "useActionsPolicy", false);
+    __publicField(this, "agentMode", "do");
+    __publicField(this, "permissionMode", "permissions");
     __publicField(this, "onStep");
     __publicField(this, "conversationHistory", []);
     __publicField(this, "systemPrompt");
     this.model = this.createModel("llama-3.1-70b");
     this.systemPrompt = new SystemMessage("");
+  }
+  /**
+   * Redact common secrets from text before sending to LLM
+   */
+  redactSecrets(text) {
+    if (!text) return text;
+    let redacted = text;
+    const patterns = [
+      // Bearer tokens
+      { re: /Bearer\s+[a-zA-Z0-9\-\._]+/gi, repl: "Bearer [REDACTED_TOKEN]" },
+      // Authorization header
+      { re: /Authorization\s*:\s*Bearer\s+[a-zA-Z0-9\-\._]+/gi, repl: "Authorization: Bearer [REDACTED_TOKEN]" },
+      // OpenAI sk- keys
+      { re: /sk-[a-zA-Z0-9]{32,}/g, repl: "[REDACTED_OPENAI_KEY]" },
+      // GitHub tokens
+      { re: /gh[pousr]_[A-Za-z0-9_]{20,}/g, repl: "[REDACTED_GITHUB_TOKEN]" },
+      // Slack tokens
+      { re: /xox[baprs]-[A-Za-z0-9-]{10,}/g, repl: "[REDACTED_SLACK_TOKEN]" },
+      // AWS Access Keys
+      { re: /AKIA[0-9A-Z]{16}/g, repl: "[REDACTED_AWS_KEY]" },
+      // JWT-like tokens
+      { re: /\beyJ[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}\b/g, repl: "[REDACTED_JWT]" },
+      // Generic "password": "..." patterns (loose match)
+      { re: /"(password|client_secret|access_token|id_token|refresh_token|api_key|apikey)"\s*:\s*"[^"]+"/gi, repl: '"$1": "[REDACTED]"' },
+      // password=... / token=... forms
+      { re: /(password|passwd|pwd|token|secret|api[_-]?key)\s*[:=]\s*[^\s\n"']+/gi, repl: "$1=[REDACTED]" },
+      // Private Keys
+      { re: /-----BEGIN [A-Z]+ PRIVATE KEY-----[\s\S]*?-----END [A-Z]+ PRIVATE KEY-----/g, repl: "[REDACTED_PRIVATE_KEY]" }
+    ];
+    for (const { re: re2, repl } of patterns) {
+      redacted = redacted.replace(re2, repl);
+    }
+    return redacted;
   }
   extractJsonObject(input) {
     const text = input.replace(/```json/g, "").replace(/```/g, "").trim();
@@ -41579,6 +42875,47 @@ const _AgentService = class _AgentService {
     const messageMatch = cleaned.match(/"message"\s*:\s*"([\s\S]*?)"\s*(?:,|\})/);
     const message = messageMatch ? messageMatch[1] : "";
     return { tool: tool2, args: { message } };
+  }
+  /**
+   * Toggle the use of the specialized actions policy model
+   */
+  toggleActionsPolicy(enabled) {
+    this.useActionsPolicy = enabled;
+    if (enabled) {
+      this.setModel("actions-policy-v1");
+    } else {
+      this.setModel("llama-3.1-70b");
+    }
+    console.log(`[AgentService] Actions Policy Model: ${enabled ? "ENABLED" : "DISABLED"}`);
+  }
+  isActionsPolicyEnabled() {
+    return this.useActionsPolicy;
+  }
+  /**
+   * Set the agent mode (chat/read/do)
+   */
+  setAgentMode(mode) {
+    this.agentMode = mode;
+    console.log(`[AgentService] Agent Mode: ${mode}`);
+  }
+  getAgentMode() {
+    return this.agentMode;
+  }
+  /**
+   * Set the permission mode (yolo/permissions) - only applies in 'do' mode
+   */
+  setPermissionMode(mode) {
+    this.permissionMode = mode;
+    console.log(`[AgentService] Permission Mode: ${mode}`);
+  }
+  getPermissionMode() {
+    return this.permissionMode;
+  }
+  /**
+   * Check if YOLO mode is active (do mode + yolo permissions)
+   */
+  isYoloMode() {
+    return this.agentMode === "do" && this.permissionMode === "yolo";
   }
   /**
    * Create a model instance from config
@@ -41652,19 +42989,85 @@ const _AgentService = class _AgentService {
   setStepHandler(handler) {
     this.onStep = handler;
   }
+  clearStepHandler() {
+    this.onStep = void 0;
+  }
   emitStep(type, content, metadata) {
     if (this.onStep) {
-      this.onStep({ type, content, metadata });
+      const runId = agentRunContext.getRunId() ?? void 0;
+      const enrichedMetadata = {
+        ...metadata ?? {},
+        ts: (/* @__PURE__ */ new Date()).toISOString(),
+        runId
+      };
+      this.onStep({ type, content, metadata: enrichedMetadata });
     }
   }
   async chat(userMessage, browserContext) {
+    if (this.agentMode === "chat") {
+      return this.chatOnly(userMessage);
+    }
+    if (this.agentMode === "read") {
+      return this.readOnly(userMessage, browserContext);
+    }
+    return this.doMode(userMessage, browserContext);
+  }
+  /**
+   * Chat-only mode: Regular chatbot, no browser access or tools
+   */
+  async chatOnly(userMessage) {
+    const safeUserMessage = this.redactSecrets(userMessage);
+    const chatPrompt = new SystemMessage(`You are a helpful assistant. You are in CHAT mode - you cannot access the browser or use any tools. Just have a helpful conversation with the user. Respond naturally without JSON formatting.`);
+    this.conversationHistory.push(new HumanMessage(safeUserMessage));
+    this.trimConversationHistory();
+    try {
+      const response = await this.model.invoke([chatPrompt, ...this.conversationHistory]);
+      const content = typeof response.content === "string" ? response.content : JSON.stringify(response.content);
+      this.conversationHistory.push(new AIMessage(content));
+      this.trimConversationHistory();
+      return content;
+    } catch (e) {
+      return `Error: ${e.message}`;
+    }
+  }
+  /**
+   * Read-only mode: Can see browser state but cannot take actions
+   */
+  async readOnly(userMessage, browserContext) {
+    const safeUserMessage = this.redactSecrets(userMessage);
+    let context = browserContext || "Current browser state: No context provided";
+    context = this.redactSecrets(context);
+    const readPrompt = new SystemMessage(`You are a helpful assistant integrated into a browser. You are in READ mode - you can see what the user sees on their browser, but you CANNOT take any actions or use any tools.
+
+Current browser state:
+${context}
+
+You can answer questions about what's on the page, explain content, summarize information, or help the user understand what they're looking at. But you cannot click, type, navigate, or modify anything. Respond naturally without JSON formatting.`);
+    this.conversationHistory.push(new HumanMessage(safeUserMessage));
+    this.trimConversationHistory();
+    try {
+      const response = await this.model.invoke([readPrompt, ...this.conversationHistory]);
+      const content = typeof response.content === "string" ? response.content : JSON.stringify(response.content);
+      this.conversationHistory.push(new AIMessage(content));
+      this.trimConversationHistory();
+      return content;
+    } catch (e) {
+      return `Error: ${e.message}`;
+    }
+  }
+  /**
+   * Do mode: Full agentic capabilities with tools
+   */
+  async doMode(userMessage, browserContext) {
     var _a3, _b;
     const tools = toolRegistry.toLangChainTools();
     let usedBrowserTools = false;
     let parseFailures = 0;
     let lastVerified = null;
     try {
-      const context = browserContext || "Current browser state: No context provided";
+      let context = browserContext || "Current browser state: No context provided";
+      context = this.redactSecrets(context);
+      const safeUserMessage = this.redactSecrets(userMessage);
       this.systemPrompt = new SystemMessage(`You are a helpful enterprise assistant integrated into a browser. 
         
         You have access to the following tools:
@@ -41687,6 +43090,11 @@ const _AgentService = class _AgentService {
              "args": { "message": "Your text here" }
            }
 
+        PREFERRED WORKFLOW (SPEED & RELIABILITY):
+        1. OBSERVE: If the page state is unknown, call 'browser_observe'.
+        2. PLAN: For multi-step tasks (especially Mock SaaS), ALWAYS output ONE full 'browser_execute_plan' (include a final wait step for verification). This is significantly faster and more reliable than individual tool calls.
+        3. EXECUTE: Submit the plan once. Avoid calling browser_click/browser_type in separate turns for multi-step tasks.
+
         CONVERSATION CONTEXT:
         - You have memory of the entire conversation. Use previous messages to understand context.
         - If the user refers to "it", "this page", "here", etc., use the conversation history and current browser state to understand what they mean.
@@ -41707,17 +43115,17 @@ const _AgentService = class _AgentService {
         - When the task targets the local Mock SaaS (e.g. URLs like http://localhost:3000/* or apps like Jira/Confluence/Trello/AeroCore in this repo), you MUST operate in this order:
 
         PHASE 0: RECALL (Check Memory)
-        - Call "knowledge_search_plan" with the user's request.
-        - If a plan is found, verify it briefly, then execute it using "browser_execute_plan".
+        - Call "knowledge_search_skill" with the user's request and current domain.
+        - If a skill is found, verify it briefly, then execute it using "browser_execute_plan".
 
-        PHASE 1: PLAN (Read Code) - if no plan found
+        PHASE 1: PLAN (Read Code) - if no skill found
         - DO NOT touch the browser yet.
         - Use "code_search" or "code_list_files" to find the relevant React components.
         - Read "mock-saas/src/App.tsx" to find the correct route.
         - NOTE: AeroCore apps are under "/aerocore/*" (e.g. /aerocore/admin, /aerocore/dispatch).
         - Read the page/component source code (e.g. "JiraPage.tsx" or "AdminPage.tsx") to find:
           * Stable "data-testid" selectors.
-          * WARNING: If a selector is inside a loop (e.g. [data-testid=jira-create-issue-button] inside columns), IT IS NOT UNIQUE. Look for a global alternative (e.g. [data-testid=jira-create-button] in the nav) or use :nth-child in your plan.
+          * WARNING: If a selector is inside a loop (e.g. [data-testid=jira-create-issue-button] inside columns), IT IS NOT UNIQUE. browser_click will refuse ambiguous matches. Prefer browser_click_text or disambiguate via withinSelector/matchText/index.
           * Validation logic (e.g. allowed values for priority).
           
         PHASE 2: EXECUTE (Run Plan)
@@ -41734,7 +43142,7 @@ const _AgentService = class _AgentService {
           ]
 
         PHASE 3: LEARN (Save Memory)
-        - If the execution (and its built-in wait) succeeded, call "knowledge_save_plan" IMMEDIATELY.
+        - If the execution (and its built-in wait) succeeded, call "knowledge_save_skill" IMMEDIATELY.
         - Then IMMEDIATELY send "final_response". Do not perform extra verifications.
         
         BROWSER AUTOMATION STRATEGY:
@@ -41743,7 +43151,7 @@ const _AgentService = class _AgentService {
         - Step 1: Check current browser state. If already on the target site, skip navigation.
         - Step 2: Use "browser_observe" with scope="main" to see relevant page content.
         - Step 3: Prefer "browser_click_text" when you can describe a link/button by visible text (more robust than guessing aria-label/href).
-        - Step 4: Use selectors returned by "browser_observe" (which are JSON-safe) for "browser_click", "browser_type", "browser_select".
+        - Step 4: Use selectors returned by "browser_observe" (which are JSON-safe) for "browser_click", "browser_type", "browser_select". If browser_click says the selector is ambiguous, disambiguate via withinSelector/matchText/index or switch to browser_click_text.
         - Step 5: Verify outcomes using "browser_wait_for_text", "browser_wait_for_text_in", or "browser_extract_main_text".
 
         Example Interaction:
@@ -41756,7 +43164,7 @@ const _AgentService = class _AgentService {
         `);
       const contextualUserMessage = new HumanMessage(`[${context}]
 
-User request: ${userMessage}`);
+User request: ${safeUserMessage}`);
       this.conversationHistory.push(contextualUserMessage);
       this.trimConversationHistory();
       const messages = [
@@ -41767,21 +43175,125 @@ User request: ${userMessage}`);
       const isSlowModel = (currentConfig == null ? void 0 : currentConfig.supportsThinking) || (currentConfig == null ? void 0 : currentConfig.id) === "qwen3-235b";
       const timeoutMs = isSlowModel ? 9e4 : 45e3;
       for (let i = 0; i < 15; i++) {
+        const runId = agentRunContext.getRunId() ?? void 0;
+        const llmCallId = v4$2();
+        const llmStartedAt = Date.now();
+        this.emitStep("thought", `Calling model ${this.currentModelId} (turn ${i + 1})`, {
+          phase: "llm_start",
+          llmCallId,
+          turnIndex: i,
+          modelId: this.currentModelId
+        });
+        try {
+          await telemetryService.emit({
+            eventId: v4$2(),
+            runId,
+            ts: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "llm_call_start",
+            name: "agent_turn",
+            data: {
+              llmCallId,
+              turnIndex: i,
+              modelId: this.currentModelId,
+              modelName: currentConfig == null ? void 0 : currentConfig.modelName,
+              timeoutMs
+            }
+          });
+        } catch {
+        }
         const timeoutPromise = new Promise(
           (_, reject) => setTimeout(() => reject(new Error(`LLM call timed out after ${timeoutMs / 1e3} seconds`)), timeoutMs)
         );
         let response;
+        let progressTimer = null;
+        let progressCount = 0;
         try {
+          progressTimer = setInterval(() => {
+            progressCount += 1;
+            const elapsedMs = Date.now() - llmStartedAt;
+            if (progressCount <= 6) {
+              this.emitStep("thought", `Still thinking... (${Math.round(elapsedMs / 1e3)}s)`, {
+                phase: "llm_wait",
+                llmCallId,
+                turnIndex: i,
+                modelId: this.currentModelId,
+                elapsedMs
+              });
+            }
+          }, 5e3);
           response = await Promise.race([
             this.model.invoke(messages),
             timeoutPromise
           ]);
         } catch (timeoutErr) {
+          if (progressTimer) clearInterval(progressTimer);
+          const durationMs = Date.now() - llmStartedAt;
+          this.emitStep("observation", `LLM timed out after ${Math.round(durationMs)}ms`, {
+            phase: "llm_end",
+            ok: false,
+            llmCallId,
+            turnIndex: i,
+            modelId: this.currentModelId,
+            durationMs,
+            errorMessage: String((timeoutErr == null ? void 0 : timeoutErr.message) ?? timeoutErr)
+          });
+          try {
+            await telemetryService.emit({
+              eventId: v4$2(),
+              runId,
+              ts: (/* @__PURE__ */ new Date()).toISOString(),
+              type: "llm_call_end",
+              name: "agent_turn",
+              data: {
+                llmCallId,
+                turnIndex: i,
+                ok: false,
+                durationMs,
+                errorMessage: String((timeoutErr == null ? void 0 : timeoutErr.message) ?? timeoutErr)
+              }
+            });
+          } catch {
+          }
           this.emitStep("observation", `Request timed out. Try a simpler request or switch to a faster model.`);
           return "The request timed out. Try breaking it into smaller steps or use a faster model.";
         }
+        if (progressTimer) clearInterval(progressTimer);
+        try {
+          const durationMs = Date.now() - llmStartedAt;
+          this.emitStep("thought", `Model responded in ${Math.round(durationMs)}ms`, {
+            phase: "llm_end",
+            ok: true,
+            llmCallId,
+            turnIndex: i,
+            modelId: this.currentModelId,
+            durationMs
+          });
+          await telemetryService.emit({
+            eventId: v4$2(),
+            runId,
+            ts: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "llm_call_end",
+            name: "agent_turn",
+            data: {
+              llmCallId,
+              turnIndex: i,
+              ok: true,
+              durationMs,
+              responseLength: String((response == null ? void 0 : response.content) ?? "").length
+            }
+          });
+        } catch {
+        }
         const content = response.content;
-        console.log(`[Agent Turn ${i}] Raw Response:`, content);
+        console.log(`[Agent Turn ${i}] Raw Response:`, this.redactSecrets(content));
+        const jsonStart = content.indexOf("{");
+        if (jsonStart > 10) {
+          const thought = content.slice(0, jsonStart).trim();
+          const cleanThought = thought.replace(/```json/g, "").replace(/```/g, "").trim();
+          if (cleanThought.length > 5) {
+            this.emitStep("thought", cleanThought);
+          }
+        }
         const action = this.parseToolCall(content);
         if (action && typeof action.tool === "number") {
         }
@@ -41789,7 +43301,7 @@ User request: ${userMessage}`);
           parseFailures++;
           this.emitStep("observation", `Model returned invalid JSON (attempt ${parseFailures}/3).`);
           console.warn("Failed to parse JSON response:", content);
-          messages.push(response);
+          messages.push(new AIMessage(this.redactSecrets(String((response == null ? void 0 : response.content) ?? ""))));
           messages.push(
             new SystemMessage(
               `Error: Output ONLY valid JSON. Format: {"tool":"tool_name","args":{...}}
@@ -41833,16 +43345,30 @@ To finish: {"tool":"final_response","args":{"message":"your response"}}`
               continue;
             }
           }
-          this.conversationHistory.push(new AIMessage(content));
+          this.conversationHistory.push(new AIMessage(this.redactSecrets(content)));
           return finalMessage;
         }
         const tool2 = tools.find((t2) => t2.name === action.tool);
         if (tool2) {
           console.log(`Executing tool: ${tool2.name} with args:`, action.args);
-          this.emitStep("action", `Executing ${tool2.name}`, { tool: tool2.name, args: action.args });
+          const toolCallId = v4$2();
+          const toolStartedAt = Date.now();
+          this.emitStep("action", `Executing ${tool2.name}`, {
+            tool: tool2.name,
+            args: action.args,
+            toolCallId,
+            phase: "tool_start"
+          });
           try {
             const result = await tool2.invoke(action.args);
-            this.emitStep("observation", `Tool Output: ${result}`, { tool: tool2.name, result });
+            const toolDurationMs = Date.now() - toolStartedAt;
+            this.emitStep("observation", `Tool Output: ${result}`, {
+              tool: tool2.name,
+              result,
+              toolCallId,
+              phase: "tool_end",
+              durationMs: toolDurationMs
+            });
             if (tool2.name.startsWith("browser_")) usedBrowserTools = true;
             if (tool2.name === "browser_wait_for_text" || tool2.name === "browser_wait_for_text_in") {
               if (typeof result === "string" && result.startsWith("Found text")) {
@@ -41851,20 +43377,18 @@ To finish: {"tool":"final_response","args":{"message":"your response"}}`
             }
             const resultStr = String(result);
             const toolName = action.tool;
+            if (toolName === "browser_execute_plan" && resultStr.startsWith("Plan completed successfully.")) {
+              const fastResponse = `Completed the requested steps and verified the outcome.`;
+              this.conversationHistory.push(
+                new AIMessage(
+                  JSON.stringify({ tool: "final_response", args: { message: fastResponse } })
+                )
+              );
+              return fastResponse;
+            }
             if (toolName === "browser_navigate" && resultStr.includes("Navigated to")) {
               const url = ((_a3 = action.args) == null ? void 0 : _a3.url) || "the page";
               const fastResponse = `Opened ${url}`;
-              this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: "final_response", args: { message: fastResponse } })));
-              return fastResponse;
-            }
-            if (toolName === "browser_click" && !resultStr.toLowerCase().includes("error") && !resultStr.toLowerCase().includes("failed")) {
-              const fastResponse = `Clicked the element.`;
-              this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: "final_response", args: { message: fastResponse } })));
-              return fastResponse;
-            }
-            if (toolName === "browser_type" && !resultStr.toLowerCase().includes("error") && !resultStr.toLowerCase().includes("failed") && !resultStr.toLowerCase().includes("timeout")) {
-              const text = ((_b = action.args) == null ? void 0 : _b.text) || "";
-              const fastResponse = text ? `Typed "${text.slice(0, 50)}${text.length > 50 ? "..." : ""}"` : `Typed the text.`;
               this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: "final_response", args: { message: fastResponse } })));
               return fastResponse;
             }
@@ -41878,16 +43402,48 @@ To finish: {"tool":"final_response","args":{"message":"your response"}}`
               this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: "final_response", args: { message: fastResponse } })));
               return fastResponse;
             }
-            const aiMsg = new AIMessage(content);
+            if (toolName === "browser_go_forward" && !resultStr.toLowerCase().includes("error")) {
+              const fastResponse = `Went forward to the next page.`;
+              this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: "final_response", args: { message: fastResponse } })));
+              return fastResponse;
+            }
+            if (toolName === "browser_reload" && !resultStr.toLowerCase().includes("error")) {
+              const fastResponse = `Reloaded the page.`;
+              this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: "final_response", args: { message: fastResponse } })));
+              return fastResponse;
+            }
+            if (toolName === "browser_press_key" && !resultStr.toLowerCase().includes("error")) {
+              const key = ((_b = action.args) == null ? void 0 : _b.key) || "the key";
+              const fastResponse = `Pressed ${key}.`;
+              this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: "final_response", args: { message: fastResponse } })));
+              return fastResponse;
+            }
+            if (toolName === "browser_clear" && !resultStr.toLowerCase().includes("error")) {
+              const fastResponse = `Cleared the input field.`;
+              this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: "final_response", args: { message: fastResponse } })));
+              return fastResponse;
+            }
+            const safeToolCall = this.redactSecrets(content);
+            const safeResult = this.redactSecrets(String(result ?? ""));
+            const aiMsg = new AIMessage(safeToolCall);
             const toolOutputMsg = new SystemMessage(`Tool '${action.tool}' Output:
-${result}`);
+${safeResult}`);
             messages.push(aiMsg);
             messages.push(toolOutputMsg);
             this.conversationHistory.push(aiMsg);
             this.conversationHistory.push(toolOutputMsg);
           } catch (err) {
             console.error(`Tool execution failed: ${err}`);
-            const aiMsg = new AIMessage(content);
+            const toolDurationMs = Date.now() - toolStartedAt;
+            this.emitStep("observation", `Tool Execution Error: ${err.message}`, {
+              tool: tool2.name,
+              toolCallId,
+              phase: "tool_end",
+              ok: false,
+              durationMs: toolDurationMs,
+              errorMessage: String((err == null ? void 0 : err.message) ?? err)
+            });
+            const aiMsg = new AIMessage(this.redactSecrets(content));
             const errorMsg = new SystemMessage(`Tool Execution Error: ${err.message}`);
             messages.push(aiMsg);
             messages.push(errorMsg);
@@ -41927,118 +43483,6 @@ ${result}`);
 __publicField(_AgentService, "MAX_HISTORY_MESSAGES", 50);
 let AgentService = _AgentService;
 const agentService = new AgentService();
-const byteToHex = [];
-for (let i = 0; i < 256; ++i) {
-  byteToHex.push((i + 256).toString(16).slice(1));
-}
-function unsafeStringify(arr2, offset = 0) {
-  return (byteToHex[arr2[offset + 0]] + byteToHex[arr2[offset + 1]] + byteToHex[arr2[offset + 2]] + byteToHex[arr2[offset + 3]] + "-" + byteToHex[arr2[offset + 4]] + byteToHex[arr2[offset + 5]] + "-" + byteToHex[arr2[offset + 6]] + byteToHex[arr2[offset + 7]] + "-" + byteToHex[arr2[offset + 8]] + byteToHex[arr2[offset + 9]] + "-" + byteToHex[arr2[offset + 10]] + byteToHex[arr2[offset + 11]] + byteToHex[arr2[offset + 12]] + byteToHex[arr2[offset + 13]] + byteToHex[arr2[offset + 14]] + byteToHex[arr2[offset + 15]]).toLowerCase();
-}
-const rnds8Pool = new Uint8Array(256);
-let poolPtr = rnds8Pool.length;
-function rng() {
-  if (poolPtr > rnds8Pool.length - 16) {
-    randomFillSync(rnds8Pool);
-    poolPtr = 0;
-  }
-  return rnds8Pool.slice(poolPtr, poolPtr += 16);
-}
-const native = { randomUUID };
-function _v4(options, buf, offset) {
-  var _a3;
-  options = options || {};
-  const rnds = options.random ?? ((_a3 = options.rng) == null ? void 0 : _a3.call(options)) ?? rng();
-  if (rnds.length < 16) {
-    throw new Error("Random bytes length must be >= 16");
-  }
-  rnds[6] = rnds[6] & 15 | 64;
-  rnds[8] = rnds[8] & 63 | 128;
-  return unsafeStringify(rnds);
-}
-function v4(options, buf, offset) {
-  if (native.randomUUID && true && !options) {
-    return native.randomUUID();
-  }
-  return _v4(options);
-}
-class AuditService {
-  constructor() {
-    __publicField(this, "db");
-    __publicField(this, "encryptionKey", null);
-    __publicField(this, "DB_FILENAME", "audit_logs.db");
-    const userDataPath = app.getPath("userData");
-    const dbPath = require$$1.join(userDataPath, this.DB_FILENAME);
-    this.db = new Database(dbPath);
-    this.init();
-  }
-  async init() {
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS audit_logs (
-        id TEXT PRIMARY KEY,
-        timestamp TEXT NOT NULL,
-        actor TEXT NOT NULL,
-        action TEXT NOT NULL,
-        details TEXT,
-        status TEXT NOT NULL
-      )
-    `);
-    await this.loadOrGenerateKey();
-  }
-  async loadOrGenerateKey() {
-    let keyHex = await vaultService.getSecret("audit_db_key");
-    if (!keyHex) {
-      keyHex = crypto$3.randomBytes(32).toString("hex");
-      await vaultService.setSecret("audit_db_key", keyHex);
-    }
-    this.encryptionKey = Buffer.from(keyHex, "hex");
-  }
-  encrypt(text) {
-    if (!this.encryptionKey) return text;
-    const iv = crypto$3.randomBytes(16);
-    const cipher = crypto$3.createCipheriv("aes-256-cbc", this.encryptionKey, iv);
-    let encrypted = cipher.update(text);
-    encrypted = Buffer.concat([encrypted, cipher.final()]);
-    return iv.toString("hex") + ":" + encrypted.toString("hex");
-  }
-  decrypt(text) {
-    if (!this.encryptionKey) return text;
-    try {
-      const textParts = text.split(":");
-      const iv = Buffer.from(textParts.shift(), "hex");
-      const encryptedText = Buffer.from(textParts.join(":"), "hex");
-      const decipher = crypto$3.createDecipheriv("aes-256-cbc", this.encryptionKey, iv);
-      let decrypted = decipher.update(encryptedText);
-      decrypted = Buffer.concat([decrypted, decipher.final()]);
-      return decrypted.toString();
-    } catch (e) {
-      console.error("Failed to decrypt log:", e);
-      return "[Encrypted Content]";
-    }
-  }
-  async log(entry) {
-    if (!this.encryptionKey) await this.loadOrGenerateKey();
-    const id = v4();
-    const timestamp = (/* @__PURE__ */ new Date()).toISOString();
-    const detailsStr = JSON.stringify(entry.details);
-    const encryptedDetails = this.encrypt(detailsStr);
-    const stmt = this.db.prepare(`
-      INSERT INTO audit_logs (id, timestamp, actor, action, details, status)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `);
-    stmt.run(id, timestamp, entry.actor, entry.action, encryptedDetails, entry.status);
-    return id;
-  }
-  getLogs(limit2 = 100) {
-    const stmt = this.db.prepare("SELECT * FROM audit_logs ORDER BY timestamp DESC LIMIT ?");
-    const rows = stmt.all(limit2);
-    return rows.map((row) => ({
-      ...row,
-      details: this.decrypt(row.details)
-      // Attempt to decrypt on read
-    }));
-  }
-}
-const auditService = new AuditService();
 class BrowserTargetService {
   constructor() {
     __publicField(this, "tabIdToWebContentsId", /* @__PURE__ */ new Map());
@@ -42078,6 +43522,1679 @@ class BrowserTargetService {
   }
 }
 const browserTargetService = new BrowserTargetService();
+class BrowserAutomationService {
+  constructor() {
+    __publicField(this, "mockSaasRoutesCache", null);
+    __publicField(this, "observeCache", /* @__PURE__ */ new Map());
+    __publicField(this, "attachedWebContentsIds", /* @__PURE__ */ new Set());
+    this.setupWebContentsInvalidation();
+    this.registerTools();
+  }
+  setupWebContentsInvalidation() {
+    try {
+      for (const wc of webContents.getAllWebContents()) {
+        this.attachWebContentsListeners(wc);
+      }
+    } catch {
+    }
+    try {
+      app.on("web-contents-created", (_event, wc) => {
+        this.attachWebContentsListeners(wc);
+      });
+    } catch {
+    }
+  }
+  attachWebContentsListeners(wc) {
+    try {
+      if (!wc || wc.isDestroyed()) return;
+      if (this.attachedWebContentsIds.has(wc.id)) return;
+      this.attachedWebContentsIds.add(wc.id);
+      const invalidate = () => this.invalidateCache(wc.id);
+      wc.on("did-start-navigation", invalidate);
+      wc.on("did-navigate", invalidate);
+      wc.on("did-navigate-in-page", invalidate);
+      wc.on("dom-ready", invalidate);
+      wc.on("destroyed", () => {
+        this.invalidateCache(wc.id);
+        this.attachedWebContentsIds.delete(wc.id);
+      });
+    } catch {
+    }
+  }
+  invalidateCache(webContentsId) {
+    this.observeCache.delete(webContentsId);
+  }
+  async getDomVersion(target) {
+    try {
+      const v = await target.executeJavaScript(
+        `(() => {
+          const w = window;
+          if (typeof w.__enterprise_observe_dom_version !== 'number') {
+            w.__enterprise_observe_dom_version = 0;
+          }
+          if (!w.__enterprise_observe_dom_observer) {
+            const bump = () => { w.__enterprise_observe_dom_version += 1; };
+            const obs = new MutationObserver(() => bump());
+            const root = document.documentElement || document.body;
+            if (root) {
+              obs.observe(root, { subtree: true, childList: true, attributes: true, characterData: true });
+            }
+            w.__enterprise_observe_dom_observer = obs;
+          }
+          return w.__enterprise_observe_dom_version;
+        })()`,
+        true
+      );
+      return Number(v) || 0;
+    } catch {
+      return 0;
+    }
+  }
+  async delay(ms) {
+    await new Promise((resolve) => setTimeout(resolve, ms));
+  }
+  async getMockSaasRoutes() {
+    const now = Date.now();
+    if (this.mockSaasRoutesCache && now - this.mockSaasRoutesCache.loadedAt < 1e4) {
+      return this.mockSaasRoutesCache.routes;
+    }
+    const defaultRoutes = /* @__PURE__ */ new Set(["/", "/jira", "/confluence", "/trello"]);
+    const candidates = [
+      path$2.resolve(process.cwd(), "mock-saas", "src", "App.tsx"),
+      path$2.resolve(process.cwd(), "..", "mock-saas", "src", "App.tsx"),
+      path$2.resolve(process.cwd(), "..", "..", "mock-saas", "src", "App.tsx")
+    ];
+    let appTsx = null;
+    for (const p of candidates) {
+      try {
+        const stat = await fs$1.stat(p);
+        if (stat.isFile()) {
+          appTsx = p;
+          break;
+        }
+      } catch {
+      }
+    }
+    if (!appTsx) {
+      this.mockSaasRoutesCache = { loadedAt: now, routes: defaultRoutes };
+      return defaultRoutes;
+    }
+    try {
+      const raw = await fs$1.readFile(appTsx, "utf8");
+      const routes = /* @__PURE__ */ new Set();
+      const re2 = /<Route\s+(?:path|element)\s*=\s*["']([^"']+)["']/g;
+      let match;
+      while (match = re2.exec(raw)) {
+        let route = match[1];
+        if (route.endsWith("/*")) {
+          route = route.replace("/*", "");
+          if (route === "/aerocore") {
+            routes.add("/aerocore/admin");
+            routes.add("/aerocore/dispatch");
+            routes.add("/aerocore/fleet");
+            routes.add("/aerocore/security");
+            routes.add("/aerocore/hr");
+            routes.add("/aerocore/cargo");
+            routes.add("/aerocore/data");
+          }
+        }
+        routes.add(route);
+      }
+      const final = routes.size > 0 ? routes : defaultRoutes;
+      this.mockSaasRoutesCache = { loadedAt: now, routes: final };
+      return final;
+    } catch {
+      this.mockSaasRoutesCache = { loadedAt: now, routes: defaultRoutes };
+      return defaultRoutes;
+    }
+  }
+  async getTarget() {
+    return browserTargetService.getActiveWebContents();
+  }
+  async waitForSelector(target, selector, timeoutMs = 5e3) {
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < timeoutMs) {
+      const found = await target.executeJavaScript(
+        `Boolean(document.querySelector(${JSON.stringify(selector)}))`,
+        true
+      );
+      if (found) return;
+      await this.delay(100);
+    }
+    throw new Error(`Timeout waiting for selector: ${selector}`);
+  }
+  async querySelectorCount(target, selector) {
+    const count = await target.executeJavaScript(
+      `document.querySelectorAll(${JSON.stringify(selector)}).length`,
+      true
+    );
+    return Number(count) || 0;
+  }
+  registerTools() {
+    const observeSchema = object({
+      scope: _enum(["main", "document"]).optional().describe("Where to look for elements (default: main)"),
+      maxElements: number().optional().describe("Max interactive elements to return (default: 80)"),
+      forceRefresh: boolean().optional().describe("Ignore cache and force a fresh observation")
+    });
+    const observeTool = {
+      name: "browser_observe",
+      description: "Analyze the current page URL/title and return visible interactive elements. Defaults to main content to avoid header/nav noise. Caches results for performance; use forceRefresh to bypass.",
+      schema: observeSchema,
+      execute: async (args) => {
+        const { scope, maxElements, forceRefresh } = observeSchema.parse(args ?? {});
+        try {
+          const target = await this.getTarget();
+          const targetId = target.id;
+          const currentUrl = target.getURL();
+          const argsKey = JSON.stringify({ scope: scope ?? "main", maxElements: maxElements ?? 80 });
+          const domVersion = await this.getDomVersion(target);
+          if (!forceRefresh) {
+            const cached2 = this.observeCache.get(targetId);
+            if (cached2 && cached2.url === currentUrl && cached2.argsKey === argsKey && cached2.domVersion === domVersion && Date.now() - cached2.timestamp < 5e3) {
+              const ageMs = Date.now() - cached2.timestamp;
+              return JSON.stringify(
+                {
+                  ...cached2.data,
+                  _meta: {
+                    cached: true,
+                    timestamp: cached2.timestamp,
+                    ageMs,
+                    url: cached2.url,
+                    title: cached2.title,
+                    domVersion: cached2.domVersion,
+                    args: { scope: scope ?? "main", maxElements: maxElements ?? 80 }
+                  }
+                },
+                null,
+                2
+              );
+            }
+          }
+          const url = currentUrl;
+          const title = await target.executeJavaScript(`document.title`, true);
+          const elements = await target.executeJavaScript(
+            `(() => {
+                const escapeForSingleQuotes = (value) => {
+                  if (typeof value !== 'string') return '';
+                  return value.replace(/\\\\/g, '\\\\\\\\').replace(/'/g, "\\\\'");
+                };
+
+                const attrSelectorValue = (value) => {
+                  if (typeof value !== 'string') return "''";
+                  // If value is simple, avoid quotes entirely (JSON-safe and CSS-valid).
+                  if (/^[a-zA-Z0-9_-]+$/.test(value)) return value;
+                  return "'" + escapeForSingleQuotes(value) + "'";
+                };
+
+                const isVisible = (el) => {
+                  if (!el || el.nodeType !== 1) return false;
+                  const style = window.getComputedStyle(el);
+                  if (!style) return false;
+                  if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+                  if (style.pointerEvents === 'none') return false;
+                  const rects = el.getClientRects();
+                  if (!rects || rects.length === 0) return false;
+                  const rect = el.getBoundingClientRect();
+                  if (rect.width < 2 || rect.height < 2) return false;
+                  // Prefer in-viewport elements (allow small offscreen buffer)
+                  const vw = window.innerWidth || 0;
+                  const vh = window.innerHeight || 0;
+                  const buffer = 40;
+                  if (rect.bottom < -buffer || rect.top > vh + buffer) return false;
+                  if (rect.right < -buffer || rect.left > vw + buffer) return false;
+                  return true;
+                };
+
+                const cssPath = (el) => {
+                  if (!el || el.nodeType !== 1) return '';
+                  const parts = [];
+                  let cur = el;
+                  let guard = 0;
+                  while (cur && cur.nodeType === 1 && guard++ < 7) {
+                    const tag = cur.tagName.toLowerCase();
+                    if (cur.id) {
+                      parts.unshift(tag + '#' + CSS.escape(cur.id));
+                      break;
+                    }
+
+                    let part = tag;
+                    const testId =
+                      cur.getAttribute &&
+                      (cur.getAttribute('data-testid') || cur.getAttribute('data-test-id'));
+                    if (testId) {
+                      part += '[data-testid=' + attrSelectorValue(testId) + ']';
+                      parts.unshift(part);
+                      break;
+                    }
+
+                    const classList = cur.classList ? Array.from(cur.classList) : [];
+                    if (classList.length) {
+                      part += '.' + classList.slice(0, 2).map((c) => CSS.escape(c)).join('.');
+                    }
+
+                    const parent = cur.parentElement;
+                    if (parent) {
+                      const sameTagSiblings = Array.from(parent.children).filter(
+                        (sib) => sib.tagName === cur.tagName
+                      );
+                      if (sameTagSiblings.length > 1) {
+                        part += ':nth-of-type(' + (sameTagSiblings.indexOf(cur) + 1) + ')';
+                      }
+                    }
+
+                    parts.unshift(part);
+                    cur = cur.parentElement;
+                  }
+                  return parts.join(' > ');
+                };
+
+                const bestSelector = (el) => {
+                  if (!el || el.nodeType !== 1) return '';
+                  if (el.id) return '#' + el.id;
+                  const testId = el.getAttribute && (el.getAttribute('data-testid') || el.getAttribute('data-test-id'));
+                  if (testId) return '[data-testid=' + attrSelectorValue(testId) + ']';
+                  const name = el.getAttribute && el.getAttribute('name');
+                  if (name) return el.tagName.toLowerCase() + '[name=' + attrSelectorValue(name) + ']';
+                  const ariaLabel = el.getAttribute && el.getAttribute('aria-label');
+                  if (ariaLabel) return el.tagName.toLowerCase() + '[aria-label=' + attrSelectorValue(ariaLabel) + ']';
+                  const placeholder = el.getAttribute && el.getAttribute('placeholder');
+                  if (placeholder) return el.tagName.toLowerCase() + '[placeholder=' + attrSelectorValue(placeholder) + ']';
+                  if (el.className && typeof el.className === 'string') {
+                    const classes = el.className.split(' ').filter((c) => c.trim()).slice(0, 3).join('.');
+                    if (classes) return el.tagName.toLowerCase() + '.' + classes;
+                  }
+                  const path = cssPath(el);
+                  return path || el.tagName.toLowerCase();
+                };
+
+                const requestedScope = ${JSON.stringify(scope ?? "main")};
+                const root =
+                  requestedScope === 'document'
+                    ? document
+                    : (document.querySelector('main, [role="main"]') || document.body);
+
+                const withinRoot = (el) => {
+                  try { return root && root !== document ? root.contains(el) : true; } catch { return true; }
+                };
+
+                const selectorList = 'button, a, input, textarea, select, summary, [role="button"], [role="link"], [role="tab"]';
+                const candidates = Array.from((root && root !== document ? root : document).querySelectorAll(selectorList));
+
+                // Visible + within root + de-duplicate by selector+text+tag.
+                const seen = new Set();
+                const out = [];
+                const limit = Math.max(1, Math.min(200, ${JSON.stringify(maxElements ?? 80)}));
+
+                for (const el of candidates) {
+                  if (!withinRoot(el)) continue;
+                  if (!isVisible(el)) continue;
+
+                  const tag = el.tagName.toLowerCase();
+                  const text = (el.textContent || '').substring(0, 80).trim().replace(/\\s+/g, ' ');
+                  const placeholder = el.getAttribute('placeholder') || '';
+                  const type = el.getAttribute('type') || '';
+                  const role = el.getAttribute('role') || '';
+                  const name = el.getAttribute('name') || '';
+                  const disabled = 'disabled' in el ? Boolean(el.disabled) : el.getAttribute('aria-disabled') === 'true';
+                  const selector = bestSelector(el);
+                  const matches = selector ? document.querySelectorAll(selector).length : 0;
+                  const value = 'value' in el ? String(el.value ?? '') : '';
+                  const href = tag === 'a' ? (el.getAttribute('href') || '') : '';
+                  const ariaLabel = el.getAttribute('aria-label') || '';
+
+                  const key = [tag, selector, text].join('|');
+                  if (seen.has(key)) continue;
+                  seen.add(key);
+
+                  out.push({ tag, text, placeholder, type, role, name, disabled, value, href, ariaLabel, selector, matches });
+                  if (out.length >= limit) break;
+                }
+
+                // Provide a small main-text snippet so the agent can orient itself.
+                const mainText = (() => {
+                  const node =
+                    (document.querySelector('main, [role="main"]') || document.body);
+                  const raw = (node?.innerText || '').replace(/\\s+/g, ' ').trim();
+                  return raw.slice(0, 1200);
+                })();
+
+                return { interactiveElements: out, mainTextSnippet: mainText, scope: requestedScope };
+              })()`,
+            true
+          );
+          const resultData = { url, title, ...elements };
+          const timestamp = Date.now();
+          this.observeCache.set(targetId, {
+            url,
+            title: String(title ?? ""),
+            argsKey,
+            data: resultData,
+            timestamp,
+            domVersion
+          });
+          return JSON.stringify(
+            {
+              ...resultData,
+              _meta: {
+                cached: false,
+                timestamp,
+                ageMs: 0,
+                url,
+                title: String(title ?? ""),
+                domVersion,
+                args: { scope: scope ?? "main", maxElements: maxElements ?? 80 }
+              }
+            },
+            null,
+            2
+          );
+        } catch (e) {
+          return `Failed to observe page: ${e.message}`;
+        }
+      }
+    };
+    const goBackTool = {
+      name: "browser_go_back",
+      description: "Navigate back in the browser history.",
+      schema: object({}),
+      execute: async () => {
+        const target = await this.getTarget();
+        if (target.canGoBack()) {
+          target.goBack();
+          this.invalidateCache(target.id);
+          await this.delay(500);
+          return "Navigated back";
+        }
+        return "Cannot go back (no history)";
+      }
+    };
+    const goForwardTool = {
+      name: "browser_go_forward",
+      description: "Navigate forward in the browser history.",
+      schema: object({}),
+      execute: async () => {
+        const target = await this.getTarget();
+        if (target.canGoForward()) {
+          target.goForward();
+          this.invalidateCache(target.id);
+          await this.delay(500);
+          return "Navigated forward";
+        }
+        return "Cannot go forward (no history)";
+      }
+    };
+    const reloadTool = {
+      name: "browser_reload",
+      description: "Reload the current page.",
+      schema: object({}),
+      execute: async () => {
+        const target = await this.getTarget();
+        target.reload();
+        this.invalidateCache(target.id);
+        await this.delay(1e3);
+        return "Page reloading triggered";
+      }
+    };
+    const navigateTool = {
+      name: "browser_navigate",
+      description: "Navigate the browser to a specific URL.",
+      schema: object({
+        url: string().describe("The URL to navigate to (must include http/https)"),
+        waitForSelector: string().optional().describe("Optional selector to wait for after navigation"),
+        waitForText: string().optional().describe("Optional text to wait for after navigation"),
+        timeoutMs: number().optional().describe("Timeout in ms for optional waits (default 8000)")
+      }),
+      execute: async ({
+        url,
+        waitForSelector,
+        waitForText,
+        timeoutMs
+      }) => {
+        try {
+          let target;
+          try {
+            target = await this.getTarget();
+          } catch (noWebviewError) {
+            const { BrowserWindow: BrowserWindow2 } = await import("electron");
+            const win2 = BrowserWindow2.getAllWindows()[0];
+            if (win2) {
+              win2.webContents.send("browser:navigate-to", url);
+              await this.delay(1500);
+              try {
+                target = await this.getTarget();
+              } catch {
+                return `Navigated to ${url} (webview initializing)`;
+              }
+            } else {
+              return `Failed to navigate: No browser window found`;
+            }
+          }
+          try {
+            const parsed = new URL$2(url);
+            if ((parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1") && parsed.port === "3000") {
+              const routes = await this.getMockSaasRoutes();
+              const pathname = parsed.pathname.replace(/\/+$/, "") || "/";
+              if (!routes.has(pathname)) {
+                return `Failed to navigate: Unknown mock-saas route ${pathname}. Known routes: ${Array.from(
+                  routes
+                ).sort().join(", ")}. Navigate to /jira and use the Create button (it is a modal, not a /create route).`;
+              }
+            }
+          } catch {
+          }
+          this.invalidateCache(target.id);
+          const loadTimeout = timeoutMs ?? 8e3;
+          try {
+            await target.loadURL(url);
+          } catch (e) {
+            const msg = String((e == null ? void 0 : e.message) ?? e);
+            if (!msg.includes("ERR_ABORTED")) throw e;
+            await this.delay(250);
+            const current = target.getURL();
+            if (!current) throw e;
+          }
+          if (waitForSelector) {
+            await this.waitForSelector(target, waitForSelector, loadTimeout);
+          }
+          if (waitForText) {
+            const startedAt = Date.now();
+            const needle = waitForText.toLowerCase();
+            while (Date.now() - startedAt < loadTimeout) {
+              const found = await target.executeJavaScript(
+                `document.body && document.body.innerText && document.body.innerText.toLowerCase().includes(${JSON.stringify(
+                  needle
+                )})`,
+                true
+              );
+              if (found) break;
+              await this.delay(150);
+            }
+          }
+          return `Navigated to ${target.getURL()}`;
+        } catch (e) {
+          return `Failed to navigate: ${e.message}`;
+        }
+      }
+    };
+    const scrollSchema = object({
+      selector: string().optional().describe("CSS selector to scroll into view"),
+      direction: _enum(["up", "down", "top", "bottom"]).optional().describe("Scroll direction if no selector provided"),
+      amount: number().optional().describe("Pixels to scroll (default 500 for up/down)")
+    });
+    const scrollTool = {
+      name: "browser_scroll",
+      description: 'Scroll to an element or by an amount. Provide "selector" to scroll element into view, or "direction" (up/down/top/bottom) to scroll page.',
+      schema: scrollSchema,
+      execute: async ({ selector, direction, amount }) => {
+        const target = await this.getTarget();
+        this.invalidateCache(target.id);
+        if (selector) {
+          await this.waitForSelector(target, selector, 5e3);
+          await target.executeJavaScript(
+            `(() => {
+               const el = document.querySelector(${JSON.stringify(selector)});
+               if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+             })()`,
+            true
+          );
+          return `Scrolled to element "${selector}"`;
+        } else if (direction) {
+          const amt = amount ?? 500;
+          await target.executeJavaScript(
+            `(() => {
+               const amt = ${JSON.stringify(amt)};
+               const dir = ${JSON.stringify(direction)};
+               if (dir === 'top') window.scrollTo({ top: 0, behavior: 'smooth' });
+               else if (dir === 'bottom') window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+               else if (dir === 'up') window.scrollBy({ top: -amt, behavior: 'smooth' });
+               else window.scrollBy({ top: amt, behavior: 'smooth' });
+             })()`,
+            true
+          );
+          return `Scrolled ${direction}`;
+        }
+        return "No scroll action performed (provide selector or direction)";
+      }
+    };
+    const pressKeySchema = object({
+      key: string().describe("Key name (e.g. Enter, Escape, ArrowDown)")
+    });
+    const pressKeyTool = {
+      name: "browser_press_key",
+      description: "Press a keyboard key (e.g. Enter, Escape, ArrowDown, Tab).",
+      schema: pressKeySchema,
+      execute: async ({ key }) => {
+        const target = await this.getTarget();
+        try {
+          target.sendInputEvent({ type: "keyDown", keyCode: key });
+          target.sendInputEvent({ type: "keyUp", keyCode: key });
+          this.invalidateCache(target.id);
+          return `Pressed key: ${key}`;
+        } catch (e) {
+          return `Failed to press key: ${e.message}`;
+        }
+      }
+    };
+    const waitForSelectorSchema = object({
+      selector: string().describe("CSS selector to wait for"),
+      timeoutMs: number().optional().describe("Timeout in ms (default 5000)")
+    });
+    const waitForSelectorTool = {
+      name: "browser_wait_for_selector",
+      description: "Wait for an element to appear in the DOM.",
+      schema: waitForSelectorSchema,
+      execute: async ({ selector, timeoutMs }) => {
+        const target = await this.getTarget();
+        const timeout = timeoutMs ?? 5e3;
+        try {
+          await this.waitForSelector(target, selector, timeout);
+          return `Element "${selector}" appeared`;
+        } catch (e) {
+          return `Timeout waiting for "${selector}"`;
+        }
+      }
+    };
+    const waitForUrlSchema = object({
+      urlPart: string().describe("Substring or full URL to wait for"),
+      timeoutMs: number().optional().describe("Timeout in ms (default 5000)")
+    });
+    const waitForUrlTool = {
+      name: "browser_wait_for_url",
+      description: "Wait for the URL to contain a specific string.",
+      schema: waitForUrlSchema,
+      execute: async ({ urlPart, timeoutMs }) => {
+        const target = await this.getTarget();
+        const timeout = timeoutMs ?? 5e3;
+        const startedAt = Date.now();
+        while (Date.now() - startedAt < timeout) {
+          const currentUrl = target.getURL();
+          if (currentUrl.includes(urlPart)) return `URL matches "${urlPart}"`;
+          await this.delay(200);
+        }
+        return `Timeout waiting for URL to contain "${urlPart}"`;
+      }
+    };
+    const focusSchema = object({
+      selector: string().describe("CSS selector to focus")
+    });
+    const focusTool = {
+      name: "browser_focus",
+      description: "Focus an element (e.g. input field).",
+      schema: focusSchema,
+      execute: async ({ selector }) => {
+        const target = await this.getTarget();
+        await this.waitForSelector(target, selector, 5e3);
+        await target.executeJavaScript(
+          `(() => {
+             const el = document.querySelector(${JSON.stringify(selector)});
+             if (el && typeof el.focus === 'function') el.focus();
+           })()`,
+          true
+        );
+        this.invalidateCache(target.id);
+        return `Focused "${selector}"`;
+      }
+    };
+    const clearSchema = object({
+      selector: string().describe("CSS selector of input to clear")
+    });
+    const clearTool = {
+      name: "browser_clear",
+      description: "Clear the value of an input or textarea.",
+      schema: clearSchema,
+      execute: async ({ selector }) => {
+        const target = await this.getTarget();
+        await this.waitForSelector(target, selector, 5e3);
+        await target.executeJavaScript(
+          `(() => {
+             const el = document.querySelector(${JSON.stringify(selector)});
+             if (!el) return { ok: false, error: 'Element not found' };
+             const tag = (el.tagName || '').toLowerCase();
+             const isEditable = tag === 'input' || tag === 'textarea' || Boolean(el.isContentEditable);
+             if (!isEditable) return { ok: false, error: 'Element is not editable' };
+
+             const setNativeValue = (node, value) => {
+               const t = (node.tagName || '').toLowerCase();
+               if (t === 'input') {
+                 const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+                 if (setter) setter.call(node, value);
+                 else node.value = value;
+                 return;
+               }
+               if (t === 'textarea') {
+                 const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set;
+                 if (setter) setter.call(node, value);
+                 else node.value = value;
+                 return;
+               }
+               if (node.isContentEditable) {
+                 node.textContent = value;
+                 return;
+               }
+               node.value = value;
+             };
+
+             setNativeValue(el, '');
+             el.dispatchEvent(new InputEvent('input', { bubbles: true, data: '', inputType: 'deleteContentBackward' }));
+             el.dispatchEvent(new Event('change', { bubbles: true }));
+             return { ok: true };
+           })()`,
+          true
+        );
+        this.invalidateCache(target.id);
+        return `Cleared input "${selector}"`;
+      }
+    };
+    const clickSchema = object({
+      selector: string().describe("CSS selector of the element to click"),
+      withinSelector: string().optional().describe("Optional container selector to scope the search (must match exactly 1 element)"),
+      index: number().optional().describe("Index of element if multiple match (0-based)"),
+      matchText: string().optional().describe("Text content to match if multiple elements found")
+    });
+    const clickTool = {
+      name: "browser_click",
+      description: "Click an element on the current page. Safe + deterministic: if the selector matches multiple visible elements, you must disambiguate using withinSelector, matchText, or index (or use browser_click_text).",
+      schema: clickSchema,
+      execute: async ({ selector, withinSelector, index, matchText }) => {
+        try {
+          const target = await this.getTarget();
+          if (withinSelector) {
+            await this.waitForSelector(target, withinSelector, 5e3);
+          }
+          await this.waitForSelector(target, selector, 5e3);
+          const result = await target.executeJavaScript(
+            `(() => {
+                // Helper to find elements including shadow DOM
+                const findElements = (root, sel) => {
+                  const results = [];
+                  const queryDeep = (root) => {
+                    const els = Array.from(root.querySelectorAll(sel));
+                    results.push(...els);
+                    if (root.shadowRoot) {
+                      queryDeep(root.shadowRoot);
+                    }
+                    const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
+                    while (walker.nextNode()) {
+                      const node = walker.currentNode;
+                      if (node.shadowRoot) {
+                        queryDeep(node.shadowRoot);
+                      }
+                    }
+                  };
+                  queryDeep(root);
+                  return results;
+                };
+
+                const isVisible = (el) => {
+                  if (!el || el.nodeType !== 1) return false;
+                  const style = window.getComputedStyle(el);
+                  if (!style) return false;
+                  if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+                  if (style.pointerEvents === 'none') return false;
+                  const rects = el.getClientRects();
+                  if (!rects || rects.length === 0) return false;
+                  const rect = el.getBoundingClientRect();
+                  if (rect.width < 2 || rect.height < 2) return false;
+                  const vw = window.innerWidth || 0;
+                  const vh = window.innerHeight || 0;
+                  const buffer = 40;
+                  if (rect.bottom < -buffer || rect.top > vh + buffer) return false;
+                  if (rect.right < -buffer || rect.left > vw + buffer) return false;
+                  return true;
+                };
+
+                const describe = (el) => {
+                  const tag = (el.tagName || '').toLowerCase();
+                  const text = (el.innerText || el.textContent || '').replace(/s+/g, ' ').trim().slice(0, 80);
+                  const ariaLabel = el.getAttribute?.('aria-label') || '';
+                  const testId = el.getAttribute?.('data-testid') || el.getAttribute?.('data-test-id') || '';
+                  const id = el.id || '';
+                  return { tag, text, ariaLabel, testId, id };
+                };
+
+                const withinSel = ${JSON.stringify(withinSelector ?? "")};
+                let root = document;
+                if (withinSel) {
+                  const roots = Array.from(document.querySelectorAll(withinSel)).filter(isVisible);
+                  if (roots.length === 0) {
+                    return { ok: false, error: 'Within selector not found (or not visible)', matches: 0 };
+                  }
+                  if (roots.length > 1) {
+                    return { ok: false, error: 'Within selector is not unique', matches: roots.length, roots: roots.slice(0, 5).map(describe) };
+                  }
+                  root = roots[0];
+                }
+
+                let candidates = findElements(root, ${JSON.stringify(selector)});
+                candidates = candidates.filter(isVisible);
+                
+                // Filter by text if provided
+                if (${JSON.stringify(matchText)}) {
+                  const needle = ${JSON.stringify(matchText || "")}.toLowerCase();
+                  candidates = candidates.filter(el => (el.innerText || '').toLowerCase().includes(needle));
+                }
+
+                if (candidates.length === 0) {
+                  return { ok: false, error: 'Element not found (visible)', matches: 0 };
+                }
+
+                const idxProvided = ${JSON.stringify(index !== void 0)};
+                const idx = ${JSON.stringify(index ?? 0)};
+
+                if (candidates.length > 1 && !idxProvided) {
+                  return {
+                    ok: false,
+                    error: 'Ambiguous selector (multiple visible matches)',
+                    matches: candidates.length,
+                    candidates: candidates.slice(0, 6).map(describe),
+                  };
+                }
+
+                if (idx >= candidates.length) return { ok: false, error: 'Index out of bounds' };
+                
+                const el = candidates[idx];
+                
+                const isDisabled = ('disabled' in el && Boolean(el.disabled)) || el.getAttribute?.('aria-disabled') === 'true';
+                if (isDisabled) return { ok: false, error: 'Element is disabled' };
+                
+                el.scrollIntoView({ block: 'center', inline: 'center' });
+                
+                // Try multiple click strategies
+                try {
+                  el.click(); // Standard click
+                } catch (e) { console.error('Standard click failed', e); }
+                
+                // Dispatch events (crucial for React/Angular/Vue apps)
+                const eventOpts = { bubbles: true, cancelable: true, view: window };
+                el.dispatchEvent(new MouseEvent('mouseover', eventOpts));
+                el.dispatchEvent(new MouseEvent('mousedown', eventOpts));
+                el.dispatchEvent(new MouseEvent('mouseup', eventOpts));
+                el.dispatchEvent(new MouseEvent('click', eventOpts));
+                
+                return { ok: true, matches: candidates.length, clicked: describe(el) };
+              })()`,
+            true
+          );
+          if (!result.ok) {
+            const base = `Refusing to click: ${result.error}. Selector=${JSON.stringify(
+              selector
+            )}${withinSelector ? ` within=${JSON.stringify(withinSelector)}` : ""}.`;
+            if (result.error === "Ambiguous selector (multiple visible matches)") {
+              const matches = typeof result.matches === "number" ? result.matches : "multiple";
+              const preview = Array.isArray(result.candidates) ? result.candidates.map((c, i) => {
+                const bits = [c.tag, c.testId ? `testId=${c.testId}` : "", c.id ? `id=${c.id}` : ""].filter(Boolean).join(" ");
+                const label = c.ariaLabel ? ` ariaLabel=${JSON.stringify(c.ariaLabel)}` : "";
+                const text = c.text ? ` text=${JSON.stringify(c.text)}` : "";
+                return `#${i} ${bits}${label}${text}`;
+              }).join("\n") : "";
+              return `${base} Matched ${matches} visible elements.
+Provide one of: {"index":0..}, {"matchText":"..."}, or {"withinSelector":"..."}.
+Or prefer browser_click_text (more robust).
+` + (preview ? `Candidates:
+${preview}` : "");
+            }
+            if (result.error === "Within selector is not unique") {
+              const rootsPreview = Array.isArray(result.roots) ? result.roots.map((c, i) => {
+                const bits = [c.tag, c.testId ? `testId=${c.testId}` : "", c.id ? `id=${c.id}` : ""].filter(Boolean).join(" ");
+                const text = c.text ? ` text=${JSON.stringify(c.text)}` : "";
+                return `#${i} ${bits}${text}`;
+              }).join("\n") : "";
+              return `${base} The withinSelector must match exactly 1 visible container.
+` + (rootsPreview ? `Within candidates:
+${rootsPreview}` : "");
+            }
+            return `${base} Try browser_click_text or refine your selector.`;
+          }
+          this.invalidateCache(target.id);
+          return `Clicked element ${selector}`;
+        } catch (e) {
+          return `Failed to click ${selector}: ${e.message}`;
+        }
+      }
+    };
+    const typeTool = {
+      name: "browser_type",
+      description: "Type text into an input field.",
+      schema: object({
+        selector: string().describe("CSS selector of the input"),
+        text: string().describe("Text to type")
+      }),
+      execute: async ({ selector, text }) => {
+        try {
+          const target = await this.getTarget();
+          const matches = await this.querySelectorCount(target, selector);
+          if (matches > 1) {
+            return `Refusing to type into non-unique selector (matches=${matches}): ${selector}`;
+          }
+          await this.waitForSelector(target, selector, 5e3);
+          const typedValue = await target.executeJavaScript(
+            `(() => {
+                const el = document.querySelector(${JSON.stringify(selector)});
+                if (!el) throw new Error('Element not found');
+                const isDisabled = ('disabled' in el && Boolean(el.disabled)) || el.getAttribute?.('aria-disabled') === 'true';
+                if (isDisabled) throw new Error('Element is disabled');
+                el.scrollIntoView({ block: 'center', inline: 'center' });
+                el.focus?.();
+
+                const setNativeValue = (node, value) => {
+                  const tag = node.tagName?.toLowerCase?.() || '';
+                  if (tag === 'input') {
+                    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+                    if (setter) setter.call(node, value);
+                    else node.value = value;
+                    return;
+                  }
+                  if (tag === 'textarea') {
+                    const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set;
+                    if (setter) setter.call(node, value);
+                    else node.value = value;
+                    return;
+                  }
+                  if (node.isContentEditable) {
+                    node.textContent = value;
+                    return;
+                  }
+                  node.value = value;
+                };
+
+                setNativeValue(el, '');
+                el.dispatchEvent(new InputEvent('input', { bubbles: true, data: '', inputType: 'deleteContentBackward' }));
+                setNativeValue(el, ${JSON.stringify(text)});
+                el.dispatchEvent(new InputEvent('input', { bubbles: true, data: ${JSON.stringify(text)}, inputType: 'insertText' }));
+                el.dispatchEvent(new Event('change', { bubbles: true }));
+                return ('value' in el) ? String(el.value ?? '') : (el.textContent || '');
+              })()`,
+            true
+          );
+          this.invalidateCache(target.id);
+          return `Typed into ${selector}. Current value: ${JSON.stringify(typedValue)}`;
+        } catch (e) {
+          return `Failed to type into ${selector}: ${e.message}`;
+        }
+      }
+    };
+    const getTextTool = {
+      name: "browser_get_text",
+      description: "Get the text content of an element.",
+      schema: object({
+        selector: string().describe("CSS selector")
+      }),
+      execute: async ({ selector }) => {
+        try {
+          const target = await this.getTarget();
+          await this.waitForSelector(target, selector, 5e3);
+          const text = await target.executeJavaScript(
+            `(() => {
+                    const el = document.querySelector(${JSON.stringify(selector)});
+                    return el ? (el.textContent || '') : null;
+                  })()`,
+            true
+          );
+          return text || "Element found but has no text.";
+        } catch (e) {
+          return `Failed to get text: ${e.message}`;
+        }
+      }
+    };
+    const screenshotTool = {
+      name: "browser_screenshot",
+      description: "Take a screenshot of the current page.",
+      schema: object({
+        path: string().optional().describe("Path to save the screenshot (optional)")
+      }),
+      execute: async ({ path: savePath }) => {
+        const target = await this.getTarget();
+        const image = await target.capturePage();
+        const buffer = image.toPNG();
+        if (savePath) {
+          const resolved = path$2.isAbsolute(savePath) ? savePath : path$2.join(process.cwd(), savePath);
+          await fs$1.writeFile(resolved, buffer);
+          return `Screenshot saved to ${resolved} (${buffer.length} bytes).`;
+        }
+        return `Screenshot taken (${buffer.length} bytes).`;
+      }
+    };
+    const findTextTool = {
+      name: "browser_find_text",
+      description: "Find text on the current page and return matching elements/selectors.",
+      schema: object({
+        text: string().describe("Text to search for (case-insensitive substring match)"),
+        maxMatches: number().optional().describe("Max results to return (default 10)")
+      }),
+      execute: async ({ text, maxMatches }) => {
+        const target = await this.getTarget();
+        const results = await target.executeJavaScript(
+          `(() => {
+            const query = ${JSON.stringify(text)}.toLowerCase();
+            const limit = Math.max(1, Math.min(50, ${JSON.stringify(maxMatches ?? 10)}));
+
+            const escapeForSingleQuotes = (value) => {
+              if (typeof value !== 'string') return '';
+              return value.replace(/\\\\/g, '\\\\\\\\').replace(/'/g, "\\\\'");
+            };
+
+            const attrSelectorValue = (value) => {
+              if (typeof value !== 'string') return "''";
+              if (/^[a-zA-Z0-9_-]+$/.test(value)) return value;
+              return "'" + escapeForSingleQuotes(value) + "'";
+            };
+
+            const selectorFor = (el) => {
+              if (!el || el.nodeType !== 1) return '';
+              if (el.id) return '#' + el.id;
+              const testId = el.getAttribute && (el.getAttribute('data-testid') || el.getAttribute('data-test-id'));
+              if (testId) return '[data-testid=' + attrSelectorValue(testId) + ']';
+              const ariaLabel = el.getAttribute && el.getAttribute('aria-label');
+              if (ariaLabel) return el.tagName.toLowerCase() + '[aria-label=' + attrSelectorValue(ariaLabel) + ']';
+              const placeholder = el.getAttribute && el.getAttribute('placeholder');
+              if (placeholder) return el.tagName.toLowerCase() + '[placeholder=' + attrSelectorValue(placeholder) + ']';
+              return el.tagName.toLowerCase();
+            };
+
+            const out = [];
+            const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+            while (walker.nextNode()) {
+              const node = walker.currentNode;
+              const raw = node.nodeValue || '';
+              const normalized = raw.replace(/\\s+/g, ' ').trim();
+              if (!normalized) continue;
+              if (!normalized.toLowerCase().includes(query)) continue;
+
+              const parent = node.parentElement;
+              if (!parent) continue;
+              const el = parent.closest('button, a, [role="button"], [role="link"], input, textarea, select, div, span, p') || parent;
+              const selector = selectorFor(el);
+              out.push({
+                selector,
+                tag: el.tagName.toLowerCase(),
+                text: (el.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 120),
+              });
+              if (out.length >= limit) break;
+            }
+            return out;
+          })()`,
+          true
+        );
+        return JSON.stringify({ found: Array.isArray(results) ? results.length : 0, matches: results }, null, 2);
+      }
+    };
+    const waitForTextTool = {
+      name: "browser_wait_for_text",
+      description: "Wait until text appears on the page (case-insensitive). Useful to verify actions succeeded.",
+      schema: object({
+        text: string().describe("Text to wait for"),
+        timeoutMs: number().optional().describe("Timeout in ms (default 5000)")
+      }),
+      execute: async ({ text, timeoutMs }) => {
+        const target = await this.getTarget();
+        const startedAt = Date.now();
+        const timeout = timeoutMs ?? 5e3;
+        while (Date.now() - startedAt < timeout) {
+          const found = await target.executeJavaScript(
+            `document.body && document.body.innerText && document.body.innerText.toLowerCase().includes(${JSON.stringify(
+              text.toLowerCase()
+            )})`,
+            true
+          );
+          if (found) return `Found text: ${JSON.stringify(text)}`;
+          await this.delay(150);
+        }
+        return `Did not find text within ${timeout}ms: ${JSON.stringify(text)}`;
+      }
+    };
+    const waitForTextInTool = {
+      name: "browser_wait_for_text_in",
+      description: "Wait until text appears within a specific container selector (case-insensitive).",
+      schema: object({
+        selector: string().describe("CSS selector for the container"),
+        text: string().describe("Text to wait for"),
+        timeoutMs: number().optional().describe("Timeout in ms (default 5000)")
+      }),
+      execute: async ({
+        selector,
+        text,
+        timeoutMs
+      }) => {
+        const target = await this.getTarget();
+        const startedAt = Date.now();
+        const timeout = timeoutMs ?? 5e3;
+        const needle = text.toLowerCase();
+        while (Date.now() - startedAt < timeout) {
+          const found = await target.executeJavaScript(
+            `(() => {
+              const root = document.querySelector(${JSON.stringify(selector)});
+              if (!root) return false;
+              const text = (root.innerText || '').toLowerCase();
+              return text.includes(${JSON.stringify(needle)});
+            })()`,
+            true
+          );
+          if (found) return `Found text in ${selector}: ${JSON.stringify(text)}`;
+          await this.delay(150);
+        }
+        return `Did not find text in ${selector} within ${timeout}ms: ${JSON.stringify(text)}`;
+      }
+    };
+    const selectTool = {
+      name: "browser_select",
+      description: "Set the value of a <select> element.",
+      schema: object({
+        selector: string().describe("CSS selector of the select element"),
+        value: string().describe("Option value to set")
+      }),
+      execute: async ({ selector, value }) => {
+        try {
+          const target = await this.getTarget();
+          const matches = await this.querySelectorCount(target, selector);
+          if (matches > 1) {
+            return `Refusing to select on non-unique selector (matches=${matches}): ${selector}`;
+          }
+          await this.waitForSelector(target, selector, 5e3);
+          const selected = await target.executeJavaScript(
+            `(() => {
+              const el = document.querySelector(${JSON.stringify(selector)});
+              if (!el) throw new Error('Element not found');
+              const tag = el.tagName?.toLowerCase?.();
+              if (tag !== 'select') throw new Error('Element is not a <select>');
+              const isDisabled = Boolean(el.disabled) || el.getAttribute?.('aria-disabled') === 'true';
+              if (isDisabled) throw new Error('Element is disabled');
+              el.value = ${JSON.stringify(value)};
+              el.dispatchEvent(new Event('input', { bubbles: true }));
+              el.dispatchEvent(new Event('change', { bubbles: true }));
+              return String(el.value ?? '');
+            })()`,
+            true
+          );
+          this.invalidateCache(target.id);
+          return `Selected value ${JSON.stringify(selected)} on ${selector}`;
+        } catch (e) {
+          return `Failed to select on ${selector}: ${e.message}`;
+        }
+      }
+    };
+    const clickTextTool = {
+      name: "browser_click_text",
+      description: "Click a visible element by its text (avoids brittle selectors). Optionally filter by tag/role and choose index.",
+      schema: object({
+        text: string().describe("Visible text to match"),
+        exact: boolean().optional().describe("Exact match (default false = substring match)"),
+        role: string().optional().describe("ARIA role to filter (e.g. tab, button, link)"),
+        tag: string().optional().describe("Tag name to filter (e.g. a, button)"),
+        index: number().optional().describe("Which match to click (0-based, default 0)"),
+        withinSelector: string().optional().describe("Limit search to a container selector")
+      }),
+      execute: async ({
+        text,
+        exact,
+        role,
+        tag,
+        index,
+        withinSelector
+      }) => {
+        try {
+          const target = await this.getTarget();
+          const clicked = await target.executeJavaScript(
+            `(() => {
+              const query = ${JSON.stringify(text)}.toLowerCase().trim();
+              const exact = Boolean(${JSON.stringify(exact ?? false)});
+              const role = ${JSON.stringify(role ?? "")}.toLowerCase().trim();
+              const tag = ${JSON.stringify(tag ?? "")}.toLowerCase().trim();
+              const idx = Math.max(0, Math.floor(${JSON.stringify(index ?? 0)}));
+              const root = ${withinSelector ? `document.querySelector(${JSON.stringify(withinSelector)})` : "document"} || document;
+
+              const isVisible = (el) => {
+                if (!el || el.nodeType !== 1) return false;
+                const style = window.getComputedStyle(el);
+                if (!style) return false;
+                if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+                if (style.pointerEvents === 'none') return false;
+                const rects = el.getClientRects();
+                if (!rects || rects.length === 0) return false;
+                const rect = el.getBoundingClientRect();
+                if (rect.width < 2 || rect.height < 2) return false;
+                const vw = window.innerWidth || 0;
+                const vh = window.innerHeight || 0;
+                const buffer = 40;
+                if (rect.bottom < -buffer || rect.top > vh + buffer) return false;
+                if (rect.right < -buffer || rect.left > vw + buffer) return false;
+                return true;
+              };
+
+              const selector = 'button, a, [role="button"], [role="link"], [role="tab"], summary';
+              const candidates = Array.from((root === document ? document : root).querySelectorAll(selector));
+              const matches = [];
+              for (const el of candidates) {
+                if (!isVisible(el)) continue;
+                if (tag && el.tagName.toLowerCase() !== tag) continue;
+                if (role) {
+                  const r = (el.getAttribute('role') || '').toLowerCase();
+                  if (r !== role) continue;
+                }
+                const t = (el.textContent || '').replace(/\\s+/g, ' ').trim().toLowerCase();
+                if (!t) continue;
+                const ok = exact ? t === query : t.includes(query);
+                if (!ok) continue;
+                const disabled = ('disabled' in el && Boolean(el.disabled)) || el.getAttribute?.('aria-disabled') === 'true';
+                matches.push({ el, text: t, disabled });
+              }
+
+              if (matches.length === 0) {
+                return { ok: false, reason: 'No matching visible elements', matches: 0 };
+              }
+              const chosen = matches[Math.min(idx, matches.length - 1)];
+              if (chosen.disabled) {
+                return { ok: false, reason: 'Matched element is disabled', matches: matches.length };
+              }
+              const el = chosen.el;
+              el.scrollIntoView({ block: 'center', inline: 'center' });
+              el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+              el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+              el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+              el.click();
+              return { ok: true, matches: matches.length, clickedText: chosen.text };
+            })()`,
+            true
+          );
+          return `ClickText result: ${JSON.stringify(clicked)}`;
+        } catch (e) {
+          return `Failed to click by text: ${e.message}`;
+        }
+      }
+    };
+    const extractMainTextTool = {
+      name: "browser_extract_main_text",
+      description: "Extract visible text from the main content area (role=main/main tag) to support scraping/QA.",
+      schema: object({
+        maxChars: number().optional().describe("Max characters to return (default 2000, hard cap 4000)")
+      }),
+      execute: async ({ maxChars }) => {
+        const target = await this.getTarget();
+        const limit2 = Math.max(1, Math.min(4e3, Math.floor(maxChars ?? 2e3)));
+        const text = await target.executeJavaScript(
+          `(() => {
+            const node = document.querySelector('main, [role="main"]') || document.body;
+            const raw = (node?.innerText || '').replace(/s+/g, ' ').trim();
+            return raw.slice(0, ${JSON.stringify(limit2)});
+          })()`,
+          true
+        );
+        return String(text ?? "");
+      }
+    };
+    const executePlanStepSchema = object({
+      action: _enum(["navigate", "click", "type", "select", "wait"]),
+      url: string().optional().describe("For navigate action"),
+      selector: string().optional().describe("For click/type/select actions"),
+      value: string().optional().describe("For type/select actions"),
+      text: string().optional().describe("For wait action"),
+      index: number().optional().describe("For click actions: index to disambiguate (0-based)"),
+      matchText: string().optional().describe("For click actions: filter candidates by visible text"),
+      withinSelector: string().optional().describe("For click actions: scope search to a unique container selector")
+    });
+    const executePlanSchema = object({
+      steps: array(executePlanStepSchema)
+    });
+    const executePlanTool = {
+      name: "browser_execute_plan",
+      description: "Execute a batch of browser actions (navigate, click, type, select, wait). Use this for Mock SaaS tasks where you have read the code and know the selectors.",
+      schema: executePlanSchema,
+      execute: async (input) => {
+        const parsed = executePlanSchema.parse(input ?? {});
+        const steps = parsed.steps;
+        const results = [];
+        const runId = agentRunContext.getRunId() ?? void 0;
+        const planId = v4$2();
+        if (!Array.isArray(steps) || steps.length === 0) {
+          return "Plan rejected: steps must be a non-empty array.";
+        }
+        for (const [i, step] of steps.entries()) {
+          if (step.action === "navigate") {
+            if (!step.url) return `Plan rejected: step ${i + 1} navigate is missing url.`;
+          }
+          if (step.action === "click") {
+            if (!step.selector) return `Plan rejected: step ${i + 1} click is missing selector.`;
+          }
+          if (step.action === "type") {
+            if (!step.selector) return `Plan rejected: step ${i + 1} type is missing selector.`;
+            if (step.value === void 0) return `Plan rejected: step ${i + 1} type is missing value.`;
+          }
+          if (step.action === "select") {
+            if (!step.selector) return `Plan rejected: step ${i + 1} select is missing selector.`;
+            if (step.value === void 0) return `Plan rejected: step ${i + 1} select is missing value.`;
+          }
+          if (step.action === "wait") {
+            if (!step.text) return `Plan rejected: step ${i + 1} wait is missing text.`;
+          }
+        }
+        const hasInteraction = steps.some((s) => s.action === "click" || s.action === "type" || s.action === "select");
+        if (hasInteraction) {
+          const last = steps[steps.length - 1];
+          if ((last == null ? void 0 : last.action) !== "wait" || !(last == null ? void 0 : last.text)) {
+            return 'Plan rejected: plans with interactions must end with a verification wait step (action="wait" with text).';
+          }
+        }
+        const policyService = toolRegistry.getPolicyService();
+        if (policyService) {
+          const browserContext = agentRunContext.getBrowserContext();
+          for (const [i, step] of steps.entries()) {
+            const toolNameForStep = (() => {
+              switch (step.action) {
+                case "navigate":
+                  return "browser_navigate";
+                case "click":
+                  return "browser_click";
+                case "type":
+                  return "browser_type";
+                case "select":
+                  return "browser_select";
+                case "wait":
+                  return "browser_wait_for_text";
+                default:
+                  return "browser_execute_plan_step";
+              }
+            })();
+            const argsForStep = (() => {
+              switch (step.action) {
+                case "navigate":
+                  return { url: step.url };
+                case "click":
+                  return {
+                    selector: step.selector,
+                    index: step.index,
+                    matchText: step.matchText,
+                    withinSelector: step.withinSelector
+                  };
+                case "type":
+                  return { selector: step.selector, text: step.value };
+                case "select":
+                  return { selector: step.selector, value: step.value };
+                case "wait":
+                  return { text: step.text };
+              }
+            })();
+            const decision = await policyService.evaluate({
+              toolName: toolNameForStep,
+              args: argsForStep,
+              url: browserContext == null ? void 0 : browserContext.url,
+              domain: browserContext == null ? void 0 : browserContext.domain,
+              userMode: "standard",
+              observeOnly: agentRunContext.getObserveOnly(),
+              runId
+            });
+            if (decision.decision === "deny") {
+              return `Plan rejected by policy at step ${i + 1} (${toolNameForStep}): ${decision.reason}`;
+            }
+          }
+        }
+        const isFailureOutput = (s) => {
+          const t2 = String(s ?? "");
+          return t2.startsWith("Refusing") || t2.startsWith("Failed") || t2.startsWith("Timeout") || t2.startsWith("Operation denied by policy") || t2.startsWith("User denied") || t2.startsWith("Tool execution failed");
+        };
+        for (const [i, step] of steps.entries()) {
+          const stepId = v4$2();
+          const startedAt = Date.now();
+          try {
+            await telemetryService.emit({
+              eventId: v4$2(),
+              runId,
+              ts: (/* @__PURE__ */ new Date()).toISOString(),
+              type: "plan_step_start",
+              name: "browser_execute_plan",
+              data: {
+                planId,
+                stepId,
+                stepIndex: i,
+                action: String((step == null ? void 0 : step.action) ?? "")
+              }
+            });
+          } catch {
+          }
+          try {
+            const toolNameForStep = (() => {
+              switch (step.action) {
+                case "navigate":
+                  return "browser_navigate";
+                case "click":
+                  return "browser_click";
+                case "type":
+                  return "browser_type";
+                case "select":
+                  return "browser_select";
+                case "wait":
+                  return "browser_wait_for_text";
+                default:
+                  return "browser_execute_plan_step";
+              }
+            })();
+            const toolArgsForStep = (() => {
+              switch (step.action) {
+                case "navigate":
+                  return { url: step.url };
+                case "click":
+                  return {
+                    selector: step.selector,
+                    index: step.index,
+                    matchText: step.matchText,
+                    withinSelector: step.withinSelector
+                  };
+                case "type":
+                  return { selector: step.selector, text: step.value };
+                case "select":
+                  return { selector: step.selector, value: step.value };
+                case "wait":
+                  return { text: step.text };
+              }
+            })();
+            const res = await toolRegistry.invokeTool(toolNameForStep, toolArgsForStep);
+            const resStr = String(res ?? "");
+            if (isFailureOutput(resStr)) {
+              throw new Error(resStr);
+            }
+            if (step.action === "wait" && !resStr.startsWith("Found text")) {
+              throw new Error(resStr);
+            }
+            const durationMs = Date.now() - startedAt;
+            try {
+              await telemetryService.emit({
+                eventId: v4$2(),
+                runId,
+                ts: (/* @__PURE__ */ new Date()).toISOString(),
+                type: "plan_step_end",
+                name: "browser_execute_plan",
+                data: {
+                  planId,
+                  stepId,
+                  stepIndex: i,
+                  action: String((step == null ? void 0 : step.action) ?? ""),
+                  ok: true,
+                  durationMs,
+                  resultLength: String(resStr ?? "").length
+                }
+              });
+            } catch {
+            }
+            results.push(`Step ${i + 1} (${step.action}): ${resStr}`);
+          } catch (e) {
+            const durationMs = Date.now() - startedAt;
+            try {
+              await telemetryService.emit({
+                eventId: v4$2(),
+                runId,
+                ts: (/* @__PURE__ */ new Date()).toISOString(),
+                type: "plan_step_end",
+                name: "browser_execute_plan",
+                data: {
+                  planId,
+                  stepId,
+                  stepIndex: i,
+                  action: String((step == null ? void 0 : step.action) ?? ""),
+                  ok: false,
+                  durationMs,
+                  errorMessage: String((e == null ? void 0 : e.message) ?? e)
+                }
+              });
+            } catch {
+            }
+            results.push(`Step ${i + 1} (${step.action}) FAILED: ${e.message}`);
+            return `Plan execution stopped at step ${i + 1} due to error.
+Results so far:
+${results.join("\n")}`;
+          }
+        }
+        return `Plan completed successfully.
+${results.join("\n")}`;
+      }
+    };
+    toolRegistry.register(observeTool);
+    toolRegistry.register(goBackTool);
+    toolRegistry.register(goForwardTool);
+    toolRegistry.register(reloadTool);
+    toolRegistry.register(navigateTool);
+    toolRegistry.register(scrollTool);
+    toolRegistry.register(pressKeyTool);
+    toolRegistry.register(waitForSelectorTool);
+    toolRegistry.register(waitForUrlTool);
+    toolRegistry.register(focusTool);
+    toolRegistry.register(clearTool);
+    toolRegistry.register(clickTool);
+    toolRegistry.register(typeTool);
+    toolRegistry.register(getTextTool);
+    toolRegistry.register(screenshotTool);
+    toolRegistry.register(findTextTool);
+    toolRegistry.register(waitForTextTool);
+    toolRegistry.register(waitForTextInTool);
+    toolRegistry.register(selectTool);
+    toolRegistry.register(clickTextTool);
+    toolRegistry.register(extractMainTextTool);
+    toolRegistry.register(executePlanTool);
+  }
+}
+const browserAutomationService = new BrowserAutomationService();
+const BENCHMARK_SUITE = [
+  {
+    id: "aerocore-dispatch",
+    name: "AeroCore Dispatch",
+    description: "Create and dispatch a new job in AeroCore Dispatch",
+    userMessage: "Go to AeroCore Dispatch and create a new dispatch job for cargo delivery from Warehouse A to Terminal 1",
+    expectedOutcome: { type: "text_present", value: "Warehouse A" },
+    timeoutMs: 6e4
+  },
+  {
+    id: "aerocore-fleet",
+    name: "AeroCore Fleet",
+    description: "Add a new drone to the fleet",
+    userMessage: "Navigate to AeroCore Fleet and add a new drone with serial DR-001",
+    expectedOutcome: { type: "text_present", value: "DR-001" },
+    timeoutMs: 6e4
+  },
+  {
+    id: "aerocore-workforce",
+    name: "AeroCore Workforce",
+    description: "Create a new employee profile",
+    userMessage: "Go to AeroCore Workforce and create a new employee profile for Jane Doe",
+    expectedOutcome: { type: "text_present", value: "Jane Doe" },
+    timeoutMs: 6e4
+  },
+  {
+    id: "aerocore-cargo",
+    name: "AeroCore Cargo",
+    description: "Create a new shipment",
+    userMessage: "Navigate to AeroCore Cargo and create a new shipment with ID SH-9987",
+    expectedOutcome: { type: "text_present", value: "SH-9987" },
+    timeoutMs: 6e4
+  },
+  {
+    id: "aerocore-security",
+    name: "AeroCore Security",
+    description: "Create a security incident report",
+    userMessage: "Go to AeroCore Security and file a new security incident report",
+    expectedOutcome: { type: "text_present", value: "Incident" },
+    timeoutMs: 6e4
+  },
+  {
+    id: "aerocore-admin",
+    name: "AeroCore Admin",
+    description: "Update system settings",
+    userMessage: "Navigate to AeroCore Admin and update the system timezone to UTC",
+    expectedOutcome: { type: "text_present", value: "UTC" },
+    timeoutMs: 6e4
+  },
+  {
+    id: "aerocore-portal",
+    name: "AeroCore Portal",
+    description: "Create a new portal announcement",
+    userMessage: "Go to AeroCore Portal and create a new announcement about system maintenance",
+    expectedOutcome: { type: "text_present", value: "maintenance" },
+    timeoutMs: 6e4
+  },
+  {
+    id: "aerocore-datalake",
+    name: "AeroCore Datalake",
+    description: "Run a data query",
+    userMessage: "Navigate to AeroCore Datalake and run a query for recent logs",
+    expectedOutcome: { type: "text_present", value: "logs" },
+    timeoutMs: 6e4
+  }
+];
+class BenchmarkService {
+  constructor() {
+    __publicField(this, "trajectory", []);
+    __publicField(this, "llmCalls", 0);
+    __publicField(this, "retries", 0);
+  }
+  async runSuite(filter, enableActionsPolicy) {
+    const scenarios = filter ? BENCHMARK_SUITE.filter((s) => s.id.includes(filter)) : BENCHMARK_SUITE;
+    console.log(`[Benchmark] Starting suite with ${scenarios.length} scenarios (actionsPolicy=${enableActionsPolicy})...`);
+    const results = [];
+    for (const scenario of scenarios) {
+      console.log(`[Benchmark] Running scenario: ${scenario.name} (${scenario.id})`);
+      const result = await this.runScenario(scenario, enableActionsPolicy);
+      results.push(result);
+      console.log(`[Benchmark] Scenario ${scenario.id} ${result.success ? "PASSED" : "FAILED"} in ${result.durationMs}ms (llmCalls=${result.llmCalls}, retries=${result.retries})`);
+    }
+    return results;
+  }
+  async runScenario(scenario, enableActionsPolicy) {
+    const runId = v4$2();
+    const start = Date.now();
+    this.trajectory = [];
+    this.llmCalls = 0;
+    this.retries = 0;
+    const stepCollector = (step) => {
+      var _a3;
+      this.trajectory.push({
+        ts: ((_a3 = step.metadata) == null ? void 0 : _a3.ts) ? new Date(step.metadata.ts).getTime() : Date.now(),
+        type: step.type,
+        content: step.content,
+        metadata: step.metadata
+      });
+      if (step.type === "llm_start") this.llmCalls++;
+    };
+    try {
+      await agentService.resetConversation();
+      agentService.toggleActionsPolicy(!!enableActionsPolicy);
+      agentService.setStepHandler(stepCollector);
+      await agentService.chat(scenario.userMessage);
+      const success = await this.verifyOutcome(scenario);
+      return {
+        scenarioId: scenario.id,
+        success,
+        durationMs: Date.now() - start,
+        steps: this.trajectory.length,
+        llmCalls: this.llmCalls,
+        retries: this.retries,
+        runId,
+        trajectory: [...this.trajectory]
+      };
+    } catch (e) {
+      return {
+        scenarioId: scenario.id,
+        success: false,
+        durationMs: Date.now() - start,
+        steps: this.trajectory.length,
+        llmCalls: this.llmCalls,
+        retries: this.retries,
+        error: e.message,
+        runId,
+        trajectory: [...this.trajectory]
+      };
+    } finally {
+      agentService.clearStepHandler();
+    }
+  }
+  extractNormalizedPlan(trajectory) {
+    const toolCalls = trajectory.filter((e) => {
+      var _a3;
+      return e.type === "action" && ((_a3 = e.metadata) == null ? void 0 : _a3.tool);
+    });
+    return toolCalls.map((e) => {
+      var _a3;
+      const args = ((_a3 = e.metadata) == null ? void 0 : _a3.toolArgs) ?? {};
+      return {
+        tool: e.metadata.tool,
+        args,
+        ts: e.ts
+      };
+    });
+  }
+  extractFeedbackLabels(trajectory) {
+    return trajectory.filter((e) => {
+      var _a3;
+      return e.type === "observation" && ((_a3 = e.content) == null ? void 0 : _a3.includes("Recorded"));
+    }).map((e) => {
+      var _a3;
+      const m = (_a3 = e.content) == null ? void 0 : _a3.match(/Recorded (worked|failed|partial)/i);
+      return m ? m[1].toLowerCase() : void 0;
+    }).filter(Boolean);
+  }
+  async exportTrajectories(results) {
+    var _a3, _b;
+    const exportDir = path$2.join(app.getPath("userData"), "benchmark_datasets");
+    await fs$1.mkdir(exportDir, { recursive: true });
+    const timestamp = (/* @__PURE__ */ new Date()).toISOString().replace(/[:.]/g, "-");
+    const filePath = path$2.join(exportDir, `trajectories_${timestamp}.jsonl`);
+    const lines = [];
+    for (const r of results) {
+      if (!r.trajectory) continue;
+      const normalizedPlan = this.extractNormalizedPlan(r.trajectory);
+      const feedbackLabels = this.extractFeedbackLabels(r.trajectory);
+      const firstUrl = (_b = (_a3 = r.trajectory.find((e) => {
+        var _a4;
+        return (_a4 = e.metadata) == null ? void 0 : _a4.url;
+      })) == null ? void 0 : _a3.metadata) == null ? void 0 : _b.url;
+      const domain = (() => {
+        if (!firstUrl) return "unknown";
+        try {
+          return new URL(firstUrl).hostname;
+        } catch {
+          return "unknown";
+        }
+      })();
+      const fingerprint = (() => {
+        if (!firstUrl) return void 0;
+        try {
+          return new URL(firstUrl).pathname;
+        } catch {
+          return void 0;
+        }
+      })();
+      const record = {
+        scenarioId: r.scenarioId,
+        runId: r.runId,
+        domain,
+        fingerprint,
+        normalizedPlan,
+        steps: r.trajectory,
+        outcome: r.success ? "success" : "failure",
+        success: r.success,
+        durationMs: r.durationMs,
+        llmCalls: r.llmCalls,
+        retries: r.retries,
+        feedbackLabels
+      };
+      lines.push(JSON.stringify(record));
+    }
+    await fs$1.writeFile(filePath, lines.join("\n"), "utf8");
+    console.log(`[Benchmark] Exported ${results.length} trajectories to ${filePath}`);
+    return filePath;
+  }
+  async verifyOutcome(scenario) {
+    const target = await browserAutomationService.getTarget();
+    if (scenario.expectedOutcome.type === "text_present") {
+      const found = await target.executeJavaScript(
+        `document.body.innerText.includes(${JSON.stringify(scenario.expectedOutcome.value)})`,
+        true
+      );
+      return Boolean(found);
+    }
+    if (scenario.expectedOutcome.type === "url_match") {
+      const url = await target.getURL();
+      return url.includes(scenario.expectedOutcome.value);
+    }
+    return false;
+  }
+}
+const benchmarkService = new BenchmarkService();
 const MAX_FILES_DEFAULT = 2e3;
 const MAX_FILE_BYTES_DEFAULT = 2e5;
 const IGNORE_DIRS = /* @__PURE__ */ new Set([
@@ -42563,838 +45680,6 @@ class MockTrelloConnector {
   }
 }
 new MockTrelloConnector();
-class BrowserAutomationService {
-  constructor() {
-    __publicField(this, "mockSaasRoutesCache", null);
-    this.registerTools();
-  }
-  async delay(ms) {
-    await new Promise((resolve) => setTimeout(resolve, ms));
-  }
-  async getMockSaasRoutes() {
-    const now = Date.now();
-    if (this.mockSaasRoutesCache && now - this.mockSaasRoutesCache.loadedAt < 1e4) {
-      return this.mockSaasRoutesCache.routes;
-    }
-    const defaultRoutes = /* @__PURE__ */ new Set(["/", "/jira", "/confluence", "/trello"]);
-    const candidates = [
-      path$2.resolve(process.cwd(), "mock-saas", "src", "App.tsx"),
-      path$2.resolve(process.cwd(), "..", "mock-saas", "src", "App.tsx"),
-      path$2.resolve(process.cwd(), "..", "..", "mock-saas", "src", "App.tsx")
-    ];
-    let appTsx = null;
-    for (const p of candidates) {
-      try {
-        const stat = await fs$1.stat(p);
-        if (stat.isFile()) {
-          appTsx = p;
-          break;
-        }
-      } catch {
-      }
-    }
-    if (!appTsx) {
-      this.mockSaasRoutesCache = { loadedAt: now, routes: defaultRoutes };
-      return defaultRoutes;
-    }
-    try {
-      const raw = await fs$1.readFile(appTsx, "utf8");
-      const routes = /* @__PURE__ */ new Set();
-      const re2 = /<Route\s+(?:path|element)\s*=\s*["']([^"']+)["']/g;
-      let match;
-      while (match = re2.exec(raw)) {
-        let route = match[1];
-        if (route.endsWith("/*")) {
-          route = route.replace("/*", "");
-          if (route === "/aerocore") {
-            routes.add("/aerocore/admin");
-            routes.add("/aerocore/dispatch");
-            routes.add("/aerocore/fleet");
-            routes.add("/aerocore/security");
-            routes.add("/aerocore/hr");
-            routes.add("/aerocore/cargo");
-            routes.add("/aerocore/data");
-          }
-        }
-        routes.add(route);
-      }
-      const final = routes.size > 0 ? routes : defaultRoutes;
-      this.mockSaasRoutesCache = { loadedAt: now, routes: final };
-      return final;
-    } catch {
-      this.mockSaasRoutesCache = { loadedAt: now, routes: defaultRoutes };
-      return defaultRoutes;
-    }
-  }
-  async getTarget() {
-    return browserTargetService.getActiveWebContents();
-  }
-  async waitForSelector(target, selector, timeoutMs = 5e3) {
-    const startedAt = Date.now();
-    while (Date.now() - startedAt < timeoutMs) {
-      const found = await target.executeJavaScript(
-        `Boolean(document.querySelector(${JSON.stringify(selector)}))`,
-        true
-      );
-      if (found) return;
-      await this.delay(100);
-    }
-    throw new Error(`Timeout waiting for selector: ${selector}`);
-  }
-  async querySelectorCount(target, selector) {
-    const count = await target.executeJavaScript(
-      `document.querySelectorAll(${JSON.stringify(selector)}).length`,
-      true
-    );
-    return Number(count) || 0;
-  }
-  registerTools() {
-    const observeSchema = object({
-      scope: _enum(["main", "document"]).optional().describe("Where to look for elements (default: main)"),
-      maxElements: number().optional().describe("Max interactive elements to return (default: 80)")
-    });
-    const observeTool = {
-      name: "browser_observe",
-      description: "Analyze the current page URL/title and return visible interactive elements. Defaults to main content to avoid header/nav noise.",
-      schema: observeSchema,
-      execute: async (args) => {
-        const { scope, maxElements } = observeSchema.parse(args ?? {});
-        try {
-          const target = await this.getTarget();
-          const url = target.getURL();
-          const title = await target.executeJavaScript(`document.title`, true);
-          const elements = await target.executeJavaScript(
-            `(() => {
-                const escapeForSingleQuotes = (value) => {
-                  if (typeof value !== 'string') return '';
-                  return value.replace(/\\\\/g, '\\\\\\\\').replace(/'/g, "\\\\'");
-                };
-
-                const attrSelectorValue = (value) => {
-                  if (typeof value !== 'string') return "''";
-                  // If value is simple, avoid quotes entirely (JSON-safe and CSS-valid).
-                  if (/^[a-zA-Z0-9_-]+$/.test(value)) return value;
-                  return "'" + escapeForSingleQuotes(value) + "'";
-                };
-
-                const isVisible = (el) => {
-                  if (!el || el.nodeType !== 1) return false;
-                  const style = window.getComputedStyle(el);
-                  if (!style) return false;
-                  if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
-                  if (style.pointerEvents === 'none') return false;
-                  const rects = el.getClientRects();
-                  if (!rects || rects.length === 0) return false;
-                  const rect = el.getBoundingClientRect();
-                  if (rect.width < 2 || rect.height < 2) return false;
-                  // Prefer in-viewport elements (allow small offscreen buffer)
-                  const vw = window.innerWidth || 0;
-                  const vh = window.innerHeight || 0;
-                  const buffer = 40;
-                  if (rect.bottom < -buffer || rect.top > vh + buffer) return false;
-                  if (rect.right < -buffer || rect.left > vw + buffer) return false;
-                  return true;
-                };
-
-                const cssPath = (el) => {
-                  if (!el || el.nodeType !== 1) return '';
-                  const parts = [];
-                  let cur = el;
-                  let guard = 0;
-                  while (cur && cur.nodeType === 1 && guard++ < 7) {
-                    const tag = cur.tagName.toLowerCase();
-                    if (cur.id) {
-                      parts.unshift(tag + '#' + CSS.escape(cur.id));
-                      break;
-                    }
-
-                    let part = tag;
-                    const testId =
-                      cur.getAttribute &&
-                      (cur.getAttribute('data-testid') || cur.getAttribute('data-test-id'));
-                    if (testId) {
-                      part += '[data-testid=' + attrSelectorValue(testId) + ']';
-                      parts.unshift(part);
-                      break;
-                    }
-
-                    const classList = cur.classList ? Array.from(cur.classList) : [];
-                    if (classList.length) {
-                      part += '.' + classList.slice(0, 2).map((c) => CSS.escape(c)).join('.');
-                    }
-
-                    const parent = cur.parentElement;
-                    if (parent) {
-                      const sameTagSiblings = Array.from(parent.children).filter(
-                        (sib) => sib.tagName === cur.tagName
-                      );
-                      if (sameTagSiblings.length > 1) {
-                        part += ':nth-of-type(' + (sameTagSiblings.indexOf(cur) + 1) + ')';
-                      }
-                    }
-
-                    parts.unshift(part);
-                    cur = cur.parentElement;
-                  }
-                  return parts.join(' > ');
-                };
-
-                const bestSelector = (el) => {
-                  if (!el || el.nodeType !== 1) return '';
-                  if (el.id) return '#' + el.id;
-                  const testId = el.getAttribute && (el.getAttribute('data-testid') || el.getAttribute('data-test-id'));
-                  if (testId) return '[data-testid=' + attrSelectorValue(testId) + ']';
-                  const name = el.getAttribute && el.getAttribute('name');
-                  if (name) return el.tagName.toLowerCase() + '[name=' + attrSelectorValue(name) + ']';
-                  const ariaLabel = el.getAttribute && el.getAttribute('aria-label');
-                  if (ariaLabel) return el.tagName.toLowerCase() + '[aria-label=' + attrSelectorValue(ariaLabel) + ']';
-                  const placeholder = el.getAttribute && el.getAttribute('placeholder');
-                  if (placeholder) return el.tagName.toLowerCase() + '[placeholder=' + attrSelectorValue(placeholder) + ']';
-                  if (el.className && typeof el.className === 'string') {
-                    const classes = el.className.split(' ').filter((c) => c.trim()).slice(0, 3).join('.');
-                    if (classes) return el.tagName.toLowerCase() + '.' + classes;
-                  }
-                  const path = cssPath(el);
-                  return path || el.tagName.toLowerCase();
-                };
-
-                const requestedScope = ${JSON.stringify(scope ?? "main")};
-                const root =
-                  requestedScope === 'document'
-                    ? document
-                    : (document.querySelector('main, [role="main"]') || document.body);
-
-                const withinRoot = (el) => {
-                  try { return root && root !== document ? root.contains(el) : true; } catch { return true; }
-                };
-
-                const selectorList = 'button, a, input, textarea, select, summary, [role="button"], [role="link"], [role="tab"]';
-                const candidates = Array.from((root && root !== document ? root : document).querySelectorAll(selectorList));
-
-                // Visible + within root + de-duplicate by selector+text+tag.
-                const seen = new Set();
-                const out = [];
-                const limit = Math.max(1, Math.min(200, ${JSON.stringify(maxElements ?? 80)}));
-
-                for (const el of candidates) {
-                  if (!withinRoot(el)) continue;
-                  if (!isVisible(el)) continue;
-
-                  const tag = el.tagName.toLowerCase();
-                  const text = (el.textContent || '').substring(0, 80).trim().replace(/\\s+/g, ' ');
-                  const placeholder = el.getAttribute('placeholder') || '';
-                  const type = el.getAttribute('type') || '';
-                  const role = el.getAttribute('role') || '';
-                  const name = el.getAttribute('name') || '';
-                  const disabled = 'disabled' in el ? Boolean(el.disabled) : el.getAttribute('aria-disabled') === 'true';
-                  const selector = bestSelector(el);
-                  const matches = selector ? document.querySelectorAll(selector).length : 0;
-                  const value = 'value' in el ? String(el.value ?? '') : '';
-                  const href = tag === 'a' ? (el.getAttribute('href') || '') : '';
-                  const ariaLabel = el.getAttribute('aria-label') || '';
-
-                  const key = [tag, selector, text].join('|');
-                  if (seen.has(key)) continue;
-                  seen.add(key);
-
-                  out.push({ tag, text, placeholder, type, role, name, disabled, value, href, ariaLabel, selector, matches });
-                  if (out.length >= limit) break;
-                }
-
-                // Provide a small main-text snippet so the agent can orient itself.
-                const mainText = (() => {
-                  const node =
-                    (document.querySelector('main, [role="main"]') || document.body);
-                  const raw = (node?.innerText || '').replace(/\\s+/g, ' ').trim();
-                  return raw.slice(0, 1200);
-                })();
-
-                return { interactiveElements: out, mainTextSnippet: mainText, scope: requestedScope };
-              })()`,
-            true
-          );
-          return JSON.stringify({ url, title, ...elements }, null, 2);
-        } catch (e) {
-          return `Failed to observe page: ${e.message}`;
-        }
-      }
-    };
-    const navigateTool = {
-      name: "browser_navigate",
-      description: "Navigate the browser to a specific URL.",
-      schema: object({
-        url: string().describe("The URL to navigate to (must include http/https)"),
-        waitForSelector: string().optional().describe("Optional selector to wait for after navigation"),
-        waitForText: string().optional().describe("Optional text to wait for after navigation"),
-        timeoutMs: number().optional().describe("Timeout in ms for optional waits (default 8000)")
-      }),
-      execute: async ({
-        url,
-        waitForSelector,
-        waitForText,
-        timeoutMs
-      }) => {
-        try {
-          let target;
-          try {
-            target = await this.getTarget();
-          } catch (noWebviewError) {
-            const { BrowserWindow: BrowserWindow2 } = await import("electron");
-            const win2 = BrowserWindow2.getAllWindows()[0];
-            if (win2) {
-              win2.webContents.send("browser:navigate-to", url);
-              await this.delay(1500);
-              try {
-                target = await this.getTarget();
-              } catch {
-                return `Navigated to ${url} (webview initializing)`;
-              }
-            } else {
-              return `Failed to navigate: No browser window found`;
-            }
-          }
-          try {
-            const parsed = new URL$2(url);
-            if ((parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1") && parsed.port === "3000") {
-              const routes = await this.getMockSaasRoutes();
-              const pathname = parsed.pathname.replace(/\/+$/, "") || "/";
-              if (!routes.has(pathname)) {
-                return `Failed to navigate: Unknown mock-saas route ${pathname}. Known routes: ${Array.from(
-                  routes
-                ).sort().join(", ")}. Navigate to /jira and use the Create button (it is a modal, not a /create route).`;
-              }
-            }
-          } catch {
-          }
-          const loadTimeout = timeoutMs ?? 8e3;
-          try {
-            await target.loadURL(url);
-          } catch (e) {
-            const msg = String((e == null ? void 0 : e.message) ?? e);
-            if (!msg.includes("ERR_ABORTED")) throw e;
-            await this.delay(250);
-            const current = target.getURL();
-            if (!current) throw e;
-          }
-          if (waitForSelector) {
-            await this.waitForSelector(target, waitForSelector, loadTimeout);
-          }
-          if (waitForText) {
-            const startedAt = Date.now();
-            const needle = waitForText.toLowerCase();
-            while (Date.now() - startedAt < loadTimeout) {
-              const found = await target.executeJavaScript(
-                `document.body && document.body.innerText && document.body.innerText.toLowerCase().includes(${JSON.stringify(
-                  needle
-                )})`,
-                true
-              );
-              if (found) break;
-              await this.delay(150);
-            }
-          }
-          return `Navigated to ${target.getURL()}`;
-        } catch (e) {
-          return `Failed to navigate: ${e.message}`;
-        }
-      }
-    };
-    const clickTool = {
-      name: "browser_click",
-      description: "Click an element on the current page.",
-      schema: object({
-        selector: string().describe("CSS selector of the element to click")
-      }),
-      execute: async ({ selector }) => {
-        try {
-          const target = await this.getTarget();
-          await this.waitForSelector(target, selector, 5e3);
-          await target.executeJavaScript(
-            `(() => {
-                // Helper to find element including shadow DOM
-                const findElement = (sel) => {
-                  const queryDeep = (root) => {
-                    const el = root.querySelector(sel);
-                    if (el) return el;
-                    if (root.shadowRoot) {
-                      const found = queryDeep(root.shadowRoot);
-                      if (found) return found;
-                    }
-                    const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
-                    while (walker.nextNode()) {
-                      const node = walker.currentNode;
-                      if (node.shadowRoot) {
-                        const found = queryDeep(node.shadowRoot);
-                        if (found) return found;
-                      }
-                    }
-                    return null;
-                  };
-                  return queryDeep(document);
-                };
-
-                const el = findElement(${JSON.stringify(selector)}) || document.querySelector(${JSON.stringify(selector)});
-                if (!el) throw new Error('Element not found');
-                
-                const isDisabled = ('disabled' in el && Boolean(el.disabled)) || el.getAttribute?.('aria-disabled') === 'true';
-                if (isDisabled) throw new Error('Element is disabled');
-                
-                el.scrollIntoView({ block: 'center', inline: 'center' });
-                
-                // Try multiple click strategies
-                try {
-                  el.click(); // Standard click
-                } catch (e) { console.error('Standard click failed', e); }
-                
-                // Dispatch events (crucial for React/Angular/Vue apps)
-                const eventOpts = { bubbles: true, cancelable: true, view: window };
-                el.dispatchEvent(new MouseEvent('mouseover', eventOpts));
-                el.dispatchEvent(new MouseEvent('mousedown', eventOpts));
-                el.dispatchEvent(new MouseEvent('mouseup', eventOpts));
-                el.dispatchEvent(new MouseEvent('click', eventOpts));
-                
-                return true;
-              })()`,
-            true
-          );
-          return `Clicked element ${selector}`;
-        } catch (e) {
-          return `Failed to click ${selector}: ${e.message}`;
-        }
-      }
-    };
-    const typeTool = {
-      name: "browser_type",
-      description: "Type text into an input field.",
-      schema: object({
-        selector: string().describe("CSS selector of the input"),
-        text: string().describe("Text to type")
-      }),
-      execute: async ({ selector, text }) => {
-        try {
-          const target = await this.getTarget();
-          const matches = await this.querySelectorCount(target, selector);
-          if (matches > 1) {
-            return `Refusing to type into non-unique selector (matches=${matches}): ${selector}`;
-          }
-          await this.waitForSelector(target, selector, 5e3);
-          const typedValue = await target.executeJavaScript(
-            `(() => {
-                const el = document.querySelector(${JSON.stringify(selector)});
-                if (!el) throw new Error('Element not found');
-                const isDisabled = ('disabled' in el && Boolean(el.disabled)) || el.getAttribute?.('aria-disabled') === 'true';
-                if (isDisabled) throw new Error('Element is disabled');
-                el.scrollIntoView({ block: 'center', inline: 'center' });
-                el.focus?.();
-
-                const setNativeValue = (node, value) => {
-                  const tag = node.tagName?.toLowerCase?.() || '';
-                  if (tag === 'input') {
-                    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
-                    if (setter) setter.call(node, value);
-                    else node.value = value;
-                    return;
-                  }
-                  if (tag === 'textarea') {
-                    const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set;
-                    if (setter) setter.call(node, value);
-                    else node.value = value;
-                    return;
-                  }
-                  if (node.isContentEditable) {
-                    node.textContent = value;
-                    return;
-                  }
-                  node.value = value;
-                };
-
-                setNativeValue(el, '');
-                el.dispatchEvent(new InputEvent('input', { bubbles: true, data: '', inputType: 'deleteContentBackward' }));
-                setNativeValue(el, ${JSON.stringify(text)});
-                el.dispatchEvent(new InputEvent('input', { bubbles: true, data: ${JSON.stringify(text)}, inputType: 'insertText' }));
-                el.dispatchEvent(new Event('change', { bubbles: true }));
-                return ('value' in el) ? String(el.value ?? '') : (el.textContent || '');
-              })()`,
-            true
-          );
-          return `Typed into ${selector}. Current value: ${JSON.stringify(typedValue)}`;
-        } catch (e) {
-          return `Failed to type into ${selector}: ${e.message}`;
-        }
-      }
-    };
-    const getTextTool = {
-      name: "browser_get_text",
-      description: "Get the text content of an element.",
-      schema: object({
-        selector: string().describe("CSS selector")
-      }),
-      execute: async ({ selector }) => {
-        try {
-          const target = await this.getTarget();
-          await this.waitForSelector(target, selector, 5e3);
-          const text = await target.executeJavaScript(
-            `(() => {
-                    const el = document.querySelector(${JSON.stringify(selector)});
-                    return el ? (el.textContent || '') : null;
-                  })()`,
-            true
-          );
-          return text || "Element found but has no text.";
-        } catch (e) {
-          return `Failed to get text: ${e.message}`;
-        }
-      }
-    };
-    const screenshotTool = {
-      name: "browser_screenshot",
-      description: "Take a screenshot of the current page.",
-      schema: object({
-        path: string().optional().describe("Path to save the screenshot (optional)")
-      }),
-      execute: async ({ path: savePath }) => {
-        const target = await this.getTarget();
-        const image = await target.capturePage();
-        const buffer = image.toPNG();
-        if (savePath) {
-          const resolved = path$2.isAbsolute(savePath) ? savePath : path$2.join(process.cwd(), savePath);
-          await fs$1.writeFile(resolved, buffer);
-          return `Screenshot saved to ${resolved} (${buffer.length} bytes).`;
-        }
-        return `Screenshot taken (${buffer.length} bytes).`;
-      }
-    };
-    const findTextTool = {
-      name: "browser_find_text",
-      description: "Find text on the current page and return matching elements/selectors.",
-      schema: object({
-        text: string().describe("Text to search for (case-insensitive substring match)"),
-        maxMatches: number().optional().describe("Max results to return (default 10)")
-      }),
-      execute: async ({ text, maxMatches }) => {
-        const target = await this.getTarget();
-        const results = await target.executeJavaScript(
-          `(() => {
-            const query = ${JSON.stringify(text)}.toLowerCase();
-            const limit = Math.max(1, Math.min(50, ${JSON.stringify(maxMatches ?? 10)}));
-
-            const escapeForSingleQuotes = (value) => {
-              if (typeof value !== 'string') return '';
-              return value.replace(/\\\\/g, '\\\\\\\\').replace(/'/g, "\\\\'");
-            };
-
-            const attrSelectorValue = (value) => {
-              if (typeof value !== 'string') return "''";
-              if (/^[a-zA-Z0-9_-]+$/.test(value)) return value;
-              return "'" + escapeForSingleQuotes(value) + "'";
-            };
-
-            const selectorFor = (el) => {
-              if (!el || el.nodeType !== 1) return '';
-              if (el.id) return '#' + el.id;
-              const testId = el.getAttribute && (el.getAttribute('data-testid') || el.getAttribute('data-test-id'));
-              if (testId) return '[data-testid=' + attrSelectorValue(testId) + ']';
-              const ariaLabel = el.getAttribute && el.getAttribute('aria-label');
-              if (ariaLabel) return el.tagName.toLowerCase() + '[aria-label=' + attrSelectorValue(ariaLabel) + ']';
-              const placeholder = el.getAttribute && el.getAttribute('placeholder');
-              if (placeholder) return el.tagName.toLowerCase() + '[placeholder=' + attrSelectorValue(placeholder) + ']';
-              return el.tagName.toLowerCase();
-            };
-
-            const out = [];
-            const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-            while (walker.nextNode()) {
-              const node = walker.currentNode;
-              const raw = node.nodeValue || '';
-              const normalized = raw.replace(/\\s+/g, ' ').trim();
-              if (!normalized) continue;
-              if (!normalized.toLowerCase().includes(query)) continue;
-
-              const parent = node.parentElement;
-              if (!parent) continue;
-              const el = parent.closest('button, a, [role="button"], [role="link"], input, textarea, select, div, span, p') || parent;
-              const selector = selectorFor(el);
-              out.push({
-                selector,
-                tag: el.tagName.toLowerCase(),
-                text: (el.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 120),
-              });
-              if (out.length >= limit) break;
-            }
-            return out;
-          })()`,
-          true
-        );
-        return JSON.stringify({ found: Array.isArray(results) ? results.length : 0, matches: results }, null, 2);
-      }
-    };
-    const waitForTextTool = {
-      name: "browser_wait_for_text",
-      description: "Wait until text appears on the page (case-insensitive). Useful to verify actions succeeded.",
-      schema: object({
-        text: string().describe("Text to wait for"),
-        timeoutMs: number().optional().describe("Timeout in ms (default 5000)")
-      }),
-      execute: async ({ text, timeoutMs }) => {
-        const target = await this.getTarget();
-        const startedAt = Date.now();
-        const timeout = timeoutMs ?? 5e3;
-        while (Date.now() - startedAt < timeout) {
-          const found = await target.executeJavaScript(
-            `document.body && document.body.innerText && document.body.innerText.toLowerCase().includes(${JSON.stringify(
-              text.toLowerCase()
-            )})`,
-            true
-          );
-          if (found) return `Found text: ${JSON.stringify(text)}`;
-          await this.delay(150);
-        }
-        return `Did not find text within ${timeout}ms: ${JSON.stringify(text)}`;
-      }
-    };
-    const waitForTextInTool = {
-      name: "browser_wait_for_text_in",
-      description: "Wait until text appears within a specific container selector (case-insensitive).",
-      schema: object({
-        selector: string().describe("CSS selector for the container"),
-        text: string().describe("Text to wait for"),
-        timeoutMs: number().optional().describe("Timeout in ms (default 5000)")
-      }),
-      execute: async ({
-        selector,
-        text,
-        timeoutMs
-      }) => {
-        const target = await this.getTarget();
-        const startedAt = Date.now();
-        const timeout = timeoutMs ?? 5e3;
-        const needle = text.toLowerCase();
-        while (Date.now() - startedAt < timeout) {
-          const found = await target.executeJavaScript(
-            `(() => {
-              const root = document.querySelector(${JSON.stringify(selector)});
-              if (!root) return false;
-              const text = (root.innerText || '').toLowerCase();
-              return text.includes(${JSON.stringify(needle)});
-            })()`,
-            true
-          );
-          if (found) return `Found text in ${selector}: ${JSON.stringify(text)}`;
-          await this.delay(150);
-        }
-        return `Did not find text in ${selector} within ${timeout}ms: ${JSON.stringify(text)}`;
-      }
-    };
-    const selectTool = {
-      name: "browser_select",
-      description: "Set the value of a <select> element.",
-      schema: object({
-        selector: string().describe("CSS selector of the select element"),
-        value: string().describe("Option value to set")
-      }),
-      execute: async ({ selector, value }) => {
-        try {
-          const target = await this.getTarget();
-          const matches = await this.querySelectorCount(target, selector);
-          if (matches > 1) {
-            return `Refusing to select on non-unique selector (matches=${matches}): ${selector}`;
-          }
-          await this.waitForSelector(target, selector, 5e3);
-          const selected = await target.executeJavaScript(
-            `(() => {
-              const el = document.querySelector(${JSON.stringify(selector)});
-              if (!el) throw new Error('Element not found');
-              const tag = el.tagName?.toLowerCase?.();
-              if (tag !== 'select') throw new Error('Element is not a <select>');
-              const isDisabled = Boolean(el.disabled) || el.getAttribute?.('aria-disabled') === 'true';
-              if (isDisabled) throw new Error('Element is disabled');
-              el.value = ${JSON.stringify(value)};
-              el.dispatchEvent(new Event('input', { bubbles: true }));
-              el.dispatchEvent(new Event('change', { bubbles: true }));
-              return String(el.value ?? '');
-            })()`,
-            true
-          );
-          return `Selected value ${JSON.stringify(selected)} on ${selector}`;
-        } catch (e) {
-          return `Failed to select on ${selector}: ${e.message}`;
-        }
-      }
-    };
-    const clickTextTool = {
-      name: "browser_click_text",
-      description: "Click a visible element by its text (avoids brittle selectors). Optionally filter by tag/role and choose index.",
-      schema: object({
-        text: string().describe("Visible text to match"),
-        exact: boolean().optional().describe("Exact match (default false = substring match)"),
-        role: string().optional().describe("ARIA role to filter (e.g. tab, button, link)"),
-        tag: string().optional().describe("Tag name to filter (e.g. a, button)"),
-        index: number().optional().describe("Which match to click (0-based, default 0)"),
-        withinSelector: string().optional().describe("Limit search to a container selector")
-      }),
-      execute: async ({
-        text,
-        exact,
-        role,
-        tag,
-        index,
-        withinSelector
-      }) => {
-        try {
-          const target = await this.getTarget();
-          const clicked = await target.executeJavaScript(
-            `(() => {
-              const query = ${JSON.stringify(text)}.toLowerCase().trim();
-              const exact = Boolean(${JSON.stringify(exact ?? false)});
-              const role = ${JSON.stringify(role ?? "")}.toLowerCase().trim();
-              const tag = ${JSON.stringify(tag ?? "")}.toLowerCase().trim();
-              const idx = Math.max(0, Math.floor(${JSON.stringify(index ?? 0)}));
-              const root = ${withinSelector ? `document.querySelector(${JSON.stringify(withinSelector)})` : "document"} || document;
-
-              const isVisible = (el) => {
-                if (!el || el.nodeType !== 1) return false;
-                const style = window.getComputedStyle(el);
-                if (!style) return false;
-                if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
-                if (style.pointerEvents === 'none') return false;
-                const rects = el.getClientRects();
-                if (!rects || rects.length === 0) return false;
-                const rect = el.getBoundingClientRect();
-                if (rect.width < 2 || rect.height < 2) return false;
-                const vw = window.innerWidth || 0;
-                const vh = window.innerHeight || 0;
-                const buffer = 40;
-                if (rect.bottom < -buffer || rect.top > vh + buffer) return false;
-                if (rect.right < -buffer || rect.left > vw + buffer) return false;
-                return true;
-              };
-
-              const selector = 'button, a, [role="button"], [role="link"], [role="tab"], summary';
-              const candidates = Array.from((root === document ? document : root).querySelectorAll(selector));
-              const matches = [];
-              for (const el of candidates) {
-                if (!isVisible(el)) continue;
-                if (tag && el.tagName.toLowerCase() !== tag) continue;
-                if (role) {
-                  const r = (el.getAttribute('role') || '').toLowerCase();
-                  if (r !== role) continue;
-                }
-                const t = (el.textContent || '').replace(/\\s+/g, ' ').trim().toLowerCase();
-                if (!t) continue;
-                const ok = exact ? t === query : t.includes(query);
-                if (!ok) continue;
-                const disabled = ('disabled' in el && Boolean(el.disabled)) || el.getAttribute?.('aria-disabled') === 'true';
-                matches.push({ el, text: t, disabled });
-              }
-
-              if (matches.length === 0) {
-                return { ok: false, reason: 'No matching visible elements', matches: 0 };
-              }
-              const chosen = matches[Math.min(idx, matches.length - 1)];
-              if (chosen.disabled) {
-                return { ok: false, reason: 'Matched element is disabled', matches: matches.length };
-              }
-              const el = chosen.el;
-              el.scrollIntoView({ block: 'center', inline: 'center' });
-              el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
-              el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-              el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
-              el.click();
-              return { ok: true, matches: matches.length, clickedText: chosen.text };
-            })()`,
-            true
-          );
-          return `ClickText result: ${JSON.stringify(clicked)}`;
-        } catch (e) {
-          return `Failed to click by text: ${e.message}`;
-        }
-      }
-    };
-    const extractMainTextTool = {
-      name: "browser_extract_main_text",
-      description: "Extract visible text from the main content area (role=main/main tag) to support scraping/QA.",
-      schema: object({
-        maxChars: number().optional().describe("Max characters to return (default 4000)")
-      }),
-      execute: async ({ maxChars }) => {
-        const target = await this.getTarget();
-        const text = await target.executeJavaScript(
-          `(() => {
-            const node = document.querySelector('main, [role="main"]') || document.body;
-            const raw = (node?.innerText || '').replace(/\\s+/g, ' ').trim();
-            return raw.slice(0, Math.max(1, Math.min(20000, ${JSON.stringify(maxChars ?? 4e3)})));
-          })()`,
-          true
-        );
-        return String(text ?? "");
-      }
-    };
-    const executePlanTool = {
-      name: "browser_execute_plan",
-      description: "Execute a batch of browser actions (navigate, click, type, select, wait). Use this for Mock SaaS tasks where you have read the code and know the selectors.",
-      schema: object({
-        steps: array(
-          object({
-            action: _enum(["navigate", "click", "type", "select", "wait"]),
-            url: string().optional().describe("For navigate action"),
-            selector: string().optional().describe("For click/type/select actions"),
-            value: string().optional().describe("For type/select actions"),
-            text: string().optional().describe("For wait action")
-          })
-        )
-      }),
-      execute: async (input) => {
-        const { steps } = input;
-        const results = [];
-        for (const [i, step] of steps.entries()) {
-          try {
-            let res = "";
-            if (step.action === "navigate") {
-              if (!step.url) throw new Error("Missing url for navigate");
-              res = await navigateTool.execute({ url: step.url });
-            } else if (step.action === "click") {
-              if (!step.selector) throw new Error("Missing selector for click");
-              res = await clickTool.execute({ selector: step.selector });
-            } else if (step.action === "type") {
-              if (!step.selector || step.value === void 0) throw new Error("Missing selector/value for type");
-              res = await typeTool.execute({ selector: step.selector, text: step.value });
-            } else if (step.action === "select") {
-              if (!step.selector || step.value === void 0) throw new Error("Missing selector/value for select");
-              res = await selectTool.execute({ selector: step.selector, value: step.value });
-            } else if (step.action === "wait") {
-              if (!step.text) throw new Error("Missing text for wait");
-              res = await waitForTextTool.execute({ text: step.text });
-            } else {
-              throw new Error(`Unknown action ${step.action}`);
-            }
-            results.push(`Step ${i + 1} (${step.action}): ${res}`);
-          } catch (e) {
-            results.push(`Step ${i + 1} (${step.action}) FAILED: ${e.message}`);
-            return `Plan execution stopped at step ${i + 1} due to error.
-Results so far:
-${results.join("\n")}`;
-          }
-        }
-        return `Plan completed successfully.
-${results.join("\n")}`;
-      }
-    };
-    toolRegistry.register(observeTool);
-    toolRegistry.register(navigateTool);
-    toolRegistry.register(clickTool);
-    toolRegistry.register(typeTool);
-    toolRegistry.register(getTextTool);
-    toolRegistry.register(screenshotTool);
-    toolRegistry.register(findTextTool);
-    toolRegistry.register(waitForTextTool);
-    toolRegistry.register(waitForTextInTool);
-    toolRegistry.register(selectTool);
-    toolRegistry.register(clickTextTool);
-    toolRegistry.register(extractMainTextTool);
-    toolRegistry.register(executePlanTool);
-  }
-}
-new BrowserAutomationService();
 const __dirname$1 = path$2.dirname(fileURLToPath(import.meta.url));
 process.env.APP_ROOT = path$2.join(__dirname$1, "..");
 const VITE_DEV_SERVER_URL = process.env["VITE_DEV_SERVER_URL"];
@@ -43402,6 +45687,8 @@ const MAIN_DIST = path$2.join(process.env.APP_ROOT, "dist-electron");
 const RENDERER_DIST = path$2.join(process.env.APP_ROOT, "dist");
 process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path$2.join(process.env.APP_ROOT, "public") : RENDERER_DIST;
 let win;
+const pendingApprovals = /* @__PURE__ */ new Map();
+const APPROVAL_TIMEOUT_MS = 3e4;
 function createWindow() {
   win = new BrowserWindow({
     icon: path$2.join(process.env.VITE_PUBLIC, "electron-vite.svg"),
@@ -43435,6 +45722,52 @@ app.on("activate", () => {
   }
 });
 app.whenReady().then(() => {
+  const policyService = new PolicyService(telemetryService, auditService);
+  toolRegistry.setPolicyService(policyService);
+  ipcMain.on("agent:approval-response", (event, payload) => {
+    var _a3;
+    const requestId = payload == null ? void 0 : payload.requestId;
+    const approved = Boolean(payload == null ? void 0 : payload.approved);
+    if (typeof requestId !== "string") return;
+    const pending = pendingApprovals.get(requestId);
+    if (!pending) return;
+    if (((_a3 = event.sender) == null ? void 0 : _a3.id) !== pending.requesterWebContentsId) return;
+    clearTimeout(pending.timeout);
+    pendingApprovals.delete(requestId);
+    pending.resolve(approved);
+  });
+  toolRegistry.setApprovalHandler(async (toolName, args) => {
+    const runId = agentRunContext.getRunId();
+    const requesterWebContentsId = agentRunContext.getRequesterWebContentsId();
+    if (!requesterWebContentsId) return false;
+    const wc = webContents.fromId(requesterWebContentsId);
+    if (!wc || wc.isDestroyed()) return false;
+    const requestId = v4$2();
+    const createdAt = Date.now();
+    wc.send("agent:request-approval", { requestId, toolName, args, runId, timeoutMs: APPROVAL_TIMEOUT_MS });
+    return await new Promise((resolve) => {
+      const timeout = setTimeout(() => {
+        pendingApprovals.delete(requestId);
+        try {
+          const still = webContents.fromId(requesterWebContentsId);
+          if (still && !still.isDestroyed()) {
+            still.send("agent:approval-timeout", { requestId, toolName, runId });
+          }
+        } catch {
+        }
+        resolve(false);
+      }, APPROVAL_TIMEOUT_MS);
+      pendingApprovals.set(requestId, {
+        requestId,
+        runId,
+        toolName,
+        requesterWebContentsId,
+        createdAt,
+        timeout,
+        resolve
+      });
+    });
+  });
   ipcMain.handle("browser:webview-register", async (_, { tabId, webContentsId }) => {
     browserTargetService.registerWebview(tabId, webContentsId);
   });
@@ -43450,39 +45783,182 @@ app.whenReady().then(() => {
   ipcMain.handle("vault:delete", async (_, account) => {
     return await vaultService.deleteSecret(account);
   });
+  ipcMain.handle("audit:get-logs", async (_, limit2) => {
+    const rows = auditService.getLogs(typeof limit2 === "number" ? limit2 : 100);
+    return rows.map((row) => {
+      const details = (() => {
+        try {
+          return JSON.parse(row.details);
+        } catch {
+          return row.details;
+        }
+      })();
+      return { ...row, details };
+    });
+  });
+  ipcMain.handle("agent:feedback", async (_event, payload) => {
+    const p = payload;
+    const id = p == null ? void 0 : p.skillId;
+    if (typeof id !== "string") return false;
+    const label = p == null ? void 0 : p.label;
+    const version2 = p == null ? void 0 : p.version;
+    const successVal = p == null ? void 0 : p.success;
+    if (label === "worked" || label === "failed" || label === "partial") {
+      const v = typeof version2 === "number" ? version2 : void 0;
+      if (typeof taskKnowledgeService.recordFeedback === "function") {
+        taskKnowledgeService.recordFeedback(
+          id,
+          label,
+          v
+        );
+        return true;
+      }
+      taskKnowledgeService.recordOutcome(id, label === "worked");
+      return true;
+    }
+    if (typeof successVal === "boolean") {
+      taskKnowledgeService.recordOutcome(id, successVal);
+      return true;
+    }
+    return false;
+  });
+  ipcMain.handle("telemetry:export", async () => {
+    const exportPath = path$2.join(app.getPath("userData"), "trajectories_export.json");
+    const count = await telemetryService.exportTrajectories(exportPath);
+    return { success: true, count, path: exportPath };
+  });
+  ipcMain.handle("benchmark:runSuite", async (_, filter) => {
+    const results = await benchmarkService.runSuite(filter);
+    return results;
+  });
+  ipcMain.handle("benchmark:runSuiteWithFlag", async (_, filter, enableActionsPolicy) => {
+    const results = await benchmarkService.runSuite(filter, enableActionsPolicy);
+    return results;
+  });
+  ipcMain.handle("benchmark:exportTrajectories", async (_, results) => {
+    const filePath = await benchmarkService.exportTrajectories(results);
+    return { success: true, path: filePath };
+  });
   ipcMain.handle("agent:chat", async (event, message) => {
+    const runId = v4$2();
+    try {
+      event.sender.send("agent:step", {
+        type: "observation",
+        content: `Run started: ${runId}`,
+        metadata: { runId, ts: (/* @__PURE__ */ new Date()).toISOString() }
+      });
+    } catch {
+    }
+    let url;
+    let domain;
+    try {
+      const activeWebview = browserTargetService.getActiveWebContents();
+      if (activeWebview && !activeWebview.isDestroyed()) {
+        url = activeWebview.getURL();
+        if (url) {
+          try {
+            const urlObj = new URL(url);
+            domain = urlObj.hostname;
+            if (urlObj.port) {
+              domain += `:${urlObj.port}`;
+            }
+          } catch {
+          }
+        }
+      }
+    } catch {
+    }
+    try {
+      await telemetryService.emit({
+        eventId: v4$2(),
+        runId,
+        ts: (/* @__PURE__ */ new Date()).toISOString(),
+        type: "agent_run_start",
+        name: "agent:chat",
+        data: { messageLength: String(message ?? "").length }
+      });
+    } catch {
+    }
     await auditService.log({
       actor: "user",
       action: "chat_message",
-      details: { message },
+      details: { message, runId },
       status: "success"
-    });
-    toolRegistry.setApprovalHandler(async (toolName, args) => {
-      event.sender.send("agent:request-approval", { toolName, args });
-      return new Promise((resolve) => {
-        ipcMain.once("agent:approval-response", (_, { toolName: respondedTool, approved }) => {
-          if (respondedTool === toolName) {
-            resolve(approved);
-          }
-        });
-      });
     });
     agentService.setStepHandler((step) => {
       event.sender.send("agent:step", step);
+      try {
+        const rawMetadata = step == null ? void 0 : step.metadata;
+        const toolName = rawMetadata == null ? void 0 : rawMetadata.tool;
+        const args = rawMetadata == null ? void 0 : rawMetadata.args;
+        const stepContent = String((step == null ? void 0 : step.content) ?? "");
+        const contentLength = stepContent.length;
+        const contentHash = crypto$2.createHash("sha256").update(stepContent).digest("hex");
+        const contentPreview = contentLength > 2e3 ? stepContent.slice(0, 2e3) : stepContent;
+        const argsJson = (() => {
+          try {
+            return JSON.stringify(args ?? null);
+          } catch {
+            return "[unserializable_args]";
+          }
+        })();
+        const argsHash = crypto$2.createHash("sha256").update(argsJson).digest("hex");
+        const sanitizedMetadata = rawMetadata ? {
+          ...rawMetadata,
+          ...args !== void 0 ? { args: void 0, argsHash } : null
+        } : void 0;
+        auditService.log({
+          actor: "agent",
+          action: "agent_step",
+          details: {
+            runId,
+            type: step == null ? void 0 : step.type,
+            toolName,
+            contentPreview,
+            contentLength,
+            contentHash,
+            argsHash: args !== void 0 ? argsHash : void 0,
+            metadata: sanitizedMetadata
+          },
+          status: "success"
+        }).catch(() => void 0);
+      } catch {
+      }
     });
     let browserContext = "Current browser state: No active tab";
     try {
       const wc = browserTargetService.getActiveWebContents();
-      const url = wc.getURL();
+      const url2 = wc.getURL();
       const title = wc.getTitle();
-      browserContext = `Current browser state: URL="${url}", Title="${title}"`;
+      browserContext = `Current browser state: URL="${url2}", Title="${title}"`;
     } catch (err) {
     }
-    const response = await agentService.chat(message, browserContext);
+    let response = "";
+    try {
+      const yoloMode = agentService.isYoloMode();
+      response = await agentRunContext.run(
+        { runId, requesterWebContentsId: event.sender.id, browserContext: { url, domain }, yoloMode },
+        async () => {
+          return await agentService.chat(message, browserContext);
+        }
+      );
+    } finally {
+      try {
+        await telemetryService.emit({
+          eventId: v4$2(),
+          runId,
+          ts: (/* @__PURE__ */ new Date()).toISOString(),
+          type: "agent_run_end",
+          name: "agent:chat",
+          data: { responseLength: response.length }
+        });
+      } catch {
+      }
+    }
     await auditService.log({
       actor: "agent",
       action: "chat_response",
-      details: { response },
+      details: { response, runId },
       status: "success"
     });
     return response;
@@ -43500,6 +45976,20 @@ app.whenReady().then(() => {
   ipcMain.handle("agent:set-model", async (_, modelId) => {
     agentService.setModel(modelId);
     return { success: true, modelId };
+  });
+  ipcMain.handle("agent:set-mode", async (_, mode) => {
+    agentService.setAgentMode(mode);
+    return { success: true };
+  });
+  ipcMain.handle("agent:get-mode", async () => {
+    return agentService.getAgentMode();
+  });
+  ipcMain.handle("agent:set-permission-mode", async (_, mode) => {
+    agentService.setPermissionMode(mode);
+    return { success: true };
+  });
+  ipcMain.handle("agent:get-permission-mode", async () => {
+    return agentService.getPermissionMode();
   });
   ipcMain.handle("browser:navigate-tab", async (_, url) => {
     const win2 = BrowserWindow.getAllWindows()[0];

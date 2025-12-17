@@ -13,18 +13,33 @@ interface Window {
     getModels: () => Promise<Array<{ id: string; name: string; supportsThinking: boolean }>>;
     getCurrentModel: () => Promise<string>;
     setModel: (modelId: string) => Promise<{ success: boolean; modelId: string }>;
-    onApprovalRequest: (callback: (toolName: string, args: unknown) => void) => (() => void);
-    respondApproval: (toolName: string, approved: boolean) => void;
-    onStep: (callback: (step: unknown) => void) => (() => void);
+    setMode: (mode: 'chat' | 'read' | 'do') => Promise<{ success: boolean }>;
+    getMode: () => Promise<'chat' | 'read' | 'do'>;
+    setPermissionMode: (mode: 'yolo' | 'permissions') => Promise<{ success: boolean }>;
+    getPermissionMode: () => Promise<'yolo' | 'permissions'>;
+    onApprovalRequest: (callback: (payload: { requestId: string; toolName: string; args: unknown; runId?: string; timeoutMs?: number }) => void) => (() => void);
+    onApprovalTimeout: (callback: (payload: any) => void) => () => void;
+    respondApproval: (requestId: string, approved: boolean) => void;
+    sendFeedback: (skillId: string, outcome: boolean | 'worked' | 'failed' | 'partial', version?: number) => Promise<boolean>;
+    onStep: (callback: (step: any) => void) => () => void;
   }
   vault?: {
     set: (account: string, secret: string) => Promise<void>;
     get: (account: string) => Promise<string | null>;
     delete: (account: string) => Promise<boolean>;
   }
+  audit?: {
+    getLogs: (limit?: number) => Promise<Array<{ id: string; timestamp: string; actor: string; action: string; details: unknown; status: string }>>;
+  }
   browser?: {
     registerWebview: (tabId: string, webContentsId: number) => Promise<void>;
     setActiveTab: (tabId: string | null) => Promise<void>;
     onNavigateTo: (callback: (url: string) => void) => (() => void);
+  }
+  telemetry?: {
+    export: () => Promise<{ success: boolean; count: number; path: string }>;
+  }
+  benchmark?: {
+    runSuite: (filter?: string) => Promise<Array<{ scenarioId: string; success: boolean; durationMs: number; steps: number; error?: string; runId: string }>>;
   }
 }

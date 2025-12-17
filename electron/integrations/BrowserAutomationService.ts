@@ -2,18 +2,99 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { URL } from 'node:url';
 import { z } from 'zod';
+import { v4 as uuidv4 } from 'uuid';
 import { AgentTool, toolRegistry } from '../services/ToolRegistry';
 import { browserTargetService } from '../services/BrowserTargetService';
-import type { WebContents } from 'electron';
+import { agentRunContext } from '../services/AgentRunContext';
+import { telemetryService } from '../services/TelemetryService';
+import { app, webContents, type WebContents } from 'electron';
 
 export class BrowserAutomationService {
   constructor() {
+    this.setupWebContentsInvalidation();
     this.registerTools();
   }
 
   private mockSaasRoutesCache:
     | { loadedAt: number; routes: Set<string> }
     | null = null;
+
+  private observeCache = new Map<
+    number,
+    { url: string; title: string; argsKey: string; data: any; timestamp: number; domVersion: number }
+  >();
+
+  private attachedWebContentsIds = new Set<number>();
+
+  private setupWebContentsInvalidation() {
+    try {
+      for (const wc of webContents.getAllWebContents()) {
+        this.attachWebContentsListeners(wc);
+      }
+    } catch {
+      // ignore
+    }
+
+    try {
+      app.on('web-contents-created', (_event: Electron.Event, wc: WebContents) => {
+        this.attachWebContentsListeners(wc);
+      });
+    } catch {
+      // ignore
+    }
+  }
+
+  private attachWebContentsListeners(wc: WebContents) {
+    try {
+      if (!wc || wc.isDestroyed()) return;
+      if (this.attachedWebContentsIds.has(wc.id)) return;
+      this.attachedWebContentsIds.add(wc.id);
+
+      const invalidate = () => this.invalidateCache(wc.id);
+
+      wc.on('did-start-navigation', invalidate);
+      wc.on('did-navigate', invalidate);
+      wc.on('did-navigate-in-page', invalidate);
+      wc.on('dom-ready', invalidate);
+      wc.on('destroyed', () => {
+        this.invalidateCache(wc.id);
+        this.attachedWebContentsIds.delete(wc.id);
+      });
+    } catch {
+      // ignore
+    }
+  }
+
+  private invalidateCache(webContentsId: number) {
+    this.observeCache.delete(webContentsId);
+  }
+
+  private async getDomVersion(target: WebContents): Promise<number> {
+    try {
+      const v = await target.executeJavaScript(
+        `(() => {
+          const w = window;
+          if (typeof w.__enterprise_observe_dom_version !== 'number') {
+            w.__enterprise_observe_dom_version = 0;
+          }
+          if (!w.__enterprise_observe_dom_observer) {
+            const bump = () => { w.__enterprise_observe_dom_version += 1; };
+            const obs = new MutationObserver(() => bump());
+            const root = document.documentElement || document.body;
+            if (root) {
+              obs.observe(root, { subtree: true, childList: true, attributes: true, characterData: true });
+            }
+            w.__enterprise_observe_dom_observer = obs;
+          }
+          return w.__enterprise_observe_dom_version;
+        })()`,
+        true
+      );
+      return Number(v) || 0;
+    } catch {
+      return 0;
+    }
+  }
 
   private async delay(ms: number) {
     await new Promise((resolve) => setTimeout(resolve, ms));
@@ -82,7 +163,7 @@ export class BrowserAutomationService {
     }
   }
 
-  private async getTarget(): Promise<WebContents> {
+  public async getTarget(): Promise<WebContents> {
     return browserTargetService.getActiveWebContents();
   }
 
@@ -111,19 +192,55 @@ export class BrowserAutomationService {
     const observeSchema = z.object({
       scope: z.enum(['main', 'document']).optional().describe('Where to look for elements (default: main)'),
       maxElements: z.number().optional().describe('Max interactive elements to return (default: 80)'),
+      forceRefresh: z.boolean().optional().describe('Ignore cache and force a fresh observation'),
     });
 
     // Tool: Observe
     const observeTool: AgentTool = {
       name: 'browser_observe',
       description:
-        'Analyze the current page URL/title and return visible interactive elements. Defaults to main content to avoid header/nav noise.',
+        'Analyze the current page URL/title and return visible interactive elements. Defaults to main content to avoid header/nav noise. Caches results for performance; use forceRefresh to bypass.',
       schema: observeSchema,
       execute: async (args: unknown) => {
-        const { scope, maxElements } = observeSchema.parse(args ?? {});
+        const { scope, maxElements, forceRefresh } = observeSchema.parse(args ?? {});
         try {
             const target = await this.getTarget();
-            const url = target.getURL();
+            const targetId = target.id;
+            const currentUrl = target.getURL();
+            const argsKey = JSON.stringify({ scope: scope ?? 'main', maxElements: maxElements ?? 80 });
+            const domVersion = await this.getDomVersion(target);
+
+            // Check cache
+            if (!forceRefresh) {
+              const cached = this.observeCache.get(targetId);
+              if (
+                cached &&
+                cached.url === currentUrl &&
+                cached.argsKey === argsKey &&
+                cached.domVersion === domVersion &&
+                Date.now() - cached.timestamp < 5000
+              ) {
+                const ageMs = Date.now() - cached.timestamp;
+                return JSON.stringify(
+                  {
+                    ...cached.data,
+                    _meta: {
+                      cached: true,
+                      timestamp: cached.timestamp,
+                      ageMs,
+                      url: cached.url,
+                      title: cached.title,
+                      domVersion: cached.domVersion,
+                      args: { scope: scope ?? 'main', maxElements: maxElements ?? 80 },
+                    },
+                  },
+                  null,
+                  2
+                );
+              }
+            }
+
+            const url = currentUrl;
             const title = await target.executeJavaScript(`document.title`, true);
 
             const elements = await target.executeJavaScript(
@@ -277,7 +394,33 @@ export class BrowserAutomationService {
               true
             );
 
-            return JSON.stringify({ url, title, ...elements }, null, 2);
+            const resultData = { url, title, ...elements };
+            const timestamp = Date.now();
+            this.observeCache.set(targetId, {
+              url,
+              title: String(title ?? ''),
+              argsKey,
+              data: resultData,
+              timestamp,
+              domVersion,
+            });
+
+            return JSON.stringify(
+              {
+                ...resultData,
+                _meta: {
+                  cached: false,
+                  timestamp,
+                  ageMs: 0,
+                  url,
+                  title: String(title ?? ''),
+                  domVersion,
+                  args: { scope: scope ?? 'main', maxElements: maxElements ?? 80 },
+                },
+              },
+              null,
+              2
+            );
         } catch (e: any) {
             return `Failed to observe page: ${e.message}`;
         }
@@ -285,6 +428,51 @@ export class BrowserAutomationService {
     };
 
     // Tool: Navigate
+    const goBackTool: AgentTool = {
+      name: 'browser_go_back',
+      description: 'Navigate back in the browser history.',
+      schema: z.object({}),
+      execute: async () => {
+        const target = await this.getTarget();
+        if (target.canGoBack()) {
+          target.goBack();
+          this.invalidateCache(target.id);
+          await this.delay(500);
+          return 'Navigated back';
+        }
+        return 'Cannot go back (no history)';
+      },
+    };
+
+    const goForwardTool: AgentTool = {
+      name: 'browser_go_forward',
+      description: 'Navigate forward in the browser history.',
+      schema: z.object({}),
+      execute: async () => {
+        const target = await this.getTarget();
+        if (target.canGoForward()) {
+          target.goForward();
+          this.invalidateCache(target.id);
+          await this.delay(500);
+          return 'Navigated forward';
+        }
+        return 'Cannot go forward (no history)';
+      },
+    };
+
+    const reloadTool: AgentTool = {
+      name: 'browser_reload',
+      description: 'Reload the current page.',
+      schema: z.object({}),
+      execute: async () => {
+        const target = await this.getTarget();
+        target.reload();
+        this.invalidateCache(target.id);
+        await this.delay(1000);
+        return 'Page reloading triggered';
+      },
+    };
+
     const navigateTool: AgentTool<z.ZodObject<{ url: z.ZodString }>> = {
       name: 'browser_navigate',
       description: 'Navigate the browser to a specific URL.',
@@ -348,6 +536,7 @@ export class BrowserAutomationService {
               // ignore URL parse issues; loadURL will handle
             }
 
+            this.invalidateCache(target.id);
             const loadTimeout = timeoutMs ?? 8000;
             try {
               await target.loadURL(url);
@@ -386,48 +575,299 @@ export class BrowserAutomationService {
       },
     };
 
+    const scrollSchema = z.object({
+      selector: z.string().optional().describe('CSS selector to scroll into view'),
+      direction: z.enum(['up', 'down', 'top', 'bottom']).optional().describe('Scroll direction if no selector provided'),
+      amount: z.number().optional().describe('Pixels to scroll (default 500 for up/down)'),
+    });
+    const scrollTool: AgentTool<typeof scrollSchema> = {
+      name: 'browser_scroll',
+      description: 'Scroll to an element or by an amount. Provide "selector" to scroll element into view, or "direction" (up/down/top/bottom) to scroll page.',
+      schema: scrollSchema,
+      execute: async ({ selector, direction, amount }) => {
+        const target = await this.getTarget();
+        this.invalidateCache(target.id);
+        if (selector) {
+          await this.waitForSelector(target, selector, 5000);
+          await target.executeJavaScript(
+            `(() => {
+               const el = document.querySelector(${JSON.stringify(selector)});
+               if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+             })()`,
+            true
+          );
+          return `Scrolled to element "${selector}"`;
+        } else if (direction) {
+          const amt = amount ?? 500;
+          await target.executeJavaScript(
+            `(() => {
+               const amt = ${JSON.stringify(amt)};
+               const dir = ${JSON.stringify(direction)};
+               if (dir === 'top') window.scrollTo({ top: 0, behavior: 'smooth' });
+               else if (dir === 'bottom') window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+               else if (dir === 'up') window.scrollBy({ top: -amt, behavior: 'smooth' });
+               else window.scrollBy({ top: amt, behavior: 'smooth' });
+             })()`,
+            true
+          );
+          return `Scrolled ${direction}`;
+        }
+        return 'No scroll action performed (provide selector or direction)';
+      },
+    };
+
+    const pressKeySchema = z.object({
+      key: z.string().describe('Key name (e.g. Enter, Escape, ArrowDown)'),
+    });
+    const pressKeyTool: AgentTool<typeof pressKeySchema> = {
+      name: 'browser_press_key',
+      description: 'Press a keyboard key (e.g. Enter, Escape, ArrowDown, Tab).',
+      schema: pressKeySchema,
+      execute: async ({ key }) => {
+        const target = await this.getTarget();
+        try {
+          target.sendInputEvent({ type: 'keyDown', keyCode: key });
+          target.sendInputEvent({ type: 'keyUp', keyCode: key });
+          this.invalidateCache(target.id);
+          return `Pressed key: ${key}`;
+        } catch (e: any) {
+          return `Failed to press key: ${e.message}`;
+        }
+      },
+    };
+
+    const waitForSelectorSchema = z.object({
+      selector: z.string().describe('CSS selector to wait for'),
+      timeoutMs: z.number().optional().describe('Timeout in ms (default 5000)'),
+    });
+    const waitForSelectorTool: AgentTool<typeof waitForSelectorSchema> = {
+      name: 'browser_wait_for_selector',
+      description: 'Wait for an element to appear in the DOM.',
+      schema: waitForSelectorSchema,
+      execute: async ({ selector, timeoutMs }) => {
+        const target = await this.getTarget();
+        const timeout = timeoutMs ?? 5000;
+        try {
+          await this.waitForSelector(target, selector, timeout);
+          return `Element "${selector}" appeared`;
+        } catch (e: any) {
+          return `Timeout waiting for "${selector}"`;
+        }
+      },
+    };
+
+    const waitForUrlSchema = z.object({
+      urlPart: z.string().describe('Substring or full URL to wait for'),
+      timeoutMs: z.number().optional().describe('Timeout in ms (default 5000)'),
+    });
+    const waitForUrlTool: AgentTool<typeof waitForUrlSchema> = {
+      name: 'browser_wait_for_url',
+      description: 'Wait for the URL to contain a specific string.',
+      schema: waitForUrlSchema,
+      execute: async ({ urlPart, timeoutMs }) => {
+        const target = await this.getTarget();
+        const timeout = timeoutMs ?? 5000;
+        const startedAt = Date.now();
+        while (Date.now() - startedAt < timeout) {
+          const currentUrl = target.getURL();
+          if (currentUrl.includes(urlPart)) return `URL matches "${urlPart}"`;
+          await this.delay(200);
+        }
+        return `Timeout waiting for URL to contain "${urlPart}"`;
+      },
+    };
+
+    const focusSchema = z.object({
+      selector: z.string().describe('CSS selector to focus'),
+    });
+    const focusTool: AgentTool<typeof focusSchema> = {
+      name: 'browser_focus',
+      description: 'Focus an element (e.g. input field).',
+      schema: focusSchema,
+      execute: async ({ selector }) => {
+        const target = await this.getTarget();
+        await this.waitForSelector(target, selector, 5000);
+        await target.executeJavaScript(
+          `(() => {
+             const el = document.querySelector(${JSON.stringify(selector)});
+             if (el && typeof el.focus === 'function') el.focus();
+           })()`,
+          true
+        );
+        this.invalidateCache(target.id);
+        return `Focused "${selector}"`;
+      },
+    };
+
+    const clearSchema = z.object({
+      selector: z.string().describe('CSS selector of input to clear'),
+    });
+    const clearTool: AgentTool<typeof clearSchema> = {
+      name: 'browser_clear',
+      description: 'Clear the value of an input or textarea.',
+      schema: clearSchema,
+      execute: async ({ selector }) => {
+        const target = await this.getTarget();
+        await this.waitForSelector(target, selector, 5000);
+        await target.executeJavaScript(
+          `(() => {
+             const el = document.querySelector(${JSON.stringify(selector)});
+             if (!el) return { ok: false, error: 'Element not found' };
+             const tag = (el.tagName || '').toLowerCase();
+             const isEditable = tag === 'input' || tag === 'textarea' || Boolean(el.isContentEditable);
+             if (!isEditable) return { ok: false, error: 'Element is not editable' };
+
+             const setNativeValue = (node, value) => {
+               const t = (node.tagName || '').toLowerCase();
+               if (t === 'input') {
+                 const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+                 if (setter) setter.call(node, value);
+                 else node.value = value;
+                 return;
+               }
+               if (t === 'textarea') {
+                 const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set;
+                 if (setter) setter.call(node, value);
+                 else node.value = value;
+                 return;
+               }
+               if (node.isContentEditable) {
+                 node.textContent = value;
+                 return;
+               }
+               node.value = value;
+             };
+
+             setNativeValue(el, '');
+             el.dispatchEvent(new InputEvent('input', { bubbles: true, data: '', inputType: 'deleteContentBackward' }));
+             el.dispatchEvent(new Event('change', { bubbles: true }));
+             return { ok: true };
+           })()`,
+          true
+        );
+        this.invalidateCache(target.id);
+        return `Cleared input "${selector}"`;
+      },
+    };
+
     // Tool: Click
-    const clickTool: AgentTool<z.ZodObject<{ selector: z.ZodString }>> = {
+    const clickSchema = z.object({
+      selector: z.string().describe('CSS selector of the element to click'),
+      withinSelector: z
+        .string()
+        .optional()
+        .describe('Optional container selector to scope the search (must match exactly 1 element)'),
+      index: z.number().optional().describe('Index of element if multiple match (0-based)'),
+      matchText: z.string().optional().describe('Text content to match if multiple elements found'),
+    });
+    const clickTool: AgentTool<typeof clickSchema> = {
       name: 'browser_click',
-      description: 'Click an element on the current page.',
-      schema: z.object({
-        selector: z.string().describe('CSS selector of the element to click'),
-      }),
-      execute: async ({ selector }: { selector: string }) => {
+      description:
+        'Click an element on the current page. Safe + deterministic: if the selector matches multiple visible elements, you must disambiguate using withinSelector, matchText, or index (or use browser_click_text).',
+      schema: clickSchema,
+      execute: async ({ selector, withinSelector, index, matchText }) => {
         try {
             const target = await this.getTarget();
-            // Wait for selector with improved timeout
+
+            if (withinSelector) {
+              await this.waitForSelector(target, withinSelector, 5000);
+            }
             await this.waitForSelector(target, selector, 5000);
-            
-            await target.executeJavaScript(
+
+            const result = await target.executeJavaScript(
               `(() => {
-                // Helper to find element including shadow DOM
-                const findElement = (sel) => {
+                // Helper to find elements including shadow DOM
+                const findElements = (root, sel) => {
+                  const results = [];
                   const queryDeep = (root) => {
-                    const el = root.querySelector(sel);
-                    if (el) return el;
+                    const els = Array.from(root.querySelectorAll(sel));
+                    results.push(...els);
                     if (root.shadowRoot) {
-                      const found = queryDeep(root.shadowRoot);
-                      if (found) return found;
+                      queryDeep(root.shadowRoot);
                     }
                     const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
                     while (walker.nextNode()) {
                       const node = walker.currentNode;
                       if (node.shadowRoot) {
-                        const found = queryDeep(node.shadowRoot);
-                        if (found) return found;
+                        queryDeep(node.shadowRoot);
                       }
                     }
-                    return null;
                   };
-                  return queryDeep(document);
+                  queryDeep(root);
+                  return results;
                 };
 
-                const el = findElement(${JSON.stringify(selector)}) || document.querySelector(${JSON.stringify(selector)});
-                if (!el) throw new Error('Element not found');
+                const isVisible = (el) => {
+                  if (!el || el.nodeType !== 1) return false;
+                  const style = window.getComputedStyle(el);
+                  if (!style) return false;
+                  if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+                  if (style.pointerEvents === 'none') return false;
+                  const rects = el.getClientRects();
+                  if (!rects || rects.length === 0) return false;
+                  const rect = el.getBoundingClientRect();
+                  if (rect.width < 2 || rect.height < 2) return false;
+                  const vw = window.innerWidth || 0;
+                  const vh = window.innerHeight || 0;
+                  const buffer = 40;
+                  if (rect.bottom < -buffer || rect.top > vh + buffer) return false;
+                  if (rect.right < -buffer || rect.left > vw + buffer) return false;
+                  return true;
+                };
+
+                const describe = (el) => {
+                  const tag = (el.tagName || '').toLowerCase();
+                  const text = (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+                  const ariaLabel = el.getAttribute?.('aria-label') || '';
+                  const testId = el.getAttribute?.('data-testid') || el.getAttribute?.('data-test-id') || '';
+                  const id = el.id || '';
+                  return { tag, text, ariaLabel, testId, id };
+                };
+
+                const withinSel = ${JSON.stringify(withinSelector ?? '')};
+                let root = document;
+                if (withinSel) {
+                  const roots = Array.from(document.querySelectorAll(withinSel)).filter(isVisible);
+                  if (roots.length === 0) {
+                    return { ok: false, error: 'Within selector not found (or not visible)', matches: 0 };
+                  }
+                  if (roots.length > 1) {
+                    return { ok: false, error: 'Within selector is not unique', matches: roots.length, roots: roots.slice(0, 5).map(describe) };
+                  }
+                  root = roots[0];
+                }
+
+                let candidates = findElements(root, ${JSON.stringify(selector)});
+                candidates = candidates.filter(isVisible);
+                
+                // Filter by text if provided
+                if (${JSON.stringify(matchText)}) {
+                  const needle = ${JSON.stringify(matchText || '')}.toLowerCase();
+                  candidates = candidates.filter(el => (el.innerText || '').toLowerCase().includes(needle));
+                }
+
+                if (candidates.length === 0) {
+                  return { ok: false, error: 'Element not found (visible)', matches: 0 };
+                }
+
+                const idxProvided = ${JSON.stringify(index !== undefined)};
+                const idx = ${JSON.stringify(index ?? 0)};
+
+                if (candidates.length > 1 && !idxProvided) {
+                  return {
+                    ok: false,
+                    error: 'Ambiguous selector (multiple visible matches)',
+                    matches: candidates.length,
+                    candidates: candidates.slice(0, 6).map(describe),
+                  };
+                }
+
+                if (idx >= candidates.length) return { ok: false, error: 'Index out of bounds' };
+                
+                const el = candidates[idx];
                 
                 const isDisabled = ('disabled' in el && Boolean(el.disabled)) || el.getAttribute?.('aria-disabled') === 'true';
-                if (isDisabled) throw new Error('Element is disabled');
+                if (isDisabled) return { ok: false, error: 'Element is disabled' };
                 
                 el.scrollIntoView({ block: 'center', inline: 'center' });
                 
@@ -443,10 +883,60 @@ export class BrowserAutomationService {
                 el.dispatchEvent(new MouseEvent('mouseup', eventOpts));
                 el.dispatchEvent(new MouseEvent('click', eventOpts));
                 
-                return true;
+                return { ok: true, matches: candidates.length, clicked: describe(el) };
               })()`,
               true
             );
+            
+            if (!result.ok) {
+              const base = `Refusing to click: ${result.error}. Selector=${JSON.stringify(
+                selector
+              )}${withinSelector ? ` within=${JSON.stringify(withinSelector)}` : ''}.`;
+
+              if (result.error === 'Ambiguous selector (multiple visible matches)') {
+                const matches = typeof result.matches === 'number' ? result.matches : 'multiple';
+                const preview = Array.isArray(result.candidates)
+                  ? result.candidates
+                      .map((c: any, i: number) => {
+                        const bits = [c.tag, c.testId ? `testId=${c.testId}` : '', c.id ? `id=${c.id}` : '']
+                          .filter(Boolean)
+                          .join(' ');
+                        const label = c.ariaLabel ? ` ariaLabel=${JSON.stringify(c.ariaLabel)}` : '';
+                        const text = c.text ? ` text=${JSON.stringify(c.text)}` : '';
+                        return `#${i} ${bits}${label}${text}`;
+                      })
+                      .join('\n')
+                  : '';
+
+                return (
+                  `${base} Matched ${matches} visible elements.\n` +
+                  `Provide one of: {"index":0..}, {"matchText":"..."}, or {"withinSelector":"..."}.\n` +
+                  `Or prefer browser_click_text (more robust).\n` +
+                  (preview ? `Candidates:\n${preview}` : '')
+                );
+              }
+
+              if (result.error === 'Within selector is not unique') {
+                const rootsPreview = Array.isArray(result.roots)
+                  ? result.roots
+                      .map((c: any, i: number) => {
+                        const bits = [c.tag, c.testId ? `testId=${c.testId}` : '', c.id ? `id=${c.id}` : '']
+                          .filter(Boolean)
+                          .join(' ');
+                        const text = c.text ? ` text=${JSON.stringify(c.text)}` : '';
+                        return `#${i} ${bits}${text}`;
+                      })
+                      .join('\n')
+                  : '';
+                return (
+                  `${base} The withinSelector must match exactly 1 visible container.\n` +
+                  (rootsPreview ? `Within candidates:\n${rootsPreview}` : '')
+                );
+              }
+
+              return `${base} Try browser_click_text or refine your selector.`;
+            }
+            this.invalidateCache(target.id);
             return `Clicked element ${selector}`;
         } catch (e: any) {
             return `Failed to click ${selector}: ${e.message}`;
@@ -509,6 +999,7 @@ export class BrowserAutomationService {
               })()`,
               true
             );
+            this.invalidateCache(target.id);
             return `Typed into ${selector}. Current value: ${JSON.stringify(typedValue)}`;
         } catch (e: any) {
              return `Failed to type into ${selector}: ${e.message}`;
@@ -725,6 +1216,7 @@ export class BrowserAutomationService {
             })()`,
             true
           );
+          this.invalidateCache(target.id);
           return `Selected value ${JSON.stringify(selected)} on ${selector}`;
         } catch (e: any) {
           return `Failed to select on ${selector}: ${e.message}`;
@@ -845,15 +1337,16 @@ export class BrowserAutomationService {
       name: 'browser_extract_main_text',
       description: 'Extract visible text from the main content area (role=main/main tag) to support scraping/QA.',
       schema: z.object({
-        maxChars: z.number().optional().describe('Max characters to return (default 4000)'),
+        maxChars: z.number().optional().describe('Max characters to return (default 2000, hard cap 4000)'),
       }),
       execute: async ({ maxChars }: { maxChars?: number }) => {
         const target = await this.getTarget();
+        const limit = Math.max(1, Math.min(4000, Math.floor(maxChars ?? 2000)));
         const text = await target.executeJavaScript(
           `(() => {
-            const node = document.querySelector('main, [role=\"main\"]') || document.body;
-            const raw = (node?.innerText || '').replace(/\\s+/g, ' ').trim();
-            return raw.slice(0, Math.max(1, Math.min(20000, ${JSON.stringify(maxChars ?? 4000)})));
+            const node = document.querySelector('main, [role="main"]') || document.body;
+            const raw = (node?.innerText || '').replace(/\s+/g, ' ').trim();
+            return raw.slice(0, ${JSON.stringify(limit)});
           })()`,
           true
         );
@@ -861,47 +1354,249 @@ export class BrowserAutomationService {
       },
     };
 
-    const executePlanTool: AgentTool = {
+    const executePlanStepSchema = z.object({
+      action: z.enum(['navigate', 'click', 'type', 'select', 'wait']),
+      url: z.string().optional().describe('For navigate action'),
+      selector: z.string().optional().describe('For click/type/select actions'),
+      value: z.string().optional().describe('For type/select actions'),
+      text: z.string().optional().describe('For wait action'),
+      index: z.number().optional().describe('For click actions: index to disambiguate (0-based)'),
+      matchText: z.string().optional().describe('For click actions: filter candidates by visible text'),
+      withinSelector: z
+        .string()
+        .optional()
+        .describe('For click actions: scope search to a unique container selector'),
+    });
+    const executePlanSchema = z.object({
+      steps: z.array(executePlanStepSchema),
+    });
+
+    const executePlanTool: AgentTool<typeof executePlanSchema> = {
       name: 'browser_execute_plan',
       description:
         'Execute a batch of browser actions (navigate, click, type, select, wait). Use this for Mock SaaS tasks where you have read the code and know the selectors.',
-      schema: z.object({
-        steps: z.array(
-          z.object({
-            action: z.enum(['navigate', 'click', 'type', 'select', 'wait']),
-            url: z.string().optional().describe('For navigate action'),
-            selector: z.string().optional().describe('For click/type/select actions'),
-            value: z.string().optional().describe('For type/select actions'),
-            text: z.string().optional().describe('For wait action'),
-          })
-        ),
-      }),
+      schema: executePlanSchema,
       execute: async (input: unknown) => {
-        const { steps } = input as { steps: any[] };
-        const results = [];
+        const parsed = executePlanSchema.parse(input ?? {});
+        const steps = parsed.steps;
+        const results: string[] = [];
+        const runId = agentRunContext.getRunId() ?? undefined;
+        const planId = uuidv4();
+
+        if (!Array.isArray(steps) || steps.length === 0) {
+          return 'Plan rejected: steps must be a non-empty array.';
+        }
+
+        // Up-front validation so we fail before causing side effects.
         for (const [i, step] of steps.entries()) {
-          try {
-            let res = '';
-            if (step.action === 'navigate') {
-              if (!step.url) throw new Error('Missing url for navigate');
-              res = await navigateTool.execute({ url: step.url });
-            } else if (step.action === 'click') {
-              if (!step.selector) throw new Error('Missing selector for click');
-              res = await clickTool.execute({ selector: step.selector });
-            } else if (step.action === 'type') {
-              if (!step.selector || step.value === undefined) throw new Error('Missing selector/value for type');
-              res = await typeTool.execute({ selector: step.selector, text: step.value });
-            } else if (step.action === 'select') {
-              if (!step.selector || step.value === undefined) throw new Error('Missing selector/value for select');
-              res = await selectTool.execute({ selector: step.selector, value: step.value });
-            } else if (step.action === 'wait') {
-              if (!step.text) throw new Error('Missing text for wait');
-              res = await waitForTextTool.execute({ text: step.text });
-            } else {
-              throw new Error(`Unknown action ${step.action}`);
+          if (step.action === 'navigate') {
+            if (!step.url) return `Plan rejected: step ${i + 1} navigate is missing url.`;
+          }
+          if (step.action === 'click') {
+            if (!step.selector) return `Plan rejected: step ${i + 1} click is missing selector.`;
+          }
+          if (step.action === 'type') {
+            if (!step.selector) return `Plan rejected: step ${i + 1} type is missing selector.`;
+            if (step.value === undefined) return `Plan rejected: step ${i + 1} type is missing value.`;
+          }
+          if (step.action === 'select') {
+            if (!step.selector) return `Plan rejected: step ${i + 1} select is missing selector.`;
+            if (step.value === undefined) return `Plan rejected: step ${i + 1} select is missing value.`;
+          }
+          if (step.action === 'wait') {
+            if (!step.text) return `Plan rejected: step ${i + 1} wait is missing text.`;
+          }
+        }
+
+        const hasInteraction = steps.some((s) => s.action === 'click' || s.action === 'type' || s.action === 'select');
+        if (hasInteraction) {
+          const last = steps[steps.length - 1];
+          if (last?.action !== 'wait' || !last?.text) {
+            return 'Plan rejected: plans with interactions must end with a verification wait step (action="wait" with text).';
+          }
+        }
+
+        // Policy preflight: fail fast on DENY before executing any steps.
+        const policyService = toolRegistry.getPolicyService();
+        if (policyService) {
+          const browserContext = agentRunContext.getBrowserContext();
+          for (const [i, step] of steps.entries()) {
+            const toolNameForStep = (() => {
+              switch (step.action) {
+                case 'navigate':
+                  return 'browser_navigate';
+                case 'click':
+                  return 'browser_click';
+                case 'type':
+                  return 'browser_type';
+                case 'select':
+                  return 'browser_select';
+                case 'wait':
+                  return 'browser_wait_for_text';
+                default:
+                  return 'browser_execute_plan_step';
+              }
+            })();
+
+            const argsForStep: any = (() => {
+              switch (step.action) {
+                case 'navigate':
+                  return { url: step.url };
+                case 'click':
+                  return {
+                    selector: step.selector,
+                    index: step.index,
+                    matchText: step.matchText,
+                    withinSelector: step.withinSelector,
+                  };
+                case 'type':
+                  return { selector: step.selector, text: step.value };
+                case 'select':
+                  return { selector: step.selector, value: step.value };
+                case 'wait':
+                  return { text: step.text };
+              }
+            })();
+
+            const decision = await policyService.evaluate({
+              toolName: toolNameForStep,
+              args: argsForStep,
+              url: browserContext?.url,
+              domain: browserContext?.domain,
+              userMode: 'standard',
+              observeOnly: agentRunContext.getObserveOnly(),
+              runId,
+            });
+
+            if (decision.decision === 'deny') {
+              return `Plan rejected by policy at step ${i + 1} (${toolNameForStep}): ${decision.reason}`;
             }
-            results.push(`Step ${i + 1} (${step.action}): ${res}`);
+          }
+        }
+
+        const isFailureOutput = (s: string) => {
+          const t = String(s ?? '');
+          return (
+            t.startsWith('Refusing') ||
+            t.startsWith('Failed') ||
+            t.startsWith('Timeout') ||
+            t.startsWith('Operation denied by policy') ||
+            t.startsWith('User denied') ||
+            t.startsWith('Tool execution failed')
+          );
+        };
+
+        for (const [i, step] of steps.entries()) {
+          const stepId = uuidv4();
+          const startedAt = Date.now();
+          try {
+            await telemetryService.emit({
+              eventId: uuidv4(),
+              runId,
+              ts: new Date().toISOString(),
+              type: 'plan_step_start',
+              name: 'browser_execute_plan',
+              data: {
+                planId,
+                stepId,
+                stepIndex: i,
+                action: String(step?.action ?? ''),
+              },
+            });
+          } catch {
+            // ignore telemetry failures
+          }
+          try {
+            const toolNameForStep = (() => {
+              switch (step.action) {
+                case 'navigate':
+                  return 'browser_navigate';
+                case 'click':
+                  return 'browser_click';
+                case 'type':
+                  return 'browser_type';
+                case 'select':
+                  return 'browser_select';
+                case 'wait':
+                  return 'browser_wait_for_text';
+                default:
+                  return 'browser_execute_plan_step';
+              }
+            })();
+
+            const toolArgsForStep: any = (() => {
+              switch (step.action) {
+                case 'navigate':
+                  return { url: step.url };
+                case 'click':
+                  return {
+                    selector: step.selector,
+                    index: step.index,
+                    matchText: step.matchText,
+                    withinSelector: step.withinSelector,
+                  };
+                case 'type':
+                  return { selector: step.selector, text: step.value };
+                case 'select':
+                  return { selector: step.selector, value: step.value };
+                case 'wait':
+                  return { text: step.text };
+              }
+            })();
+
+            const res = await toolRegistry.invokeTool(toolNameForStep, toolArgsForStep);
+            const resStr = String(res ?? '');
+            if (isFailureOutput(resStr)) {
+              throw new Error(resStr);
+            }
+            if (step.action === 'wait' && !resStr.startsWith('Found text')) {
+              throw new Error(resStr);
+            }
+
+            const durationMs = Date.now() - startedAt;
+            try {
+              await telemetryService.emit({
+                eventId: uuidv4(),
+                runId,
+                ts: new Date().toISOString(),
+                type: 'plan_step_end',
+                name: 'browser_execute_plan',
+                data: {
+                  planId,
+                  stepId,
+                  stepIndex: i,
+                  action: String(step?.action ?? ''),
+                  ok: true,
+                  durationMs,
+                  resultLength: String(resStr ?? '').length,
+                },
+              });
+            } catch {
+              // ignore telemetry failures
+            }
+            results.push(`Step ${i + 1} (${step.action}): ${resStr}`);
           } catch (e: any) {
+            const durationMs = Date.now() - startedAt;
+            try {
+              await telemetryService.emit({
+                eventId: uuidv4(),
+                runId,
+                ts: new Date().toISOString(),
+                type: 'plan_step_end',
+                name: 'browser_execute_plan',
+                data: {
+                  planId,
+                  stepId,
+                  stepIndex: i,
+                  action: String(step?.action ?? ''),
+                  ok: false,
+                  durationMs,
+                  errorMessage: String(e?.message ?? e),
+                },
+              });
+            } catch {
+              // ignore telemetry failures
+            }
             results.push(`Step ${i + 1} (${step.action}) FAILED: ${e.message}`);
             return `Plan execution stopped at step ${i + 1} due to error.\nResults so far:\n${results.join('\n')}`;
           }
@@ -911,7 +1606,16 @@ export class BrowserAutomationService {
     };
 
     toolRegistry.register(observeTool);
+    toolRegistry.register(goBackTool);
+    toolRegistry.register(goForwardTool);
+    toolRegistry.register(reloadTool);
     toolRegistry.register(navigateTool);
+    toolRegistry.register(scrollTool);
+    toolRegistry.register(pressKeyTool);
+    toolRegistry.register(waitForSelectorTool);
+    toolRegistry.register(waitForUrlTool);
+    toolRegistry.register(focusTool);
+    toolRegistry.register(clearTool);
     toolRegistry.register(clickTool);
     toolRegistry.register(typeTool);
     toolRegistry.register(getTextTool);

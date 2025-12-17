@@ -11,8 +11,11 @@ interface Message {
 }
 
 interface ApprovalRequest {
+  requestId: string;
   toolName: string;
   args: any;
+  runId?: string;
+  timeoutMs?: number;
 }
 
 interface ModelInfo {
@@ -26,7 +29,7 @@ export function Sidebar() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
-  const [approvalRequest, setApprovalRequest] = useState<ApprovalRequest | null>(null);
+  const [approvalQueue, setApprovalQueue] = useState<ApprovalRequest[]>([]);
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [currentModelId, setCurrentModelId] = useState<string>('');
   const [showModelSelector, setShowModelSelector] = useState(false);
@@ -39,8 +42,22 @@ export function Sidebar() {
     window.agent.getCurrentModel().then(setCurrentModelId).catch(console.error);
 
     // Listen for approval requests
-    const offApproval = window.agent.onApprovalRequest((toolName, args) => {
-      setApprovalRequest({ toolName, args });
+    const offApproval = window.agent.onApprovalRequest((payload: any) => {
+      const requestId = payload?.requestId;
+      const toolName = payload?.toolName;
+      if (typeof requestId !== 'string' || typeof toolName !== 'string') return;
+      setApprovalQueue((prev) => [...prev, payload as ApprovalRequest]);
+    });
+
+    const offApprovalTimeout = window.agent.onApprovalTimeout?.((payload: any) => {
+      const requestId = payload?.requestId;
+      if (typeof requestId !== 'string') return;
+      setApprovalQueue((prev) => prev.filter((req) => req.requestId !== requestId));
+      const toolName = typeof payload?.toolName === 'string' ? payload.toolName : 'action';
+      setMessages((prev) => [
+        ...prev,
+        { role: 'assistant', content: `Approval timed out for ${toolName}.`, type: 'observation' },
+      ]);
     });
     // Listen for agent steps
     const offStep = window.agent.onStep((step: any) => {
@@ -57,6 +74,7 @@ export function Sidebar() {
 
     return () => {
       offApproval?.();
+      offApprovalTimeout?.();
       offStep?.();
     };
   }, []);
@@ -86,9 +104,10 @@ export function Sidebar() {
   };
 
   const handleApproval = (approved: boolean) => {
+    const approvalRequest = approvalQueue.length > 0 ? approvalQueue[0] : null;
     if (approvalRequest && window.agent) {
-      window.agent.respondApproval(approvalRequest.toolName, approved);
-      setApprovalRequest(null);
+      window.agent.respondApproval(approvalRequest.requestId, approved);
+      setApprovalQueue((prev) => prev.filter((req) => req.requestId !== approvalRequest.requestId));
       // Optimistically add a system message
       setMessages(prev => [...prev, { 
           role: 'assistant', 
@@ -198,17 +217,17 @@ export function Sidebar() {
                 </div>
             ))
         )}
-        {approvalRequest && !collapsed && (
-            <div className="bg-background/80 border border-amber-500/20 rounded-md p-3 space-y-2">
+        {(approvalQueue.length > 0 ? approvalQueue[0] : null) && (
+        <div className="bg-background/80 border border-amber-500/20 rounded-md p-3 space-y-2">
                 <div className="flex items-center gap-2 text-amber-500/90 font-medium text-xs">
                     <AlertTriangle size={14} />
                     Approval Required
                 </div>
                 <div className="text-[10px] text-muted-foreground uppercase tracking-wider">
-                    {approvalRequest.toolName}
+                    {(approvalQueue.length > 0 ? approvalQueue[0] : null)?.toolName}
                 </div>
                 <pre className="text-[10px] font-mono bg-secondary/30 p-2 rounded border border-border/30 overflow-x-auto text-muted-foreground">
-                    {JSON.stringify(approvalRequest.args, null, 2)}
+                    {JSON.stringify((approvalQueue[0] as any).args, null, 2)}
                 </pre>
                 <div className="flex gap-2 pt-1">
                     <button 

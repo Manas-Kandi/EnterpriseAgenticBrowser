@@ -25,18 +25,36 @@ electron.contextBridge.exposeInMainWorld("vault", {
   get: (account) => electron.ipcRenderer.invoke("vault:get", account),
   delete: (account) => electron.ipcRenderer.invoke("vault:delete", account)
 });
+electron.contextBridge.exposeInMainWorld("audit", {
+  getLogs: (limit) => electron.ipcRenderer.invoke("audit:get-logs", limit)
+});
 electron.contextBridge.exposeInMainWorld("agent", {
   chat: (message) => electron.ipcRenderer.invoke("agent:chat", message),
   resetConversation: () => electron.ipcRenderer.invoke("agent:reset-conversation"),
   getModels: () => electron.ipcRenderer.invoke("agent:get-models"),
   getCurrentModel: () => electron.ipcRenderer.invoke("agent:get-current-model"),
   setModel: (modelId) => electron.ipcRenderer.invoke("agent:set-model", modelId),
+  setMode: (mode) => electron.ipcRenderer.invoke("agent:set-mode", mode),
+  getMode: () => electron.ipcRenderer.invoke("agent:get-mode"),
+  setPermissionMode: (mode) => electron.ipcRenderer.invoke("agent:set-permission-mode", mode),
+  getPermissionMode: () => electron.ipcRenderer.invoke("agent:get-permission-mode"),
   onApprovalRequest: (callback) => {
-    const listener = (_, { toolName, args }) => callback(toolName, args);
+    const listener = (_, payload) => callback(payload);
     electron.ipcRenderer.on("agent:request-approval", listener);
     return () => electron.ipcRenderer.off("agent:request-approval", listener);
   },
-  respondApproval: (toolName, approved) => electron.ipcRenderer.send("agent:approval-response", { toolName, approved }),
+  onApprovalTimeout: (callback) => {
+    const listener = (_, payload) => callback(payload);
+    electron.ipcRenderer.on("agent:approval-timeout", listener);
+    return () => electron.ipcRenderer.off("agent:approval-timeout", listener);
+  },
+  respondApproval: (requestId, approved) => electron.ipcRenderer.send("agent:approval-response", { requestId, approved }),
+  sendFeedback: (skillId, outcome, version) => {
+    if (typeof outcome === "boolean") {
+      return electron.ipcRenderer.invoke("agent:feedback", { skillId, success: outcome });
+    }
+    return electron.ipcRenderer.invoke("agent:feedback", { skillId, label: outcome, version });
+  },
   onStep: (callback) => {
     const listener = (_, step) => callback(step);
     electron.ipcRenderer.on("agent:step", listener);
@@ -51,4 +69,10 @@ electron.contextBridge.exposeInMainWorld("browser", {
     electron.ipcRenderer.on("browser:navigate-to", listener);
     return () => electron.ipcRenderer.off("browser:navigate-to", listener);
   }
+});
+electron.contextBridge.exposeInMainWorld("telemetry", {
+  export: () => electron.ipcRenderer.invoke("telemetry:export")
+});
+electron.contextBridge.exposeInMainWorld("benchmark", {
+  runSuite: (filter) => electron.ipcRenderer.invoke("benchmark:runSuite", filter)
 });

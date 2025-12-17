@@ -2,9 +2,12 @@ import { ChatOpenAI } from "@langchain/openai";
 import { HumanMessage, SystemMessage, BaseMessage, AIMessage } from "@langchain/core/messages";
 import { Runnable } from "@langchain/core/runnables";
 import dotenv from 'dotenv';
+import { v4 as uuidv4 } from 'uuid';
 
 import { toolRegistry } from './ToolRegistry';
 import './TaskKnowledgeService';
+import { agentRunContext } from './AgentRunContext';
+import { telemetryService } from './TelemetryService';
 
 dotenv.config();
 
@@ -86,11 +89,26 @@ export const AVAILABLE_MODELS: ModelConfig[] = [
     supportsThinking: true,
     extraBody: { chat_template_kwargs: { enable_thinking: true } },
   },
+  // Specialized models
+  {
+    id: 'actions-policy-v1',
+    name: 'Actions Policy (Beta)',
+    modelName: 'custom/actions-policy-v1',
+    temperature: 0.0,
+    maxTokens: 2048,
+    supportsThinking: false,
+  },
 ];
+
+export type AgentMode = 'chat' | 'read' | 'do';
+export type AgentPermissionMode = 'yolo' | 'permissions';
 
 export class AgentService {
   private model: Runnable;
   private currentModelId: string = 'llama-3.1-70b';
+  private useActionsPolicy: boolean = false;
+  private agentMode: AgentMode = 'do';
+  private permissionMode: AgentPermissionMode = 'permissions';
   private onStep?: (step: AgentStep) => void;
   private conversationHistory: BaseMessage[] = [];
   private systemPrompt: SystemMessage;
@@ -99,6 +117,42 @@ export class AgentService {
   // Each turn can have ~2-4 messages (user, AI, tool output, etc.)
   // 50 messages ≈ 12-25 turns of context
   private static readonly MAX_HISTORY_MESSAGES = 50;
+
+  /**
+   * Redact common secrets from text before sending to LLM
+   */
+  private redactSecrets(text: string): string {
+    if (!text) return text;
+    let redacted = text;
+
+    const patterns = [
+      // Bearer tokens
+      { re: /Bearer\s+[a-zA-Z0-9\-\._]+/gi, repl: 'Bearer [REDACTED_TOKEN]' },
+      // Authorization header
+      { re: /Authorization\s*:\s*Bearer\s+[a-zA-Z0-9\-\._]+/gi, repl: 'Authorization: Bearer [REDACTED_TOKEN]' },
+      // OpenAI sk- keys
+      { re: /sk-[a-zA-Z0-9]{32,}/g, repl: '[REDACTED_OPENAI_KEY]' },
+      // GitHub tokens
+      { re: /gh[pousr]_[A-Za-z0-9_]{20,}/g, repl: '[REDACTED_GITHUB_TOKEN]' },
+      // Slack tokens
+      { re: /xox[baprs]-[A-Za-z0-9-]{10,}/g, repl: '[REDACTED_SLACK_TOKEN]' },
+      // AWS Access Keys
+      { re: /AKIA[0-9A-Z]{16}/g, repl: '[REDACTED_AWS_KEY]' },
+      // JWT-like tokens
+      { re: /\beyJ[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}\b/g, repl: '[REDACTED_JWT]' },
+      // Generic "password": "..." patterns (loose match)
+      { re: /"(password|client_secret|access_token|id_token|refresh_token|api_key|apikey)"\s*:\s*"[^"]+"/gi, repl: '"$1": "[REDACTED]"' },
+      // password=... / token=... forms
+      { re: /(password|passwd|pwd|token|secret|api[_-]?key)\s*[:=]\s*[^\s\n"']+/gi, repl: '$1=[REDACTED]' },
+      // Private Keys
+      { re: /-----BEGIN [A-Z]+ PRIVATE KEY-----[\s\S]*?-----END [A-Z]+ PRIVATE KEY-----/g, repl: '[REDACTED_PRIVATE_KEY]' },
+    ];
+
+    for (const { re, repl } of patterns) {
+      redacted = redacted.replace(re, repl);
+    }
+    return redacted;
+  }
 
   private extractJsonObject(input: string): string | null {
     const text = input.replace(/```json/g, '').replace(/```/g, '').trim();
@@ -170,6 +224,54 @@ export class AgentService {
     // Initialize with default model
     this.model = this.createModel('llama-3.1-70b');
     this.systemPrompt = new SystemMessage('');
+  }
+
+  /**
+   * Toggle the use of the specialized actions policy model
+   */
+  toggleActionsPolicy(enabled: boolean) {
+    this.useActionsPolicy = enabled;
+    if (enabled) {
+      this.setModel('actions-policy-v1');
+    } else {
+      this.setModel('llama-3.1-70b');
+    }
+    console.log(`[AgentService] Actions Policy Model: ${enabled ? 'ENABLED' : 'DISABLED'}`);
+  }
+
+  isActionsPolicyEnabled(): boolean {
+    return this.useActionsPolicy;
+  }
+
+  /**
+   * Set the agent mode (chat/read/do)
+   */
+  setAgentMode(mode: AgentMode) {
+    this.agentMode = mode;
+    console.log(`[AgentService] Agent Mode: ${mode}`);
+  }
+
+  getAgentMode(): AgentMode {
+    return this.agentMode;
+  }
+
+  /**
+   * Set the permission mode (yolo/permissions) - only applies in 'do' mode
+   */
+  setPermissionMode(mode: AgentPermissionMode) {
+    this.permissionMode = mode;
+    console.log(`[AgentService] Permission Mode: ${mode}`);
+  }
+
+  getPermissionMode(): AgentPermissionMode {
+    return this.permissionMode;
+  }
+
+  /**
+   * Check if YOLO mode is active (do mode + yolo permissions)
+   */
+  isYoloMode(): boolean {
+    return this.agentMode === 'do' && this.permissionMode === 'yolo';
   }
 
   /**
@@ -255,13 +357,89 @@ export class AgentService {
       this.onStep = handler;
   }
 
+  clearStepHandler() {
+      this.onStep = undefined;
+  }
+
   private emitStep(type: AgentStep['type'], content: string, metadata?: any) {
       if (this.onStep) {
-          this.onStep({ type, content, metadata });
+          const runId = agentRunContext.getRunId() ?? undefined;
+          const enrichedMetadata = {
+            ...(metadata ?? {}),
+            ts: new Date().toISOString(),
+            runId,
+          };
+          this.onStep({ type, content, metadata: enrichedMetadata });
       }
   }
 
   async chat(userMessage: string, browserContext?: string): Promise<string> {
+    // Handle different agent modes
+    if (this.agentMode === 'chat') {
+      return this.chatOnly(userMessage);
+    }
+    if (this.agentMode === 'read') {
+      return this.readOnly(userMessage, browserContext);
+    }
+    // 'do' mode - full agentic capabilities
+    return this.doMode(userMessage, browserContext);
+  }
+
+  /**
+   * Chat-only mode: Regular chatbot, no browser access or tools
+   */
+  private async chatOnly(userMessage: string): Promise<string> {
+    const safeUserMessage = this.redactSecrets(userMessage);
+    
+    const chatPrompt = new SystemMessage(`You are a helpful assistant. You are in CHAT mode - you cannot access the browser or use any tools. Just have a helpful conversation with the user. Respond naturally without JSON formatting.`);
+    
+    this.conversationHistory.push(new HumanMessage(safeUserMessage));
+    this.trimConversationHistory();
+    
+    try {
+      const response = await this.model.invoke([chatPrompt, ...this.conversationHistory]);
+      const content = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
+      this.conversationHistory.push(new AIMessage(content));
+      this.trimConversationHistory();
+      return content;
+    } catch (e: any) {
+      return `Error: ${e.message}`;
+    }
+  }
+
+  /**
+   * Read-only mode: Can see browser state but cannot take actions
+   */
+  private async readOnly(userMessage: string, browserContext?: string): Promise<string> {
+    const safeUserMessage = this.redactSecrets(userMessage);
+    let context = browserContext || 'Current browser state: No context provided';
+    context = this.redactSecrets(context);
+    
+    const readPrompt = new SystemMessage(`You are a helpful assistant integrated into a browser. You are in READ mode - you can see what the user sees on their browser, but you CANNOT take any actions or use any tools.
+
+Current browser state:
+${context}
+
+You can answer questions about what's on the page, explain content, summarize information, or help the user understand what they're looking at. But you cannot click, type, navigate, or modify anything. Respond naturally without JSON formatting.`);
+    
+    this.conversationHistory.push(new HumanMessage(safeUserMessage));
+    this.trimConversationHistory();
+    
+    try {
+      const response = await this.model.invoke([readPrompt, ...this.conversationHistory]);
+      const content = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
+      this.conversationHistory.push(new AIMessage(content));
+      this.trimConversationHistory();
+      return content;
+    } catch (e: any) {
+      return `Error: ${e.message}`;
+    }
+  }
+
+  /**
+   * Do mode: Full agentic capabilities with tools
+   */
+  private async doMode(userMessage: string, browserContext?: string): Promise<string> {
     // Fetch tools dynamically to ensure all services have registered their tools
     const tools = toolRegistry.toLangChainTools();
     let usedBrowserTools = false;
@@ -270,7 +448,10 @@ export class AgentService {
     
     try {
       // Use provided browser context or default
-      const context = browserContext || 'Current browser state: No context provided';
+      let context = browserContext || 'Current browser state: No context provided';
+      context = this.redactSecrets(context);
+      
+      const safeUserMessage = this.redactSecrets(userMessage);
       
       // Build system prompt with tools (refresh each call in case tools changed)
       this.systemPrompt = new SystemMessage(`You are a helpful enterprise assistant integrated into a browser. 
@@ -292,6 +473,11 @@ export class AgentService {
              "args": { "message": "Your text here" }
            }
 
+        PREFERRED WORKFLOW (SPEED & RELIABILITY):
+        1. OBSERVE: If the page state is unknown, call 'browser_observe'.
+        2. PLAN: For multi-step tasks (especially Mock SaaS), ALWAYS output ONE full 'browser_execute_plan' (include a final wait step for verification). This is significantly faster and more reliable than individual tool calls.
+        3. EXECUTE: Submit the plan once. Avoid calling browser_click/browser_type in separate turns for multi-step tasks.
+
         CONVERSATION CONTEXT:
         - You have memory of the entire conversation. Use previous messages to understand context.
         - If the user refers to "it", "this page", "here", etc., use the conversation history and current browser state to understand what they mean.
@@ -312,17 +498,17 @@ export class AgentService {
         - When the task targets the local Mock SaaS (e.g. URLs like http://localhost:3000/* or apps like Jira/Confluence/Trello/AeroCore in this repo), you MUST operate in this order:
 
         PHASE 0: RECALL (Check Memory)
-        - Call "knowledge_search_plan" with the user's request.
-        - If a plan is found, verify it briefly, then execute it using "browser_execute_plan".
+        - Call "knowledge_search_skill" with the user's request and current domain.
+        - If a skill is found, verify it briefly, then execute it using "browser_execute_plan".
 
-        PHASE 1: PLAN (Read Code) - if no plan found
+        PHASE 1: PLAN (Read Code) - if no skill found
         - DO NOT touch the browser yet.
         - Use "code_search" or "code_list_files" to find the relevant React components.
         - Read "mock-saas/src/App.tsx" to find the correct route.
         - NOTE: AeroCore apps are under "/aerocore/*" (e.g. /aerocore/admin, /aerocore/dispatch).
         - Read the page/component source code (e.g. "JiraPage.tsx" or "AdminPage.tsx") to find:
           * Stable "data-testid" selectors.
-          * WARNING: If a selector is inside a loop (e.g. [data-testid=jira-create-issue-button] inside columns), IT IS NOT UNIQUE. Look for a global alternative (e.g. [data-testid=jira-create-button] in the nav) or use :nth-child in your plan.
+          * WARNING: If a selector is inside a loop (e.g. [data-testid=jira-create-issue-button] inside columns), IT IS NOT UNIQUE. browser_click will refuse ambiguous matches. Prefer browser_click_text or disambiguate via withinSelector/matchText/index.
           * Validation logic (e.g. allowed values for priority).
           
         PHASE 2: EXECUTE (Run Plan)
@@ -339,7 +525,7 @@ export class AgentService {
           ]
 
         PHASE 3: LEARN (Save Memory)
-        - If the execution (and its built-in wait) succeeded, call "knowledge_save_plan" IMMEDIATELY.
+        - If the execution (and its built-in wait) succeeded, call "knowledge_save_skill" IMMEDIATELY.
         - Then IMMEDIATELY send "final_response". Do not perform extra verifications.
         
         BROWSER AUTOMATION STRATEGY:
@@ -348,7 +534,7 @@ export class AgentService {
         - Step 1: Check current browser state. If already on the target site, skip navigation.
         - Step 2: Use "browser_observe" with scope="main" to see relevant page content.
         - Step 3: Prefer "browser_click_text" when you can describe a link/button by visible text (more robust than guessing aria-label/href).
-        - Step 4: Use selectors returned by "browser_observe" (which are JSON-safe) for "browser_click", "browser_type", "browser_select".
+        - Step 4: Use selectors returned by "browser_observe" (which are JSON-safe) for "browser_click", "browser_type", "browser_select". If browser_click says the selector is ambiguous, disambiguate via withinSelector/matchText/index or switch to browser_click_text.
         - Step 5: Verify outcomes using "browser_wait_for_text", "browser_wait_for_text_in", or "browser_extract_main_text".
 
         Example Interaction:
@@ -361,7 +547,7 @@ export class AgentService {
         `);
       
       // Add user message to conversation history with browser context
-      const contextualUserMessage = new HumanMessage(`[${context}]\n\nUser request: ${userMessage}`);
+      const contextualUserMessage = new HumanMessage(`[${context}]\n\nUser request: ${safeUserMessage}`);
       this.conversationHistory.push(contextualUserMessage);
       
       // Trim history if it's getting too long
@@ -382,26 +568,139 @@ export class AgentService {
       
       // ReAct Loop (Max 15 turns)
       for (let i = 0; i < 15; i++) {
+        const runId = agentRunContext.getRunId() ?? undefined;
+        const llmCallId = uuidv4();
+        const llmStartedAt = Date.now();
+        this.emitStep('thought', `Calling model ${this.currentModelId} (turn ${i + 1})`, {
+          phase: 'llm_start',
+          llmCallId,
+          turnIndex: i,
+          modelId: this.currentModelId,
+        });
+        try {
+          await telemetryService.emit({
+            eventId: uuidv4(),
+            runId,
+            ts: new Date().toISOString(),
+            type: 'llm_call_start',
+            name: 'agent_turn',
+            data: {
+              llmCallId,
+              turnIndex: i,
+              modelId: this.currentModelId,
+              modelName: currentConfig?.modelName,
+              timeoutMs,
+            },
+          });
+        } catch {
+          // ignore telemetry failures
+        }
+
         // Add timeout for each LLM call
         const timeoutPromise = new Promise<never>((_, reject) => 
           setTimeout(() => reject(new Error(`LLM call timed out after ${timeoutMs/1000} seconds`)), timeoutMs)
         );
         
         let response: AIMessage;
+        let progressTimer: NodeJS.Timeout | null = null;
+        let progressCount = 0;
         try {
+          progressTimer = setInterval(() => {
+            progressCount += 1;
+            const elapsedMs = Date.now() - llmStartedAt;
+            if (progressCount <= 6) {
+              this.emitStep('thought', `Still thinking... (${Math.round(elapsedMs / 1000)}s)`, {
+                phase: 'llm_wait',
+                llmCallId,
+                turnIndex: i,
+                modelId: this.currentModelId,
+                elapsedMs,
+              });
+            }
+          }, 5000);
+
           response = await Promise.race([
             this.model.invoke(messages),
             timeoutPromise
           ]) as AIMessage;
         } catch (timeoutErr: any) {
+          if (progressTimer) clearInterval(progressTimer);
+          const durationMs = Date.now() - llmStartedAt;
+          this.emitStep('observation', `LLM timed out after ${Math.round(durationMs)}ms`, {
+            phase: 'llm_end',
+            ok: false,
+            llmCallId,
+            turnIndex: i,
+            modelId: this.currentModelId,
+            durationMs,
+            errorMessage: String(timeoutErr?.message ?? timeoutErr),
+          });
+          try {
+            await telemetryService.emit({
+              eventId: uuidv4(),
+              runId,
+              ts: new Date().toISOString(),
+              type: 'llm_call_end',
+              name: 'agent_turn',
+              data: {
+                llmCallId,
+                turnIndex: i,
+                ok: false,
+                durationMs,
+                errorMessage: String(timeoutErr?.message ?? timeoutErr),
+              },
+            });
+          } catch {
+            // ignore telemetry failures
+          }
           this.emitStep('observation', `Request timed out. Try a simpler request or switch to a faster model.`);
           return "The request timed out. Try breaking it into smaller steps or use a faster model.";
+        }
+
+        if (progressTimer) clearInterval(progressTimer);
+
+        try {
+          const durationMs = Date.now() - llmStartedAt;
+          this.emitStep('thought', `Model responded in ${Math.round(durationMs)}ms`, {
+            phase: 'llm_end',
+            ok: true,
+            llmCallId,
+            turnIndex: i,
+            modelId: this.currentModelId,
+            durationMs,
+          });
+          await telemetryService.emit({
+            eventId: uuidv4(),
+            runId,
+            ts: new Date().toISOString(),
+            type: 'llm_call_end',
+            name: 'agent_turn',
+            data: {
+              llmCallId,
+              turnIndex: i,
+              ok: true,
+              durationMs,
+              responseLength: String((response as any)?.content ?? '').length,
+            },
+          });
+        } catch {
+          // ignore telemetry failures
         }
         
         const content = response.content as string;
         
-        // Log raw response for debugging
-        console.log(`[Agent Turn ${i}] Raw Response:`, content);
+        console.log(`[Agent Turn ${i}] Raw Response:`, this.redactSecrets(content));
+
+        // Capture thought if present (text before the first JSON brace)
+        const jsonStart = content.indexOf('{');
+        if (jsonStart > 10) {
+          const thought = content.slice(0, jsonStart).trim();
+          // Filter out markdown blocks if the thought is just ```json
+          const cleanThought = thought.replace(/```json/g, '').replace(/```/g, '').trim();
+          if (cleanThought.length > 5) {
+            this.emitStep('thought', cleanThought);
+          }
+        }
         
         const action = this.parseToolCall(content);
         
@@ -421,7 +720,7 @@ export class AgentService {
           parseFailures++;
           this.emitStep('observation', `Model returned invalid JSON (attempt ${parseFailures}/3).`);
           console.warn("Failed to parse JSON response:", content);
-          messages.push(response);
+          messages.push(new AIMessage(this.redactSecrets(String((response as any)?.content ?? ''))));
           messages.push(
             new SystemMessage(
               `Error: Output ONLY valid JSON. Format: {"tool":"tool_name","args":{...}}\n` +
@@ -476,7 +775,7 @@ export class AgentService {
               }
             }
             // Save final response to conversation history
-            this.conversationHistory.push(new AIMessage(content));
+            this.conversationHistory.push(new AIMessage(this.redactSecrets(content)));
             return finalMessage;
         }
 
@@ -484,12 +783,26 @@ export class AgentService {
         const tool = tools.find((t: any) => t.name === (action as any).tool);
         if (tool) {
             console.log(`Executing tool: ${tool.name} with args:`, action.args);
-            this.emitStep('action', `Executing ${tool.name}`, { tool: tool.name, args: action.args });
+            const toolCallId = uuidv4();
+            const toolStartedAt = Date.now();
+            this.emitStep('action', `Executing ${tool.name}`, {
+              tool: tool.name,
+              args: action.args,
+              toolCallId,
+              phase: 'tool_start',
+            });
             
             try {
                 // Execute tool
                 const result = await tool.invoke((action as any).args);
-                this.emitStep('observation', `Tool Output: ${result}`, { tool: tool.name, result });
+                const toolDurationMs = Date.now() - toolStartedAt;
+                this.emitStep('observation', `Tool Output: ${result}`, {
+                  tool: tool.name,
+                  result,
+                  toolCallId,
+                  phase: 'tool_end',
+                  durationMs: toolDurationMs,
+                });
 
                 if (tool.name.startsWith('browser_')) usedBrowserTools = true;
                 if (
@@ -505,23 +818,20 @@ export class AgentService {
                 // This dramatically improves perceived speed for common operations
                 const resultStr = String(result);
                 const toolName = (action as any).tool;
+
+                if (toolName === 'browser_execute_plan' && resultStr.startsWith('Plan completed successfully.')) {
+                  const fastResponse = `Completed the requested steps and verified the outcome.`;
+                  this.conversationHistory.push(
+                    new AIMessage(
+                      JSON.stringify({ tool: 'final_response', args: { message: fastResponse } })
+                    )
+                  );
+                  return fastResponse;
+                }
                 
                 if (toolName === 'browser_navigate' && resultStr.includes('Navigated to')) {
                   const url = (action as any).args?.url || 'the page';
                   const fastResponse = `Opened ${url}`;
-                  this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: 'final_response', args: { message: fastResponse } })));
-                  return fastResponse;
-                }
-                
-                if (toolName === 'browser_click' && !resultStr.toLowerCase().includes('error') && !resultStr.toLowerCase().includes('failed')) {
-                  const fastResponse = `Clicked the element.`;
-                  this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: 'final_response', args: { message: fastResponse } })));
-                  return fastResponse;
-                }
-                
-                if (toolName === 'browser_type' && !resultStr.toLowerCase().includes('error') && !resultStr.toLowerCase().includes('failed') && !resultStr.toLowerCase().includes('timeout')) {
-                  const text = (action as any).args?.text || '';
-                  const fastResponse = text ? `Typed "${text.slice(0, 50)}${text.length > 50 ? '...' : ''}"` : `Typed the text.`;
                   this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: 'final_response', args: { message: fastResponse } })));
                   return fastResponse;
                 }
@@ -537,10 +847,37 @@ export class AgentService {
                   this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: 'final_response', args: { message: fastResponse } })));
                   return fastResponse;
                 }
+
+                if (toolName === 'browser_go_forward' && !resultStr.toLowerCase().includes('error')) {
+                  const fastResponse = `Went forward to the next page.`;
+                  this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: 'final_response', args: { message: fastResponse } })));
+                  return fastResponse;
+                }
+
+                if (toolName === 'browser_reload' && !resultStr.toLowerCase().includes('error')) {
+                  const fastResponse = `Reloaded the page.`;
+                  this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: 'final_response', args: { message: fastResponse } })));
+                  return fastResponse;
+                }
+
+                if (toolName === 'browser_press_key' && !resultStr.toLowerCase().includes('error')) {
+                  const key = (action as any).args?.key || 'the key';
+                  const fastResponse = `Pressed ${key}.`;
+                  this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: 'final_response', args: { message: fastResponse } })));
+                  return fastResponse;
+                }
+
+                if (toolName === 'browser_clear' && !resultStr.toLowerCase().includes('error')) {
+                  const fastResponse = `Cleared the input field.`;
+                  this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: 'final_response', args: { message: fastResponse } })));
+                  return fastResponse;
+                }
                 
                 // Add interaction to both local messages and persistent history
-                const aiMsg = new AIMessage(content);
-                const toolOutputMsg = new SystemMessage(`Tool '${(action as any).tool}' Output:\n${result}`);
+                const safeToolCall = this.redactSecrets(content);
+                const safeResult = this.redactSecrets(String(result ?? ''));
+                const aiMsg = new AIMessage(safeToolCall);
+                const toolOutputMsg = new SystemMessage(`Tool '${(action as any).tool}' Output:\n${safeResult}`);
                 messages.push(aiMsg);
                 messages.push(toolOutputMsg);
                 // Persist to conversation history for future calls
@@ -548,7 +885,16 @@ export class AgentService {
                 this.conversationHistory.push(toolOutputMsg);
             } catch (err: any) {
                 console.error(`Tool execution failed: ${err}`);
-                const aiMsg = new AIMessage(content);
+                const toolDurationMs = Date.now() - toolStartedAt;
+                this.emitStep('observation', `Tool Execution Error: ${err.message}`, {
+                  tool: tool.name,
+                  toolCallId,
+                  phase: 'tool_end',
+                  ok: false,
+                  durationMs: toolDurationMs,
+                  errorMessage: String(err?.message ?? err),
+                });
+                const aiMsg = new AIMessage(this.redactSecrets(content));
                 const errorMsg = new SystemMessage(`Tool Execution Error: ${err.message}`);
                 messages.push(aiMsg);
                 messages.push(errorMsg);

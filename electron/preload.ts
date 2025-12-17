@@ -29,19 +29,38 @@ contextBridge.exposeInMainWorld('vault', {
   delete: (account: string) => ipcRenderer.invoke('vault:delete', account),
 })
 
+contextBridge.exposeInMainWorld('audit', {
+  getLogs: (limit?: number) => ipcRenderer.invoke('audit:get-logs', limit),
+})
+
 contextBridge.exposeInMainWorld('agent', {
   chat: (message: string) => ipcRenderer.invoke('agent:chat', message),
   resetConversation: () => ipcRenderer.invoke('agent:reset-conversation'),
   getModels: () => ipcRenderer.invoke('agent:get-models'),
   getCurrentModel: () => ipcRenderer.invoke('agent:get-current-model'),
   setModel: (modelId: string) => ipcRenderer.invoke('agent:set-model', modelId),
-  onApprovalRequest: (callback: (toolName: string, args: any) => void) => {
-    const listener = (_: unknown, { toolName, args }: { toolName: string; args: unknown }) =>
-      callback(toolName, args);
+  setMode: (mode: 'chat' | 'read' | 'do') => ipcRenderer.invoke('agent:set-mode', mode),
+  getMode: () => ipcRenderer.invoke('agent:get-mode'),
+  setPermissionMode: (mode: 'yolo' | 'permissions') => ipcRenderer.invoke('agent:set-permission-mode', mode),
+  getPermissionMode: () => ipcRenderer.invoke('agent:get-permission-mode'),
+  onApprovalRequest: (callback: (payload: any) => void) => {
+    const listener = (_: unknown, payload: unknown) => callback(payload);
     ipcRenderer.on('agent:request-approval', listener);
     return () => ipcRenderer.off('agent:request-approval', listener);
   },
-  respondApproval: (toolName: string, approved: boolean) => ipcRenderer.send('agent:approval-response', { toolName, approved }),
+  onApprovalTimeout: (callback: (payload: any) => void) => {
+    const listener = (_: unknown, payload: unknown) => callback(payload);
+    ipcRenderer.on('agent:approval-timeout', listener);
+    return () => ipcRenderer.off('agent:approval-timeout', listener);
+  },
+  respondApproval: (requestId: string, approved: boolean) =>
+    ipcRenderer.send('agent:approval-response', { requestId, approved }),
+  sendFeedback: (skillId: string, outcome: boolean | 'worked' | 'failed' | 'partial', version?: number) => {
+    if (typeof outcome === 'boolean') {
+      return ipcRenderer.invoke('agent:feedback', { skillId, success: outcome });
+    }
+    return ipcRenderer.invoke('agent:feedback', { skillId, label: outcome, version });
+  },
   onStep: (callback: (step: any) => void) => {
     const listener = (_: unknown, step: unknown) => callback(step);
     ipcRenderer.on('agent:step', listener);
@@ -58,4 +77,12 @@ contextBridge.exposeInMainWorld('browser', {
     ipcRenderer.on('browser:navigate-to', listener);
     return () => ipcRenderer.off('browser:navigate-to', listener);
   },
+})
+
+contextBridge.exposeInMainWorld('telemetry', {
+  export: () => ipcRenderer.invoke('telemetry:export'),
+})
+
+contextBridge.exposeInMainWorld('benchmark', {
+  runSuite: (filter?: string) => ipcRenderer.invoke('benchmark:runSuite', filter),
 })
