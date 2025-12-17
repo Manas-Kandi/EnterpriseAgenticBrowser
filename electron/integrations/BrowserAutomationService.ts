@@ -469,22 +469,27 @@ export class BrowserAutomationService {
         const target = await this.getTarget();
         this.invalidateCache(target.id);
         if (selector) {
+          await this.waitForSelector(target, selector, 5000);
           await target.executeJavaScript(
             `(() => {
-               const el = document.querySelector('${selector}');
+               const el = document.querySelector(${JSON.stringify(selector)});
                if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-             })()`
+             })()`,
+            true
           );
           return `Scrolled to element "${selector}"`;
         } else if (direction) {
+          const amt = amount ?? 500;
           await target.executeJavaScript(
             `(() => {
-               const amt = ${amount ?? 500};
-               if ('${direction}' === 'top') window.scrollTo({ top: 0, behavior: 'smooth' });
-               else if ('${direction}' === 'bottom') window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
-               else if ('${direction}' === 'up') window.scrollBy({ top: -amt, behavior: 'smooth' });
+               const amt = ${JSON.stringify(amt)};
+               const dir = ${JSON.stringify(direction)};
+               if (dir === 'top') window.scrollTo({ top: 0, behavior: 'smooth' });
+               else if (dir === 'bottom') window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+               else if (dir === 'up') window.scrollBy({ top: -amt, behavior: 'smooth' });
                else window.scrollBy({ top: amt, behavior: 'smooth' });
-             })()`
+             })()`,
+            true
           );
           return `Scrolled ${direction}`;
         }
@@ -524,28 +529,10 @@ export class BrowserAutomationService {
         const target = await this.getTarget();
         const timeout = timeoutMs ?? 5000;
         try {
-          const found = await target.executeJavaScript(
-            `(() => {
-               return new Promise((resolve) => {
-                 if (document.querySelector('${selector}')) return resolve(true);
-                 const observer = new MutationObserver(() => {
-                   if (document.querySelector('${selector}')) {
-                     observer.disconnect();
-                     resolve(true);
-                   }
-                 });
-                 observer.observe(document.body, { childList: true, subtree: true });
-                 setTimeout(() => {
-                   observer.disconnect();
-                   resolve(false);
-                 }, ${timeout});
-               });
-             })()`,
-             true
-          );
-          return found ? `Element "${selector}" appeared` : `Timeout waiting for "${selector}"`;
+          await this.waitForSelector(target, selector, timeout);
+          return `Element "${selector}" appeared`;
         } catch (e: any) {
-          return `Error waiting for selector: ${e.message}`;
+          return `Timeout waiting for "${selector}"`;
         }
       },
     };
@@ -580,11 +567,13 @@ export class BrowserAutomationService {
       schema: focusSchema,
       execute: async ({ selector }) => {
         const target = await this.getTarget();
+        await this.waitForSelector(target, selector, 5000);
         await target.executeJavaScript(
           `(() => {
-             const el = document.querySelector('${selector}');
-             if (el) el.focus();
-           })()`
+             const el = document.querySelector(${JSON.stringify(selector)});
+             if (el && typeof el.focus === 'function') el.focus();
+           })()`,
+          true
         );
         this.invalidateCache(target.id);
         return `Focused "${selector}"`;
@@ -600,15 +589,42 @@ export class BrowserAutomationService {
       schema: clearSchema,
       execute: async ({ selector }) => {
         const target = await this.getTarget();
+        await this.waitForSelector(target, selector, 5000);
         await target.executeJavaScript(
           `(() => {
-             const el = document.querySelector('${selector}');
-             if (el) {
-               el.value = '';
-               el.dispatchEvent(new Event('input', { bubbles: true }));
-               el.dispatchEvent(new Event('change', { bubbles: true }));
-             }
-           })()`
+             const el = document.querySelector(${JSON.stringify(selector)});
+             if (!el) return { ok: false, error: 'Element not found' };
+             const tag = (el.tagName || '').toLowerCase();
+             const isEditable = tag === 'input' || tag === 'textarea' || Boolean(el.isContentEditable);
+             if (!isEditable) return { ok: false, error: 'Element is not editable' };
+
+             const setNativeValue = (node, value) => {
+               const t = (node.tagName || '').toLowerCase();
+               if (t === 'input') {
+                 const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+                 if (setter) setter.call(node, value);
+                 else node.value = value;
+                 return;
+               }
+               if (t === 'textarea') {
+                 const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set;
+                 if (setter) setter.call(node, value);
+                 else node.value = value;
+                 return;
+               }
+               if (node.isContentEditable) {
+                 node.textContent = value;
+                 return;
+               }
+               node.value = value;
+             };
+
+             setNativeValue(el, '');
+             el.dispatchEvent(new InputEvent('input', { bubbles: true, data: '', inputType: 'deleteContentBackward' }));
+             el.dispatchEvent(new Event('change', { bubbles: true }));
+             return { ok: true };
+           })()`,
+          true
         );
         this.invalidateCache(target.id);
         return `Cleared input "${selector}"`;

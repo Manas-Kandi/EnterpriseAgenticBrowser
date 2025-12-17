@@ -43,7 +43,13 @@ export interface PolicyRule {
 const TOOL_RISK_LEVELS: Record<string, RiskLevel> = {
   // Browser observation tools - LOW risk
   'browser_observe': RiskLevel.LOW,
-  'browser_get_page_info': RiskLevel.LOW,
+  'browser_wait_for_selector': RiskLevel.LOW,
+  'browser_wait_for_url': RiskLevel.LOW,
+  'browser_wait_for_text': RiskLevel.LOW,
+  'browser_wait_for_text_in': RiskLevel.LOW,
+  'browser_find_text': RiskLevel.LOW,
+  'browser_get_text': RiskLevel.LOW,
+  'browser_extract_main_text': RiskLevel.MEDIUM, // Extraction is risky but read-only
   
   // Browser navigation - LOW to MEDIUM risk
   'browser_navigate': RiskLevel.LOW,
@@ -53,23 +59,17 @@ const TOOL_RISK_LEVELS: Record<string, RiskLevel> = {
   
   // Browser interaction - MEDIUM risk
   'browser_click': RiskLevel.MEDIUM,
+  'browser_click_text': RiskLevel.MEDIUM,
   'browser_type': RiskLevel.MEDIUM,
   'browser_select': RiskLevel.MEDIUM,
   'browser_scroll': RiskLevel.MEDIUM,
-  'browser_hover': RiskLevel.MEDIUM,
-  'browser_drag': RiskLevel.MEDIUM,
-  
-  // Form and data manipulation - MEDIUM to HIGH risk
-  'browser_fill_form': RiskLevel.MEDIUM,
-  'browser_submit_form': RiskLevel.MEDIUM,
-  'browser_clear_form': RiskLevel.MEDIUM,
-  'browser_upload_file': RiskLevel.HIGH,
-  'browser_extract_main_text': RiskLevel.MEDIUM, // Extraction is risky but read-only
+  'browser_press_key': RiskLevel.MEDIUM,
+  'browser_focus': RiskLevel.MEDIUM,
+  'browser_clear': RiskLevel.MEDIUM,
   
   // Complex browser operations - HIGH risk
   'browser_execute_plan': RiskLevel.HIGH,
-  'browser_execute_script': RiskLevel.HIGH,
-  'browser_take_screenshot': RiskLevel.MEDIUM,
+  'browser_screenshot': RiskLevel.MEDIUM,
   
   // Mock SaaS operations - MEDIUM to HIGH risk
   'jira_create_issue': RiskLevel.HIGH,
@@ -143,7 +143,6 @@ export class PolicyService {
       evaluate: (ctx) => {
         const allowedTools = [
           'browser_observe',
-          'browser_get_page_info',
           'browser_navigate', // Allowed to move around to observe
           'browser_go_back',
           'browser_go_forward',
@@ -250,15 +249,15 @@ export class PolicyService {
       description: 'File uploads/downloads on external domains need approval',
       priority: 70,
       match: (ctx) => {
-        const fileOps = ['browser_upload_file', 'code_write_file', 'code_delete_file'];
+        const fileOps = ['code_write_file', 'code_delete_file'];
         // Check if domain is present but NOT in our known domain list
         const isExternal = Boolean(ctx.domain && !(ctx.domain in DOMAIN_RISK_LEVELS));
         return fileOps.includes(ctx.toolName) && isExternal;
       },
-      evaluate: (ctx) => ({
+      evaluate: (_ctx) => ({
         decision: PolicyDecision.NEEDS_APPROVAL,
         riskLevel: RiskLevel.HIGH,
-        reason: `File operation on external domain: ${ctx.domain}`,
+        reason: 'File operations on external domains require approval',
         matchedRule: 'external-file-operations',
       }),
     });
