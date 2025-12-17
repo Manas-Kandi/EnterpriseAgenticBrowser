@@ -75,4 +75,38 @@ export const BENCHMARK_SUITE: BenchmarkScenario[] = [
     expectedOutcome: { type: 'text_present', value: 'logs' },
     timeoutMs: 60000,
   },
+  
+  // Personal Browser Scenarios
+  {
+    id: 'personal-wikipedia',
+    name: 'Wikipedia Navigation',
+    description: 'Navigate to Wikipedia and find the Featured Article',
+    userMessage: 'Go to wikipedia.org and verify that the "From today\'s featured article" section is present.',
+    expectedOutcome: { type: 'text_present', value: 'From today\'s featured article' },
+    timeoutMs: 60000,
+  },
+  {
+    id: 'personal-todomvc',
+    name: 'TodoMVC Interaction',
+    description: 'Add and complete tasks in a React Todo app',
+    userMessage: 'Go to https://todomvc.com/examples/react/dist/. Add a new todo item called "Review Agent Performance" and then press Enter.',
+    expectedOutcome: { type: 'text_present', value: 'Review Agent Performance' },
+    timeoutMs: 60000,
+  },
+  {
+    id: 'personal-hn',
+    name: 'Hacker News Retrieval',
+    description: 'Navigate to Hacker News',
+    userMessage: 'Go to news.ycombinator.com and find the "Hacker News" header.',
+    expectedOutcome: { type: 'text_present', value: 'Hacker News' },
+    timeoutMs: 45000,
+  },
+  {
+    id: 'personal-duckduckgo',
+    name: 'Search Engine Usage',
+    description: 'Search using DuckDuckGo',
+    userMessage: 'Go to duckduckgo.com, type "Enterprise Browser" into the search box, and search.',
+    expectedOutcome: { type: 'url_match', value: 'duckduckgo.com/?q=Enterprise+Browser' },
+    timeoutMs: 60000,
+  }
 ];

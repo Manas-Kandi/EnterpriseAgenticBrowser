@@ -1,7 +1,7 @@
 import ReactMarkdown from 'react-markdown';
 import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
-import { Send, User, Bot, AlertTriangle, Check, X, ChevronDown, Brain, Zap, RotateCcw, MessageSquare, Eye, Play, Shield, Rocket } from 'lucide-react';
+import { Send, User, Bot, AlertTriangle, Check, X, ChevronDown, Brain, Zap, RotateCcw, MessageSquare, Eye, Play, Shield, Rocket, Activity } from 'lucide-react';
 import { useBrowserStore } from '@/lib/store';
 
 interface Message {
@@ -25,6 +25,14 @@ interface ModelInfo {
   supportsThinking: boolean;
 }
 
+interface BenchmarkResult {
+  scenarioId: string;
+  success: boolean;
+  durationMs: number;
+  steps: number;
+  llmCalls: number;
+}
+
 export function AgentPanel() {
   const { agentMode, agentPermissionMode, setAgentMode, setAgentPermissionMode } = useBrowserStore();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -36,8 +44,25 @@ export function AgentPanel() {
   const [showModelSelector, setShowModelSelector] = useState(false);
   const [feedbackMap, setFeedbackMap] = useState<Record<number, 'worked' | 'failed' | 'partial'>>({});
   const [showTrace, setShowTrace] = useState(false);
+  const [showBenchmarks, setShowBenchmarks] = useState(false);
+  const [benchmarkResults, setBenchmarkResults] = useState<BenchmarkResult[]>([]);
+  const [runningBenchmark, setRunningBenchmark] = useState(false);
 
   const approvalRequest = approvalQueue.length > 0 ? approvalQueue[0] : null;
+
+  const handleRunBenchmark = async (filter?: string) => {
+    if (!window.agent || runningBenchmark) return;
+    setRunningBenchmark(true);
+    setBenchmarkResults([]);
+    try {
+        const results = await window.agent.runBenchmarkSuite(filter);
+        setBenchmarkResults(results);
+    } catch (err) {
+        console.error('Benchmark failed:', err);
+    } finally {
+        setRunningBenchmark(false);
+    }
+  };
 
   // Helper to extract skill ID from observation
   const getSkillIdFromMessage = (content: string): string | null => {
@@ -198,7 +223,84 @@ export function AgentPanel() {
   };
 
   return (
-    <div className="h-full flex flex-col bg-background/50">
+    <div className="h-full flex flex-col bg-background/50 relative">
+      {/* Benchmark Overlay */}
+      {showBenchmarks && (
+        <div className="absolute inset-0 z-50 bg-background/95 backdrop-blur-sm p-4 flex flex-col">
+            <div className="flex items-center justify-between mb-4">
+                <h2 className="text-sm font-bold flex items-center gap-2">
+                    <Activity size={16} className="text-primary" />
+                    Agent Benchmarks
+                </h2>
+                <button onClick={() => setShowBenchmarks(false)} className="p-1 hover:bg-secondary rounded">
+                    <X size={16} />
+                </button>
+            </div>
+            
+            <div className="flex gap-2 mb-4">
+                <button
+                    onClick={() => handleRunBenchmark('personal')}
+                    disabled={runningBenchmark}
+                    className="flex-1 bg-primary text-primary-foreground py-2 rounded text-xs font-medium hover:opacity-90 disabled:opacity-50"
+                >
+                    Run Personal Suite
+                </button>
+                 <button
+                    onClick={() => handleRunBenchmark('aerocore')}
+                    disabled={runningBenchmark}
+                    className="flex-1 bg-secondary text-secondary-foreground py-2 rounded text-xs font-medium hover:opacity-90 disabled:opacity-50"
+                >
+                    Run AeroCore Suite
+                </button>
+            </div>
+            
+            {benchmarkResults.length > 0 && !runningBenchmark && (
+                <button
+                    onClick={async () => {
+                        if (window.agent) {
+                            try {
+                                const { path } = await window.agent.exportBenchmarkTrajectories(benchmarkResults);
+                                alert(`Exported to ${path}`);
+                            } catch (e) {
+                                console.error(e);
+                                alert('Export failed');
+                            }
+                        }
+                    }}
+                    className="w-full mb-4 bg-secondary/50 text-foreground py-1.5 rounded text-xs hover:bg-secondary border border-border/50"
+                >
+                    Export Results to JSONL
+                </button>
+            )}
+
+            <div className="flex-1 overflow-y-auto space-y-2">
+                {runningBenchmark && benchmarkResults.length === 0 && (
+                    <div className="text-center py-8 text-muted-foreground text-xs animate-pulse">
+                        Running benchmarks... please wait...
+                    </div>
+                )}
+                {benchmarkResults.map((res) => (
+                    <div key={res.scenarioId} className={cn(
+                        "p-3 rounded border text-xs flex items-center justify-between",
+                        res.success ? "bg-green-500/10 border-green-500/20" : "bg-red-500/10 border-red-500/20"
+                    )}>
+                        <div>
+                            <div className="font-bold mb-1">{res.scenarioId}</div>
+                            <div className="text-muted-foreground flex gap-3">
+                                <span>{Math.round(res.durationMs / 1000)}s</span>
+                                <span>{res.steps} steps</span>
+                                <span>{res.llmCalls} LLM calls</span>
+                            </div>
+                        </div>
+                        <div className={cn("font-bold", res.success ? "text-green-500" : "text-red-500")}>
+                            {res.success ? 'PASS' : 'FAIL'}
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </div>
+      )}
+
       {/* Messages Area */}
       <div className="flex-1 overflow-y-auto p-3 space-y-3">
         {messages.length === 0 ? (
@@ -510,6 +612,13 @@ export function AgentPanel() {
                         title="Clear conversation"
                     >
                         <RotateCcw size={12} />
+                    </button>
+                    <button
+                        onClick={() => setShowBenchmarks(true)}
+                        className="p-1 hover:text-foreground hover:bg-secondary/50 rounded transition-colors"
+                        title="Run Benchmarks"
+                    >
+                        <Activity size={12} />
                     </button>
                     <button
                         onClick={() => setShowTrace((v) => !v)}

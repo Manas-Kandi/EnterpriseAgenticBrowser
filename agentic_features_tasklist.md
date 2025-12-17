@@ -151,6 +151,13 @@ Review / Done criteria
 You can run benchmarks locally and see regressions; dataset export is reliable.
 Wrap-up
 Review that task was completed well, and GitHub commit and push.
+**Status: COMPLETED**
+- Implemented benchmark suite in `electron/benchmarks/suite.ts` including Personal Browser scenarios.
+- Added Benchmark Runner UI in `AgentPanel.tsx`.
+- Implemented trajectory export to JSONL in `BenchmarkService.ts`.
+- Added IPC handlers for running benchmarks and exporting data.
+- Feature flag for actions policy exists in `AgentService`.
+
 
 
 
