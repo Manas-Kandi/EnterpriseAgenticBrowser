@@ -386,7 +386,7 @@ export class AgentService {
         - NOTE: AeroCore apps are under "/aerocore/*" (e.g. /aerocore/admin, /aerocore/dispatch).
         - Read the page/component source code (e.g. "JiraPage.tsx" or "AdminPage.tsx") to find:
           * Stable "data-testid" selectors.
-          * WARNING: If a selector is inside a loop (e.g. [data-testid=jira-create-issue-button] inside columns), IT IS NOT UNIQUE. Look for a global alternative (e.g. [data-testid=jira-create-button] in the nav) or use :nth-child in your plan.
+          * WARNING: If a selector is inside a loop (e.g. [data-testid=jira-create-issue-button] inside columns), IT IS NOT UNIQUE. browser_click will refuse ambiguous matches. Prefer browser_click_text or disambiguate via withinSelector/matchText/index.
           * Validation logic (e.g. allowed values for priority).
           
         PHASE 2: EXECUTE (Run Plan)
@@ -412,7 +412,7 @@ export class AgentService {
         - Step 1: Check current browser state. If already on the target site, skip navigation.
         - Step 2: Use "browser_observe" with scope="main" to see relevant page content.
         - Step 3: Prefer "browser_click_text" when you can describe a link/button by visible text (more robust than guessing aria-label/href).
-        - Step 4: Use selectors returned by "browser_observe" (which are JSON-safe) for "browser_click", "browser_type", "browser_select".
+        - Step 4: Use selectors returned by "browser_observe" (which are JSON-safe) for "browser_click", "browser_type", "browser_select". If browser_click says the selector is ambiguous, disambiguate via withinSelector/matchText/index or switch to browser_click_text.
         - Step 5: Verify outcomes using "browser_wait_for_text", "browser_wait_for_text_in", or "browser_extract_main_text".
 
         Example Interaction:

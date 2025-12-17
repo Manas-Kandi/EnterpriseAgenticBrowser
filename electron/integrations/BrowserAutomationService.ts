@@ -634,31 +634,31 @@ export class BrowserAutomationService {
     // Tool: Click
     const clickSchema = z.object({
       selector: z.string().describe('CSS selector of the element to click'),
+      withinSelector: z
+        .string()
+        .optional()
+        .describe('Optional container selector to scope the search (must match exactly 1 element)'),
       index: z.number().optional().describe('Index of element if multiple match (0-based)'),
       matchText: z.string().optional().describe('Text content to match if multiple elements found'),
     });
     const clickTool: AgentTool<typeof clickSchema> = {
       name: 'browser_click',
-      description: 'Click an element on the current page. Ensures uniqueness or requires disambiguation.',
+      description:
+        'Click an element on the current page. Safe + deterministic: if the selector matches multiple visible elements, you must disambiguate using withinSelector, matchText, or index (or use browser_click_text).',
       schema: clickSchema,
-      execute: async ({ selector, index, matchText }) => {
+      execute: async ({ selector, withinSelector, index, matchText }) => {
         try {
             const target = await this.getTarget();
-            // Wait for selector with improved timeout
-            await this.waitForSelector(target, selector, 5000);
-            
-            // Check uniqueness if no disambiguation provided
-            if (index === undefined && !matchText) {
-              const count = await this.querySelectorCount(target, selector);
-              if (count > 1) {
-                return `Failed to click: Selector "${selector}" matches ${count} elements. Please specify "index" (0-${count-1}) or "matchText" to disambiguate.`;
-              }
+
+            if (withinSelector) {
+              await this.waitForSelector(target, withinSelector, 5000);
             }
+            await this.waitForSelector(target, selector, 5000);
 
             const result = await target.executeJavaScript(
               `(() => {
                 // Helper to find elements including shadow DOM
-                const findElements = (sel) => {
+                const findElements = (root, sel) => {
                   const results = [];
                   const queryDeep = (root) => {
                     const els = Array.from(root.querySelectorAll(sel));
@@ -674,11 +674,52 @@ export class BrowserAutomationService {
                       }
                     }
                   };
-                  queryDeep(document);
+                  queryDeep(root);
                   return results;
                 };
 
-                let candidates = findElements(${JSON.stringify(selector)});
+                const isVisible = (el) => {
+                  if (!el || el.nodeType !== 1) return false;
+                  const style = window.getComputedStyle(el);
+                  if (!style) return false;
+                  if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+                  if (style.pointerEvents === 'none') return false;
+                  const rects = el.getClientRects();
+                  if (!rects || rects.length === 0) return false;
+                  const rect = el.getBoundingClientRect();
+                  if (rect.width < 2 || rect.height < 2) return false;
+                  const vw = window.innerWidth || 0;
+                  const vh = window.innerHeight || 0;
+                  const buffer = 40;
+                  if (rect.bottom < -buffer || rect.top > vh + buffer) return false;
+                  if (rect.right < -buffer || rect.left > vw + buffer) return false;
+                  return true;
+                };
+
+                const describe = (el) => {
+                  const tag = (el.tagName || '').toLowerCase();
+                  const text = (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+                  const ariaLabel = el.getAttribute?.('aria-label') || '';
+                  const testId = el.getAttribute?.('data-testid') || el.getAttribute?.('data-test-id') || '';
+                  const id = el.id || '';
+                  return { tag, text, ariaLabel, testId, id };
+                };
+
+                const withinSel = ${JSON.stringify(withinSelector ?? '')};
+                let root = document;
+                if (withinSel) {
+                  const roots = Array.from(document.querySelectorAll(withinSel)).filter(isVisible);
+                  if (roots.length === 0) {
+                    return { ok: false, error: 'Within selector not found (or not visible)', matches: 0 };
+                  }
+                  if (roots.length > 1) {
+                    return { ok: false, error: 'Within selector is not unique', matches: roots.length, roots: roots.slice(0, 5).map(describe) };
+                  }
+                  root = roots[0];
+                }
+
+                let candidates = findElements(root, ${JSON.stringify(selector)});
+                candidates = candidates.filter(isVisible);
                 
                 // Filter by text if provided
                 if (${JSON.stringify(matchText)}) {
@@ -686,9 +727,22 @@ export class BrowserAutomationService {
                   candidates = candidates.filter(el => (el.innerText || '').toLowerCase().includes(needle));
                 }
 
-                if (candidates.length === 0) return { ok: false, error: 'Element not found' };
+                if (candidates.length === 0) {
+                  return { ok: false, error: 'Element not found (visible)', matches: 0 };
+                }
 
+                const idxProvided = ${JSON.stringify(index !== undefined)};
                 const idx = ${JSON.stringify(index ?? 0)};
+
+                if (candidates.length > 1 && !idxProvided) {
+                  return {
+                    ok: false,
+                    error: 'Ambiguous selector (multiple visible matches)',
+                    matches: candidates.length,
+                    candidates: candidates.slice(0, 6).map(describe),
+                  };
+                }
+
                 if (idx >= candidates.length) return { ok: false, error: 'Index out of bounds' };
                 
                 const el = candidates[idx];
@@ -710,13 +764,58 @@ export class BrowserAutomationService {
                 el.dispatchEvent(new MouseEvent('mouseup', eventOpts));
                 el.dispatchEvent(new MouseEvent('click', eventOpts));
                 
-                return { ok: true };
+                return { ok: true, matches: candidates.length, clicked: describe(el) };
               })()`,
               true
             );
             
             if (!result.ok) {
-              return `Failed to click ${selector}: ${result.error}`;
+              const base = `Refusing to click: ${result.error}. Selector=${JSON.stringify(
+                selector
+              )}${withinSelector ? ` within=${JSON.stringify(withinSelector)}` : ''}.`;
+
+              if (result.error === 'Ambiguous selector (multiple visible matches)') {
+                const matches = typeof result.matches === 'number' ? result.matches : 'multiple';
+                const preview = Array.isArray(result.candidates)
+                  ? result.candidates
+                      .map((c: any, i: number) => {
+                        const bits = [c.tag, c.testId ? `testId=${c.testId}` : '', c.id ? `id=${c.id}` : '']
+                          .filter(Boolean)
+                          .join(' ');
+                        const label = c.ariaLabel ? ` ariaLabel=${JSON.stringify(c.ariaLabel)}` : '';
+                        const text = c.text ? ` text=${JSON.stringify(c.text)}` : '';
+                        return `#${i} ${bits}${label}${text}`;
+                      })
+                      .join('\n')
+                  : '';
+
+                return (
+                  `${base} Matched ${matches} visible elements.\n` +
+                  `Provide one of: {"index":0..}, {"matchText":"..."}, or {"withinSelector":"..."}.\n` +
+                  `Or prefer browser_click_text (more robust).\n` +
+                  (preview ? `Candidates:\n${preview}` : '')
+                );
+              }
+
+              if (result.error === 'Within selector is not unique') {
+                const rootsPreview = Array.isArray(result.roots)
+                  ? result.roots
+                      .map((c: any, i: number) => {
+                        const bits = [c.tag, c.testId ? `testId=${c.testId}` : '', c.id ? `id=${c.id}` : '']
+                          .filter(Boolean)
+                          .join(' ');
+                        const text = c.text ? ` text=${JSON.stringify(c.text)}` : '';
+                        return `#${i} ${bits}${text}`;
+                      })
+                      .join('\n')
+                  : '';
+                return (
+                  `${base} The withinSelector must match exactly 1 visible container.\n` +
+                  (rootsPreview ? `Within candidates:\n${rootsPreview}` : '')
+                );
+              }
+
+              return `${base} Try browser_click_text or refine your selector.`;
             }
             this.invalidateCache(target.id);
             return `Clicked element ${selector}`;
@@ -1147,6 +1246,9 @@ export class BrowserAutomationService {
             selector: z.string().optional().describe('For click/type/select actions'),
             value: z.string().optional().describe('For type/select actions'),
             text: z.string().optional().describe('For wait action'),
+            index: z.number().optional().describe('For click actions: index to disambiguate (0-based)'),
+            matchText: z.string().optional().describe('For click actions: filter candidates by visible text'),
+            withinSelector: z.string().optional().describe('For click actions: scope search to a unique container selector'),
           })
         ),
       }),
@@ -1188,7 +1290,12 @@ export class BrowserAutomationService {
             } else if (step.action === 'click') {
               if (!step.selector) throw new Error('Missing selector for click');
               toolNameForStep = 'browser_click';
-              toolArgsForStep = { selector: step.selector };
+              toolArgsForStep = {
+                selector: step.selector,
+                index: step.index,
+                matchText: step.matchText,
+                withinSelector: step.withinSelector,
+              };
             } else if (step.action === 'type') {
               if (!step.selector || step.value === undefined) throw new Error('Missing selector/value for type');
               toolNameForStep = 'browser_type';
@@ -1234,7 +1341,12 @@ export class BrowserAutomationService {
               if (step.action === 'navigate') {
                 res = await navigateTool.execute({ url: step.url });
               } else if (step.action === 'click') {
-                res = await clickTool.execute({ selector: step.selector });
+                res = await clickTool.execute({
+                  selector: step.selector,
+                  index: step.index,
+                  matchText: step.matchText,
+                  withinSelector: step.withinSelector,
+                });
               } else if (step.action === 'type') {
                 res = await typeTool.execute({ selector: step.selector, text: step.value });
               } else if (step.action === 'select') {
