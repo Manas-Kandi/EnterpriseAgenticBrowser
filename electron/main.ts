@@ -198,6 +198,12 @@ app.whenReady().then(() => {
     return true;
   });
 
+  ipcMain.handle('telemetry:export', async () => {
+    const exportPath = path.join(app.getPath('userData'), 'trajectories_export.json');
+    const count = await telemetryService.exportTrajectories(exportPath);
+    return { success: true, count, path: exportPath };
+  });
+
   // Agent IPC Handlers
   ipcMain.handle('agent:chat', async (event, message) => {
     const runId = uuidv4();

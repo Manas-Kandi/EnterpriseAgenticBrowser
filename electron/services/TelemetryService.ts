@@ -53,6 +53,39 @@ export class TelemetryService {
     }
     await this.appendLine(path.join(this.getBaseDir(), 'agent-events.jsonl'), event);
   }
+
+  async exportTrajectories(outputPath: string): Promise<number> {
+    await this.ensureDir();
+    const dir = this.getBaseDir();
+    const files = await fs.readdir(dir);
+    const runFiles = files.filter(f => f.startsWith('agent-run-') && f.endsWith('.jsonl'));
+    
+    const trajectories = [];
+    for (const file of runFiles) {
+      try {
+        const content = await fs.readFile(path.join(dir, file), 'utf8');
+        const events = content.trim().split('\n')
+          .map(line => {
+            try { return JSON.parse(line); } catch { return null; }
+          })
+          .filter(e => e !== null);
+        
+        if (events.length > 0) {
+          trajectories.push({
+            runId: events[0].runId,
+            timestamp: events[0].ts,
+            eventCount: events.length,
+            events
+          });
+        }
+      } catch (err) {
+        console.error(`Failed to process trajectory file ${file}:`, err);
+      }
+    }
+    
+    await fs.writeFile(outputPath, JSON.stringify(trajectories, null, 2));
+    return trajectories.length;
+  }
 }
 
 export const telemetryService = new TelemetryService();

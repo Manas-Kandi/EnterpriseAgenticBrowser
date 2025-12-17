@@ -89,11 +89,21 @@ export const AVAILABLE_MODELS: ModelConfig[] = [
     supportsThinking: true,
     extraBody: { chat_template_kwargs: { enable_thinking: true } },
   },
+  // Specialized models
+  {
+    id: 'actions-policy-v1',
+    name: 'Actions Policy (Beta)',
+    modelName: 'custom/actions-policy-v1',
+    temperature: 0.0,
+    maxTokens: 2048,
+    supportsThinking: false,
+  },
 ];
 
 export class AgentService {
   private model: Runnable;
   private currentModelId: string = 'llama-3.1-70b';
+  private useActionsPolicy: boolean = false;
   private onStep?: (step: AgentStep) => void;
   private conversationHistory: BaseMessage[] = [];
   private systemPrompt: SystemMessage;
@@ -199,6 +209,23 @@ export class AgentService {
     // Initialize with default model
     this.model = this.createModel('llama-3.1-70b');
     this.systemPrompt = new SystemMessage('');
+  }
+
+  /**
+   * Toggle the use of the specialized actions policy model
+   */
+  toggleActionsPolicy(enabled: boolean) {
+    this.useActionsPolicy = enabled;
+    if (enabled) {
+      this.setModel('actions-policy-v1');
+    } else {
+      this.setModel('llama-3.1-70b');
+    }
+    console.log(`[AgentService] Actions Policy Model: ${enabled ? 'ENABLED' : 'DISABLED'}`);
+  }
+
+  isActionsPolicyEnabled(): boolean {
+    return this.useActionsPolicy;
   }
 
   /**
