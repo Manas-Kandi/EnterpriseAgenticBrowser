@@ -53,6 +53,18 @@ A living document tracking insights about LLM model behavior in the Enterprise B
 *Discovered: 2024-12-17*
 *Task: GitHub chain task - user expected to see the repo page*
 
+### 4. CoinMarketCap/Crypto Sites Have Brittle Selectors
+> **Crypto sites like CoinMarketCap have dynamic, ad-heavy DOMs that break selector-based extraction. The price data IS in the page (mainTextSnippet showed "$85,941") but the agent failed to extract it. Use `api_crypto_price` (CoinGecko API) instead.**
+
+*Discovered: 2024-12-17*
+*Task: Bitcoin price lookup - agent navigated but couldn't extract price despite it being visible*
+
+### 5. Agent May Fail to Extract Data Even When Present
+> **The agent can fail to extract information from mainTextSnippet even when the data is clearly there. This is a model comprehension issue, not a tool issue. The Bitcoin price "$85,941" was in the snippet but the model said "Failed to find".**
+
+*Discovered: 2024-12-17*
+*Task: Bitcoin price on CoinMarketCap - data was present but not extracted*
+
 ---
 
 ## Failure Patterns

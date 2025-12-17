@@ -194,11 +194,71 @@ export class WebAPIService {
       },
     };
 
+    // Cryptocurrency Price API (using CoinGecko - free, no API key needed)
+    const cryptoPriceSchema = z.object({
+      coin: z.string().describe('Cryptocurrency name or symbol (e.g., "bitcoin", "ethereum", "btc", "eth")'),
+    });
+
+    const cryptoPriceTool: AgentTool<typeof cryptoPriceSchema> = {
+      name: 'api_crypto_price',
+      description: 'Get current cryptocurrency price via CoinGecko API. Use this instead of navigating to coinmarketcap.com or other crypto sites. Returns price in USD, 24h change, and market cap.',
+      schema: cryptoPriceSchema,
+      execute: async ({ coin }) => {
+        try {
+          // Normalize coin name
+          const coinMap: Record<string, string> = {
+            'btc': 'bitcoin',
+            'eth': 'ethereum',
+            'sol': 'solana',
+            'doge': 'dogecoin',
+            'xrp': 'ripple',
+            'ada': 'cardano',
+            'dot': 'polkadot',
+            'matic': 'polygon',
+            'link': 'chainlink',
+            'avax': 'avalanche-2',
+          };
+          const coinId = coinMap[coin.toLowerCase()] || coin.toLowerCase();
+          
+          const url = `https://api.coingecko.com/api/v3/simple/price?ids=${coinId}&vs_currencies=usd&include_24hr_change=true&include_market_cap=true`;
+          
+          const response = await fetch(url, {
+            headers: {
+              'User-Agent': 'EnterpriseBrowser/1.0',
+            },
+          });
+
+          if (!response.ok) {
+            return JSON.stringify({ error: `CoinGecko API error: ${response.status}` });
+          }
+
+          const data = await response.json();
+          
+          if (!data[coinId]) {
+            return JSON.stringify({ error: `Coin '${coin}' not found. Try the full name (e.g., 'bitcoin' instead of 'btc').` });
+          }
+
+          const coinData = data[coinId];
+          const result = {
+            coin: coinId,
+            price_usd: coinData.usd,
+            change_24h_percent: coinData.usd_24h_change?.toFixed(2) + '%',
+            market_cap_usd: coinData.usd_market_cap,
+          };
+
+          return JSON.stringify(result, null, 2);
+        } catch (e: any) {
+          return JSON.stringify({ error: `Failed to fetch crypto price: ${e.message}` });
+        }
+      },
+    };
+
     // Register all tools
     toolRegistry.register(githubSearchTool);
     toolRegistry.register(hnTopStoriesTool);
     toolRegistry.register(wikiTodayTool);
     toolRegistry.register(httpGetTool);
+    toolRegistry.register(cryptoPriceTool);
   }
 }
 

@@ -513,6 +513,7 @@ You can answer questions about what's on the page, explain content, summarize in
         - GitHub search/stars → use "api_github_search" (returns repos with star counts instantly)
         - Hacker News top stories → use "api_hackernews_top"
         - Wikipedia featured article → use "api_wikipedia_featured"
+        - Cryptocurrency prices (Bitcoin, Ethereum, etc.) → use "api_crypto_price" (instead of coinmarketcap.com)
         - Any JSON API → use "api_http_get"
         
         APIs are 10-100x faster than browser automation. Only fall back to browser if:
