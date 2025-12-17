@@ -537,7 +537,25 @@ You can answer questions about what's on the page, explain content, summarize in
         - Step 4: Use selectors returned by "browser_observe" (which are JSON-safe) for "browser_click", "browser_type", "browser_select". If browser_click says the selector is ambiguous, disambiguate via withinSelector/matchText/index or switch to browser_click_text.
         - Step 5: Verify outcomes using "browser_wait_for_text", "browser_wait_for_text_in", or "browser_extract_main_text".
 
-        Example Interaction:
+        INFORMATION EXTRACTION (CRITICAL):
+        - If the user asks you to "tell me", "find", "what is", "show me", "get", "read", or asks a question about page content, you MUST:
+          1. Navigate to the page (if not already there)
+          2. Call "browser_observe" to see the page content
+          3. Read the "mainTextSnippet" from the observation result
+          4. Extract the requested information from the text
+          5. Return the answer in your final_response
+        - DO NOT stop after just navigating. The user wants INFORMATION, not just navigation.
+        - The "mainTextSnippet" in browser_observe output contains the visible text on the page - use it to answer questions.
+
+        Example: Information Extraction
+        User: "Go to wikipedia.org and tell me the featured article of the day"
+        Assistant: { "tool": "browser_navigate", "args": { "url": "https://www.wikipedia.org" } }
+        User: Tool Output: "Navigated to https://www.wikipedia.org"
+        Assistant: { "tool": "browser_observe", "args": { "scope": "main" } }
+        User: Tool Output: { "mainTextSnippet": "...Featured article: The Battle of...", ... }
+        Assistant: { "tool": "final_response", "args": { "message": "The featured article of the day on Wikipedia is 'The Battle of...'" } }
+
+        Example: Simple Navigation
         User: "Go to Jira"
         Assistant: { "tool": "browser_navigate", "args": { "url": "http://localhost:3000/jira" } }
         User: Tool Output: "Navigated to..."
@@ -829,12 +847,10 @@ You can answer questions about what's on the page, explain content, summarize in
                   return fastResponse;
                 }
                 
-                if (toolName === 'browser_navigate' && resultStr.includes('Navigated to')) {
-                  const url = (action as any).args?.url || 'the page';
-                  const fastResponse = `Opened ${url}`;
-                  this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: 'final_response', args: { message: fastResponse } })));
-                  return fastResponse;
-                }
+                // NOTE: Removed fast path for browser_navigate.
+                // The agent needs to continue reasoning after navigation to handle
+                // information-seeking requests like "go to X and tell me Y".
+                // The model will call final_response when it's actually done.
                 
                 if (toolName === 'browser_scroll' && !resultStr.toLowerCase().includes('error')) {
                   const fastResponse = `Scrolled the page.`;
