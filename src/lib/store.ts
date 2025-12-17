@@ -1,6 +1,9 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
+export type AgentMode = 'chat' | 'read' | 'do';
+export type AgentPermissionMode = 'yolo' | 'permissions';
+
 export interface BrowserTab {
   id: string;
   url: string;
@@ -26,6 +29,8 @@ interface BrowserState {
   activeSidebarPanel: 'drive' | 'gmail' | 'calendar' | 'slack' | 'agent' | 'extensions' | null;
   user: { name: string; email: string; avatar?: string } | null;
   appMode: 'personal' | 'dev' | null;
+  agentMode: AgentMode;
+  agentPermissionMode: AgentPermissionMode;
   
   // Actions
   addTab: (url?: string) => void;
@@ -37,6 +42,8 @@ interface BrowserState {
   setSidebarPanel: (panel: 'drive' | 'gmail' | 'calendar' | 'slack' | null) => void;
   setUser: (user: { name: string; email: string; avatar?: string } | null) => void;
   setAppMode: (mode: 'personal' | 'dev' | null) => void;
+  setAgentMode: (mode: AgentMode) => void;
+  setAgentPermissionMode: (mode: AgentPermissionMode) => void;
 }
 
 export const useBrowserStore = create<BrowserState>()(
@@ -50,6 +57,8 @@ export const useBrowserStore = create<BrowserState>()(
       activeSidebarPanel: null,
       user: null,
       appMode: null,
+      agentMode: 'do',
+      agentPermissionMode: 'permissions',
 
       addTab: (url = 'about:newtab') => set((state) => {
         const newTab = {
@@ -96,10 +105,12 @@ export const useBrowserStore = create<BrowserState>()(
       setSidebarPanel: (panel) => set({ activeSidebarPanel: panel }),
       setUser: (user) => set({ user }),
       setAppMode: (mode) => set({ appMode: mode }),
+      setAgentMode: (mode) => set({ agentMode: mode }),
+      setAgentPermissionMode: (mode) => set({ agentPermissionMode: mode }),
     }),
     {
       name: 'browser-storage',
-      partialize: (state) => ({ tabs: state.tabs, activeTabId: state.activeTabId, history: state.history, user: state.user, appMode: state.appMode }), // Persist these fields
+      partialize: (state) => ({ tabs: state.tabs, activeTabId: state.activeTabId, history: state.history, user: state.user, appMode: state.appMode, agentMode: state.agentMode, agentPermissionMode: state.agentPermissionMode }), // Persist these fields
     }
   )
 );

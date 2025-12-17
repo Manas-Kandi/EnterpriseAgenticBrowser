@@ -13,6 +13,10 @@ interface Window {
     getModels: () => Promise<Array<{ id: string; name: string; supportsThinking: boolean }>>;
     getCurrentModel: () => Promise<string>;
     setModel: (modelId: string) => Promise<{ success: boolean; modelId: string }>;
+    setMode: (mode: 'chat' | 'read' | 'do') => Promise<{ success: boolean }>;
+    getMode: () => Promise<'chat' | 'read' | 'do'>;
+    setPermissionMode: (mode: 'yolo' | 'permissions') => Promise<{ success: boolean }>;
+    getPermissionMode: () => Promise<'yolo' | 'permissions'>;
     onApprovalRequest: (callback: (payload: { requestId: string; toolName: string; args: unknown; runId?: string; timeoutMs?: number }) => void) => (() => void);
     onApprovalTimeout: (callback: (payload: any) => void) => () => void;
     respondApproval: (requestId: string, approved: boolean) => void;

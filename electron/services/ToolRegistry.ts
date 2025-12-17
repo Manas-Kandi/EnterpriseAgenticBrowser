@@ -139,70 +139,29 @@ export class ToolRegistry {
       }
 
       if (policyEvaluation.decision === PolicyDecision.NEEDS_APPROVAL && approvalHandler) {
-        try {
-          await telemetryService.emit({
-            eventId: uuidv4(),
-            runId,
-            ts: new Date().toISOString(),
-            type: 'approval_request',
-            name: tool.name,
-            data: { toolCallId, argsHash, riskLevel: policyEvaluation.riskLevel },
-          });
-        } catch {
-          // ignore
-        }
-
-        try {
-          auditService
-            .log({
-              actor: 'system',
-              action: 'approval_request',
-              details: { runId, toolName: tool.name, toolCallId, argsHash, reason: policyEvaluation.reason },
-              status: 'pending',
-            })
-            .catch(() => undefined);
-        } catch {
-          // ignore
-        }
-
-        const approved = await approvalHandler(tool.name, arg);
-
-        try {
-          await telemetryService.emit({
-            eventId: uuidv4(),
-            runId,
-            ts: new Date().toISOString(),
-            type: 'approval_decision',
-            name: tool.name,
-            data: { toolCallId, argsHash, approved },
-          });
-        } catch {
-          // ignore
-        }
-
-        try {
-          auditService
-            .log({
-              actor: 'system',
-              action: 'approval_decision',
-              details: { runId, toolName: tool.name, toolCallId, argsHash, approved },
-              status: approved ? 'success' : 'failure',
-            })
-            .catch(() => undefined);
-        } catch {
-          // ignore
-        }
-
-        if (!approved) {
-          const durationMs = Date.now() - startedAt;
+        // Skip approval in YOLO mode
+        if (agentRunContext.getYoloMode()) {
+          try {
+            auditService
+              .log({
+                actor: 'system',
+                action: 'approval_auto_granted',
+                details: { runId, toolName: tool.name, toolCallId, reason: 'YOLO mode' },
+                status: 'success',
+              })
+              .catch(() => undefined);
+          } catch {
+            // ignore
+          }
+        } else {
           try {
             await telemetryService.emit({
               eventId: uuidv4(),
               runId,
               ts: new Date().toISOString(),
-              type: 'tool_call_end',
+              type: 'approval_request',
               name: tool.name,
-              data: { toolCallId, argsHash, durationMs, error: 'User denied' },
+              data: { toolCallId, argsHash, riskLevel: policyEvaluation.riskLevel },
             });
           } catch {
             // ignore
@@ -211,20 +170,92 @@ export class ToolRegistry {
           try {
             auditService
               .log({
-                actor: 'user',
-                action: 'tool_call_denied',
-                details: { runId, toolName: tool.name, toolCallId },
-                status: 'failure',
+                actor: 'system',
+                action: 'approval_request',
+                details: { runId, toolName: tool.name, toolCallId, argsHash, reason: policyEvaluation.reason },
+                status: 'pending',
               })
               .catch(() => undefined);
           } catch {
             // ignore
           }
 
-          return 'User denied execution of this tool.';
+          const approved = await approvalHandler(tool.name, arg);
+
+          try {
+            await telemetryService.emit({
+              eventId: uuidv4(),
+              runId,
+              ts: new Date().toISOString(),
+              type: 'approval_decision',
+              name: tool.name,
+              data: { toolCallId, argsHash, approved },
+            });
+          } catch {
+            // ignore
+          }
+
+          try {
+            auditService
+              .log({
+                actor: 'system',
+                action: 'approval_decision',
+                details: { runId, toolName: tool.name, toolCallId, argsHash, approved },
+                status: approved ? 'success' : 'failure',
+              })
+              .catch(() => undefined);
+          } catch {
+            // ignore
+          }
+
+          if (!approved) {
+            const durationMs = Date.now() - startedAt;
+            try {
+              await telemetryService.emit({
+                eventId: uuidv4(),
+                runId,
+                ts: new Date().toISOString(),
+                type: 'tool_call_end',
+                name: tool.name,
+                data: { toolCallId, argsHash, durationMs, error: 'User denied' },
+              });
+            } catch {
+              // ignore
+            }
+
+            try {
+              auditService
+                .log({
+                  actor: 'user',
+                  action: 'tool_call_denied',
+                  details: { runId, toolName: tool.name, toolCallId },
+                  status: 'failure',
+                })
+                .catch(() => undefined);
+            } catch {
+              // ignore
+            }
+
+            return 'User denied execution of this tool.';
+          }
         }
       }
     } else if (tool.requiresApproval && approvalHandler) {
+      // Skip approval in YOLO mode
+      if (agentRunContext.getYoloMode()) {
+        try {
+          auditService
+            .log({
+              actor: 'system',
+              action: 'approval_auto_granted',
+              details: { runId, toolName: tool.name, toolCallId, reason: 'YOLO mode' },
+              status: 'success',
+            })
+            .catch(() => undefined);
+        } catch {
+          // ignore
+        }
+      } else {
       try {
         await telemetryService.emit({
           eventId: uuidv4(),
@@ -308,6 +339,7 @@ export class ToolRegistry {
         }
 
         return 'User denied execution of this tool.';
+      }
       }
     }
 

@@ -100,10 +100,15 @@ export const AVAILABLE_MODELS: ModelConfig[] = [
   },
 ];
 
+export type AgentMode = 'chat' | 'read' | 'do';
+export type AgentPermissionMode = 'yolo' | 'permissions';
+
 export class AgentService {
   private model: Runnable;
   private currentModelId: string = 'llama-3.1-70b';
   private useActionsPolicy: boolean = false;
+  private agentMode: AgentMode = 'do';
+  private permissionMode: AgentPermissionMode = 'permissions';
   private onStep?: (step: AgentStep) => void;
   private conversationHistory: BaseMessage[] = [];
   private systemPrompt: SystemMessage;
@@ -239,6 +244,37 @@ export class AgentService {
   }
 
   /**
+   * Set the agent mode (chat/read/do)
+   */
+  setAgentMode(mode: AgentMode) {
+    this.agentMode = mode;
+    console.log(`[AgentService] Agent Mode: ${mode}`);
+  }
+
+  getAgentMode(): AgentMode {
+    return this.agentMode;
+  }
+
+  /**
+   * Set the permission mode (yolo/permissions) - only applies in 'do' mode
+   */
+  setPermissionMode(mode: AgentPermissionMode) {
+    this.permissionMode = mode;
+    console.log(`[AgentService] Permission Mode: ${mode}`);
+  }
+
+  getPermissionMode(): AgentPermissionMode {
+    return this.permissionMode;
+  }
+
+  /**
+   * Check if YOLO mode is active (do mode + yolo permissions)
+   */
+  isYoloMode(): boolean {
+    return this.agentMode === 'do' && this.permissionMode === 'yolo';
+  }
+
+  /**
    * Create a model instance from config
    */
   private createModel(modelId: string): Runnable {
@@ -338,6 +374,72 @@ export class AgentService {
   }
 
   async chat(userMessage: string, browserContext?: string): Promise<string> {
+    // Handle different agent modes
+    if (this.agentMode === 'chat') {
+      return this.chatOnly(userMessage);
+    }
+    if (this.agentMode === 'read') {
+      return this.readOnly(userMessage, browserContext);
+    }
+    // 'do' mode - full agentic capabilities
+    return this.doMode(userMessage, browserContext);
+  }
+
+  /**
+   * Chat-only mode: Regular chatbot, no browser access or tools
+   */
+  private async chatOnly(userMessage: string): Promise<string> {
+    const safeUserMessage = this.redactSecrets(userMessage);
+    
+    const chatPrompt = new SystemMessage(`You are a helpful assistant. You are in CHAT mode - you cannot access the browser or use any tools. Just have a helpful conversation with the user. Respond naturally without JSON formatting.`);
+    
+    this.conversationHistory.push(new HumanMessage(safeUserMessage));
+    this.trimConversationHistory();
+    
+    try {
+      const response = await this.model.invoke([chatPrompt, ...this.conversationHistory]);
+      const content = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
+      this.conversationHistory.push(new AIMessage(content));
+      this.trimConversationHistory();
+      return content;
+    } catch (e: any) {
+      return `Error: ${e.message}`;
+    }
+  }
+
+  /**
+   * Read-only mode: Can see browser state but cannot take actions
+   */
+  private async readOnly(userMessage: string, browserContext?: string): Promise<string> {
+    const safeUserMessage = this.redactSecrets(userMessage);
+    let context = browserContext || 'Current browser state: No context provided';
+    context = this.redactSecrets(context);
+    
+    const readPrompt = new SystemMessage(`You are a helpful assistant integrated into a browser. You are in READ mode - you can see what the user sees on their browser, but you CANNOT take any actions or use any tools.
+
+Current browser state:
+${context}
+
+You can answer questions about what's on the page, explain content, summarize information, or help the user understand what they're looking at. But you cannot click, type, navigate, or modify anything. Respond naturally without JSON formatting.`);
+    
+    this.conversationHistory.push(new HumanMessage(safeUserMessage));
+    this.trimConversationHistory();
+    
+    try {
+      const response = await this.model.invoke([readPrompt, ...this.conversationHistory]);
+      const content = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
+      this.conversationHistory.push(new AIMessage(content));
+      this.trimConversationHistory();
+      return content;
+    } catch (e: any) {
+      return `Error: ${e.message}`;
+    }
+  }
+
+  /**
+   * Do mode: Full agentic capabilities with tools
+   */
+  private async doMode(userMessage: string, browserContext?: string): Promise<string> {
     // Fetch tools dynamically to ensure all services have registered their tools
     const tools = toolRegistry.toLangChainTools();
     let usedBrowserTools = false;

@@ -8,6 +8,7 @@ type AgentRunStore = {
     domain?: string;
   };
   observeOnly?: boolean;
+  yoloMode?: boolean;
 };
 
 export class AgentRunContext {
@@ -44,6 +45,17 @@ export class AgentRunContext {
     const store = this.storage.getStore();
     if (store) {
       store.observeOnly = observeOnly;
+    }
+  }
+
+  getYoloMode(): boolean {
+    return this.storage.getStore()?.yoloMode ?? false;
+  }
+
+  setYoloMode(yoloMode: boolean): void {
+    const store = this.storage.getStore();
+    if (store) {
+      store.yoloMode = yoloMode;
     }
   }
 }

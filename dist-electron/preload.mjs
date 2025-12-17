@@ -34,6 +34,10 @@ electron.contextBridge.exposeInMainWorld("agent", {
   getModels: () => electron.ipcRenderer.invoke("agent:get-models"),
   getCurrentModel: () => electron.ipcRenderer.invoke("agent:get-current-model"),
   setModel: (modelId) => electron.ipcRenderer.invoke("agent:set-model", modelId),
+  setMode: (mode) => electron.ipcRenderer.invoke("agent:set-mode", mode),
+  getMode: () => electron.ipcRenderer.invoke("agent:get-mode"),
+  setPermissionMode: (mode) => electron.ipcRenderer.invoke("agent:set-permission-mode", mode),
+  getPermissionMode: () => electron.ipcRenderer.invoke("agent:get-permission-mode"),
   onApprovalRequest: (callback) => {
     const listener = (_, payload) => callback(payload);
     electron.ipcRenderer.on("agent:request-approval", listener);

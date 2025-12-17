@@ -371,8 +371,9 @@ app.whenReady().then(() => {
 
     let response = '';
     try {
+      const yoloMode = agentService.isYoloMode();
       response = await agentRunContext.run(
-        { runId, requesterWebContentsId: event.sender.id, browserContext: { url, domain } },
+        { runId, requesterWebContentsId: event.sender.id, browserContext: { url, domain }, yoloMode },
         async () => {
         return await agentService.chat(message, browserContext);
         }
@@ -421,6 +422,24 @@ app.whenReady().then(() => {
   ipcMain.handle('agent:set-model', async (_, modelId: string) => {
     agentService.setModel(modelId);
     return { success: true, modelId };
+  });
+
+  ipcMain.handle('agent:set-mode', async (_, mode: 'chat' | 'read' | 'do') => {
+    agentService.setAgentMode(mode);
+    return { success: true };
+  });
+
+  ipcMain.handle('agent:get-mode', async () => {
+    return agentService.getAgentMode();
+  });
+
+  ipcMain.handle('agent:set-permission-mode', async (_, mode: 'yolo' | 'permissions') => {
+    agentService.setPermissionMode(mode);
+    return { success: true };
+  });
+
+  ipcMain.handle('agent:get-permission-mode', async () => {
+    return agentService.getPermissionMode();
   });
 
   // Handler for agent to navigate when no webview exists (e.g., New Tab page)

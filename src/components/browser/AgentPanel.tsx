@@ -1,7 +1,8 @@
 import ReactMarkdown from 'react-markdown';
 import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
-import { Send, User, Bot, AlertTriangle, Check, X, ChevronDown, Brain, Zap, RotateCcw } from 'lucide-react';
+import { Send, User, Bot, AlertTriangle, Check, X, ChevronDown, Brain, Zap, RotateCcw, MessageSquare, Eye, Play, Shield, Rocket } from 'lucide-react';
+import { useBrowserStore } from '@/lib/store';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -25,6 +26,7 @@ interface ModelInfo {
 }
 
 export function AgentPanel() {
+  const { agentMode, agentPermissionMode, setAgentMode, setAgentPermissionMode } = useBrowserStore();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -152,6 +154,26 @@ export function AgentPanel() {
           role: 'assistant', 
           content: approved ? `✅ Approved execution of ${approvalRequest.toolName}` : `❌ Denied execution of ${approvalRequest.toolName}` 
       }]);
+    }
+  };
+
+  const handleModeChange = async (mode: 'chat' | 'read' | 'do') => {
+    if (!window.agent) return;
+    try {
+      await window.agent.setMode(mode);
+      setAgentMode(mode);
+    } catch (err) {
+      console.error('Failed to change agent mode:', err);
+    }
+  };
+
+  const handlePermissionModeChange = async (mode: 'yolo' | 'permissions') => {
+    if (!window.agent) return;
+    try {
+      await window.agent.setPermissionMode(mode);
+      setAgentPermissionMode(mode);
+    } catch (err) {
+      console.error('Failed to change permission mode:', err);
     }
   };
 
@@ -410,6 +432,74 @@ export function AgentPanel() {
                     </div>
                 )}
             </div>
+
+            {/* Agent Mode Selector */}
+            <div className="flex items-center gap-1 p-1 bg-secondary/20 rounded-md border border-border/30">
+                <button
+                    onClick={() => handleModeChange('chat')}
+                    className={cn(
+                        "flex-1 flex items-center justify-center gap-1 px-2 py-1 text-[10px] rounded transition-colors",
+                        agentMode === 'chat' ? "bg-primary/20 text-primary" : "text-muted-foreground hover:text-foreground hover:bg-secondary/50"
+                    )}
+                    title="Chat mode - Regular chatbot, no browser access"
+                >
+                    <MessageSquare size={10} />
+                    <span>Chat</span>
+                </button>
+                <button
+                    onClick={() => handleModeChange('read')}
+                    className={cn(
+                        "flex-1 flex items-center justify-center gap-1 px-2 py-1 text-[10px] rounded transition-colors",
+                        agentMode === 'read' ? "bg-primary/20 text-primary" : "text-muted-foreground hover:text-foreground hover:bg-secondary/50"
+                    )}
+                    title="Read mode - Can see browser, no actions"
+                >
+                    <Eye size={10} />
+                    <span>Read</span>
+                </button>
+                <button
+                    onClick={() => handleModeChange('do')}
+                    className={cn(
+                        "flex-1 flex items-center justify-center gap-1 px-2 py-1 text-[10px] rounded transition-colors",
+                        agentMode === 'do' ? "bg-primary/20 text-primary" : "text-muted-foreground hover:text-foreground hover:bg-secondary/50"
+                    )}
+                    title="Do mode - Full agentic actions"
+                >
+                    <Play size={10} />
+                    <span>Do</span>
+                </button>
+            </div>
+
+            {/* YOLO Toggle - Only visible in Do mode */}
+            {agentMode === 'do' && (
+                <div className="flex items-center gap-2 p-1.5 bg-secondary/10 rounded-md border border-border/20">
+                    <span className="text-[10px] text-muted-foreground">Permissions:</span>
+                    <div className="flex items-center gap-1 flex-1">
+                        <button
+                            onClick={() => handlePermissionModeChange('permissions')}
+                            className={cn(
+                                "flex-1 flex items-center justify-center gap-1 px-2 py-0.5 text-[10px] rounded transition-colors",
+                                agentPermissionMode === 'permissions' ? "bg-blue-500/20 text-blue-400" : "text-muted-foreground hover:text-foreground hover:bg-secondary/50"
+                            )}
+                            title="Ask for permission before actions"
+                        >
+                            <Shield size={9} />
+                            <span>Safe</span>
+                        </button>
+                        <button
+                            onClick={() => handlePermissionModeChange('yolo')}
+                            className={cn(
+                                "flex-1 flex items-center justify-center gap-1 px-2 py-0.5 text-[10px] rounded transition-colors",
+                                agentPermissionMode === 'yolo' ? "bg-amber-500/20 text-amber-400" : "text-muted-foreground hover:text-foreground hover:bg-secondary/50"
+                            )}
+                            title="YOLO mode - No permission prompts"
+                        >
+                            <Rocket size={9} />
+                            <span>YOLO</span>
+                        </button>
+                    </div>
+                </div>
+            )}
             
             {/* Footer controls */}
             <div className="flex items-center justify-between text-[10px] text-muted-foreground">

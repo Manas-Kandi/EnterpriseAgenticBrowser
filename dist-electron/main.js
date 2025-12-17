@@ -41401,6 +41401,16 @@ class AgentRunContext {
       store.observeOnly = observeOnly;
     }
   }
+  getYoloMode() {
+    var _a3;
+    return ((_a3 = this.storage.getStore()) == null ? void 0 : _a3.yoloMode) ?? false;
+  }
+  setYoloMode(yoloMode) {
+    const store = this.storage.getStore();
+    if (store) {
+      store.yoloMode = yoloMode;
+    }
+  }
 }
 const agentRunContext = new AgentRunContext();
 class TelemetryService {
@@ -42055,6 +42065,96 @@ class ToolRegistry {
         return `Operation denied by policy: ${policyEvaluation.reason}`;
       }
       if (policyEvaluation.decision === PolicyDecision.NEEDS_APPROVAL && approvalHandler) {
+        if (agentRunContext.getYoloMode()) {
+          try {
+            auditService.log({
+              actor: "system",
+              action: "approval_auto_granted",
+              details: { runId, toolName: tool2.name, toolCallId, reason: "YOLO mode" },
+              status: "success"
+            }).catch(() => void 0);
+          } catch {
+          }
+        } else {
+          try {
+            await telemetryService.emit({
+              eventId: v4$2(),
+              runId,
+              ts: (/* @__PURE__ */ new Date()).toISOString(),
+              type: "approval_request",
+              name: tool2.name,
+              data: { toolCallId, argsHash, riskLevel: policyEvaluation.riskLevel }
+            });
+          } catch {
+          }
+          try {
+            auditService.log({
+              actor: "system",
+              action: "approval_request",
+              details: { runId, toolName: tool2.name, toolCallId, argsHash, reason: policyEvaluation.reason },
+              status: "pending"
+            }).catch(() => void 0);
+          } catch {
+          }
+          const approved = await approvalHandler(tool2.name, arg);
+          try {
+            await telemetryService.emit({
+              eventId: v4$2(),
+              runId,
+              ts: (/* @__PURE__ */ new Date()).toISOString(),
+              type: "approval_decision",
+              name: tool2.name,
+              data: { toolCallId, argsHash, approved }
+            });
+          } catch {
+          }
+          try {
+            auditService.log({
+              actor: "system",
+              action: "approval_decision",
+              details: { runId, toolName: tool2.name, toolCallId, argsHash, approved },
+              status: approved ? "success" : "failure"
+            }).catch(() => void 0);
+          } catch {
+          }
+          if (!approved) {
+            const durationMs = Date.now() - startedAt;
+            try {
+              await telemetryService.emit({
+                eventId: v4$2(),
+                runId,
+                ts: (/* @__PURE__ */ new Date()).toISOString(),
+                type: "tool_call_end",
+                name: tool2.name,
+                data: { toolCallId, argsHash, durationMs, error: "User denied" }
+              });
+            } catch {
+            }
+            try {
+              auditService.log({
+                actor: "user",
+                action: "tool_call_denied",
+                details: { runId, toolName: tool2.name, toolCallId },
+                status: "failure"
+              }).catch(() => void 0);
+            } catch {
+            }
+            return "User denied execution of this tool.";
+          }
+        }
+      }
+    } else if (tool2.requiresApproval && approvalHandler) {
+      if (agentRunContext.getYoloMode()) {
+        try {
+          auditService.log({
+            actor: "system",
+            action: "approval_auto_granted",
+            details: { runId, toolName: tool2.name, toolCallId, reason: "YOLO mode" },
+            status: "success"
+          }).catch(() => void 0);
+        } catch {
+        }
+      } else {
         try {
           await telemetryService.emit({
             eventId: v4$2(),
@@ -42062,7 +42162,7 @@ class ToolRegistry {
             ts: (/* @__PURE__ */ new Date()).toISOString(),
             type: "approval_request",
             name: tool2.name,
-            data: { toolCallId, argsHash, riskLevel: policyEvaluation.riskLevel }
+            data: { toolCallId, argsHash }
           });
         } catch {
         }
@@ -42070,7 +42170,7 @@ class ToolRegistry {
           auditService.log({
             actor: "system",
             action: "approval_request",
-            details: { runId, toolName: tool2.name, toolCallId, argsHash, reason: policyEvaluation.reason },
+            details: { runId, toolName: tool2.name, toolCallId, argsHash },
             status: "pending"
           }).catch(() => void 0);
         } catch {
@@ -42120,72 +42220,6 @@ class ToolRegistry {
           }
           return "User denied execution of this tool.";
         }
-      }
-    } else if (tool2.requiresApproval && approvalHandler) {
-      try {
-        await telemetryService.emit({
-          eventId: v4$2(),
-          runId,
-          ts: (/* @__PURE__ */ new Date()).toISOString(),
-          type: "approval_request",
-          name: tool2.name,
-          data: { toolCallId, argsHash }
-        });
-      } catch {
-      }
-      try {
-        auditService.log({
-          actor: "system",
-          action: "approval_request",
-          details: { runId, toolName: tool2.name, toolCallId, argsHash },
-          status: "pending"
-        }).catch(() => void 0);
-      } catch {
-      }
-      const approved = await approvalHandler(tool2.name, arg);
-      try {
-        await telemetryService.emit({
-          eventId: v4$2(),
-          runId,
-          ts: (/* @__PURE__ */ new Date()).toISOString(),
-          type: "approval_decision",
-          name: tool2.name,
-          data: { toolCallId, argsHash, approved }
-        });
-      } catch {
-      }
-      try {
-        auditService.log({
-          actor: "system",
-          action: "approval_decision",
-          details: { runId, toolName: tool2.name, toolCallId, argsHash, approved },
-          status: approved ? "success" : "failure"
-        }).catch(() => void 0);
-      } catch {
-      }
-      if (!approved) {
-        const durationMs = Date.now() - startedAt;
-        try {
-          await telemetryService.emit({
-            eventId: v4$2(),
-            runId,
-            ts: (/* @__PURE__ */ new Date()).toISOString(),
-            type: "tool_call_end",
-            name: tool2.name,
-            data: { toolCallId, argsHash, durationMs, error: "User denied" }
-          });
-        } catch {
-        }
-        try {
-          auditService.log({
-            actor: "user",
-            action: "tool_call_denied",
-            details: { runId, toolName: tool2.name, toolCallId },
-            status: "failure"
-          }).catch(() => void 0);
-        } catch {
-        }
-        return "User denied execution of this tool.";
       }
     }
     try {
@@ -42748,6 +42782,8 @@ const _AgentService = class _AgentService {
     __publicField(this, "model");
     __publicField(this, "currentModelId", "llama-3.1-70b");
     __publicField(this, "useActionsPolicy", false);
+    __publicField(this, "agentMode", "do");
+    __publicField(this, "permissionMode", "permissions");
     __publicField(this, "onStep");
     __publicField(this, "conversationHistory", []);
     __publicField(this, "systemPrompt");
@@ -42856,6 +42892,32 @@ const _AgentService = class _AgentService {
     return this.useActionsPolicy;
   }
   /**
+   * Set the agent mode (chat/read/do)
+   */
+  setAgentMode(mode) {
+    this.agentMode = mode;
+    console.log(`[AgentService] Agent Mode: ${mode}`);
+  }
+  getAgentMode() {
+    return this.agentMode;
+  }
+  /**
+   * Set the permission mode (yolo/permissions) - only applies in 'do' mode
+   */
+  setPermissionMode(mode) {
+    this.permissionMode = mode;
+    console.log(`[AgentService] Permission Mode: ${mode}`);
+  }
+  getPermissionMode() {
+    return this.permissionMode;
+  }
+  /**
+   * Check if YOLO mode is active (do mode + yolo permissions)
+   */
+  isYoloMode() {
+    return this.agentMode === "do" && this.permissionMode === "yolo";
+  }
+  /**
    * Create a model instance from config
    */
   createModel(modelId) {
@@ -42942,6 +43004,61 @@ const _AgentService = class _AgentService {
     }
   }
   async chat(userMessage, browserContext) {
+    if (this.agentMode === "chat") {
+      return this.chatOnly(userMessage);
+    }
+    if (this.agentMode === "read") {
+      return this.readOnly(userMessage, browserContext);
+    }
+    return this.doMode(userMessage, browserContext);
+  }
+  /**
+   * Chat-only mode: Regular chatbot, no browser access or tools
+   */
+  async chatOnly(userMessage) {
+    const safeUserMessage = this.redactSecrets(userMessage);
+    const chatPrompt = new SystemMessage(`You are a helpful assistant. You are in CHAT mode - you cannot access the browser or use any tools. Just have a helpful conversation with the user. Respond naturally without JSON formatting.`);
+    this.conversationHistory.push(new HumanMessage(safeUserMessage));
+    this.trimConversationHistory();
+    try {
+      const response = await this.model.invoke([chatPrompt, ...this.conversationHistory]);
+      const content = typeof response.content === "string" ? response.content : JSON.stringify(response.content);
+      this.conversationHistory.push(new AIMessage(content));
+      this.trimConversationHistory();
+      return content;
+    } catch (e) {
+      return `Error: ${e.message}`;
+    }
+  }
+  /**
+   * Read-only mode: Can see browser state but cannot take actions
+   */
+  async readOnly(userMessage, browserContext) {
+    const safeUserMessage = this.redactSecrets(userMessage);
+    let context = browserContext || "Current browser state: No context provided";
+    context = this.redactSecrets(context);
+    const readPrompt = new SystemMessage(`You are a helpful assistant integrated into a browser. You are in READ mode - you can see what the user sees on their browser, but you CANNOT take any actions or use any tools.
+
+Current browser state:
+${context}
+
+You can answer questions about what's on the page, explain content, summarize information, or help the user understand what they're looking at. But you cannot click, type, navigate, or modify anything. Respond naturally without JSON formatting.`);
+    this.conversationHistory.push(new HumanMessage(safeUserMessage));
+    this.trimConversationHistory();
+    try {
+      const response = await this.model.invoke([readPrompt, ...this.conversationHistory]);
+      const content = typeof response.content === "string" ? response.content : JSON.stringify(response.content);
+      this.conversationHistory.push(new AIMessage(content));
+      this.trimConversationHistory();
+      return content;
+    } catch (e) {
+      return `Error: ${e.message}`;
+    }
+  }
+  /**
+   * Do mode: Full agentic capabilities with tools
+   */
+  async doMode(userMessage, browserContext) {
     var _a3, _b;
     const tools = toolRegistry.toLangChainTools();
     let usedBrowserTools = false;
@@ -45818,8 +45935,9 @@ app.whenReady().then(() => {
     }
     let response = "";
     try {
+      const yoloMode = agentService.isYoloMode();
       response = await agentRunContext.run(
-        { runId, requesterWebContentsId: event.sender.id, browserContext: { url, domain } },
+        { runId, requesterWebContentsId: event.sender.id, browserContext: { url, domain }, yoloMode },
         async () => {
           return await agentService.chat(message, browserContext);
         }
@@ -45858,6 +45976,20 @@ app.whenReady().then(() => {
   ipcMain.handle("agent:set-model", async (_, modelId) => {
     agentService.setModel(modelId);
     return { success: true, modelId };
+  });
+  ipcMain.handle("agent:set-mode", async (_, mode) => {
+    agentService.setAgentMode(mode);
+    return { success: true };
+  });
+  ipcMain.handle("agent:get-mode", async () => {
+    return agentService.getAgentMode();
+  });
+  ipcMain.handle("agent:set-permission-mode", async (_, mode) => {
+    agentService.setPermissionMode(mode);
+    return { success: true };
+  });
+  ipcMain.handle("agent:get-permission-mode", async () => {
+    return agentService.getPermissionMode();
   });
   ipcMain.handle("browser:navigate-tab", async (_, url) => {
     const win2 = BrowserWindow.getAllWindows()[0];
