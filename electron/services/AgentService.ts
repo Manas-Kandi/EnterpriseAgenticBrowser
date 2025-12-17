@@ -321,6 +321,10 @@ export class AgentService {
       this.onStep = handler;
   }
 
+  clearStepHandler() {
+      this.onStep = undefined;
+  }
+
   private emitStep(type: AgentStep['type'], content: string, metadata?: any) {
       if (this.onStep) {
           const runId = agentRunContext.getRunId() ?? undefined;

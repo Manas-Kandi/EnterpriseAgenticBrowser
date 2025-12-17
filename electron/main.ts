@@ -12,7 +12,7 @@ import { browserTargetService } from './services/BrowserTargetService'
 import { agentRunContext } from './services/AgentRunContext'
 import { telemetryService } from './services/TelemetryService'
 import { PolicyService } from './services/PolicyService'
-import { benchmarkService } from './services/BenchmarkService'
+import { benchmarkService, BenchmarkResult } from './services/BenchmarkService'
 import './services/CodeReaderService'
 import './integrations/mock/MockJiraConnector'; // Initialize Mock Jira
 import './integrations/mock/MockConfluenceConnector'; // Initialize Mock Confluence
@@ -238,6 +238,16 @@ app.whenReady().then(() => {
   ipcMain.handle('benchmark:runSuite', async (_, filter?: string) => {
     const results = await benchmarkService.runSuite(filter);
     return results;
+  });
+
+  ipcMain.handle('benchmark:runSuiteWithFlag', async (_, filter?: string, enableActionsPolicy?: boolean) => {
+    const results = await benchmarkService.runSuite(filter, enableActionsPolicy);
+    return results;
+  });
+
+  ipcMain.handle('benchmark:exportTrajectories', async (_, results: BenchmarkResult[]) => {
+    const filePath = await benchmarkService.exportTrajectories(results);
+    return { success: true, path: filePath };
   });
 
   // Agent IPC Handlers
