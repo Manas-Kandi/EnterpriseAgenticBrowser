@@ -65,6 +65,12 @@ A living document tracking insights about LLM model behavior in the Enterprise B
 *Discovered: 2024-12-17*
 *Task: Bitcoin price on CoinMarketCap - data was present but not extracted*
 
+### 6. Model Hallucination: Claiming Actions Not Taken
+> **The model may claim "I have navigated to X" without actually calling browser_navigate. This is a hallucination issue where the model skips required tool calls and jumps to final_response. Added explicit "NO HALLUCINATION RULE" to system prompt.**
+
+*Discovered: 2024-12-17*
+*Task: Bitcoin price + Google search - model got price via API but claimed to navigate without actually doing it*
+
 ---
 
 ## Failure Patterns

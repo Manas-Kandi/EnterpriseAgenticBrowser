@@ -33256,6 +33256,20 @@ You can answer questions about what's on the page, explain content, summarize in
         IMPORTANT: If the user says "go to" or "click" or "navigate", they want to SEE the page in the browser.
         In this case, use the API to get the data quickly, then ALSO navigate the browser to show them the result.
         
+        CRITICAL - NO HALLUCINATION RULE:
+        - NEVER claim you have done something you haven't actually done.
+        - If the user asks you to "go to Google and search", you MUST call browser_navigate BEFORE saying you did it.
+        - Do NOT say "I have navigated to X" unless you actually called browser_navigate and got a success response.
+        - If a task has multiple steps (e.g., "get price THEN search Google"), you must complete ALL steps with actual tool calls.
+        
+        Example: Multi-Step Task (Bitcoin price + Google search)
+        User: "Find the Bitcoin price, then go to Google and search for Bitcoin news"
+        Assistant: { "tool": "api_crypto_price", "args": { "coin": "bitcoin" } }
+        User: Tool Output: { "price_usd": 86077 }
+        Assistant: { "tool": "browser_navigate", "args": { "url": "https://www.google.com/search?q=Bitcoin+news+today" } }
+        User: Tool Output: "Navigated to https://www.google.com/search?q=Bitcoin+news+today"
+        Assistant: { "tool": "final_response", "args": { "message": "Bitcoin is currently $86,077. I've navigated to Google search results for 'Bitcoin news today'." } }
+
         Example: GitHub with Navigation
         User: "Go to GitHub, search for langchain, click the first repo, tell me the stars"
         Assistant: { "tool": "api_github_search", "args": { "query": "langchain", "sort": "stars", "limit": 1 } }
