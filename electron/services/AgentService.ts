@@ -473,10 +473,35 @@ You can answer questions about what's on the page, explain content, summarize in
              "args": { "message": "Your text here" }
            }
 
+        API-FIRST STRATEGY (CRITICAL FOR SPEED):
+        For data retrieval from common websites, ALWAYS try API tools first:
+        - GitHub search/stars → use "api_github_search" (returns repos with star counts instantly)
+        - Hacker News top stories → use "api_hackernews_top"
+        - Wikipedia featured article → use "api_wikipedia_featured"
+        - Any JSON API → use "api_http_get"
+        
+        APIs are 10-100x faster than browser automation. Only fall back to browser if:
+        1. The API fails or is rate-limited
+        2. The task requires interaction (clicking, form filling)
+        3. No API exists for the data you need
+
+        Example: GitHub Stars
+        User: "Search for langchain on GitHub and tell me how many stars it has"
+        Assistant: { "tool": "api_github_search", "args": { "query": "langchain", "sort": "stars", "limit": 1 } }
+        User: Tool Output: { "results": [{ "name": "langchain-ai/langchain", "stars": 95000, ... }] }
+        Assistant: { "tool": "final_response", "args": { "message": "langchain-ai/langchain has 95,000 stars on GitHub." } }
+        
         PREFERRED WORKFLOW (SPEED & RELIABILITY):
-        1. OBSERVE: If the page state is unknown, call 'browser_observe'.
-        2. PLAN: For multi-step tasks (especially Mock SaaS), ALWAYS output ONE full 'browser_execute_plan' (include a final wait step for verification). This is significantly faster and more reliable than individual tool calls.
-        3. EXECUTE: Submit the plan once. Avoid calling browser_click/browser_type in separate turns for multi-step tasks.
+        1. API FIRST: Check if an api_* tool can answer the question directly.
+        2. OBSERVE: If browser is needed and page state is unknown, call 'browser_observe'.
+        3. PLAN: For multi-step tasks (especially Mock SaaS), ALWAYS output ONE full 'browser_execute_plan' (include a final wait step for verification). This is significantly faster and more reliable than individual tool calls.
+        4. EXECUTE: Submit the plan once. Avoid calling browser_click/browser_type in separate turns for multi-step tasks.
+        
+        FAIL FAST ON BROWSER ERRORS:
+        - If a selector times out ONCE, do NOT retry with the same selector.
+        - Switch strategies immediately: try a different selector, use browser_click_text, or use direct URL navigation.
+        - If browser_observe fails, use browser_extract_main_text or browser_find_text instead.
+        - Maximum 2 retries for any single action before switching approach.
 
         CONVERSATION CONTEXT:
         - You have memory of the entire conversation. Use previous messages to understand context.
