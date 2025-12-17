@@ -19,6 +19,12 @@ export class BrowserAutomationService {
     | { loadedAt: number; routes: Set<string> }
     | null = null;
 
+  private observeCache = new Map<number, { url: string; data: any; timestamp: number }>();
+
+  private invalidateCache(webContentsId: number) {
+    this.observeCache.delete(webContentsId);
+  }
+
   private async delay(ms: number) {
     await new Promise((resolve) => setTimeout(resolve, ms));
   }
@@ -115,19 +121,31 @@ export class BrowserAutomationService {
     const observeSchema = z.object({
       scope: z.enum(['main', 'document']).optional().describe('Where to look for elements (default: main)'),
       maxElements: z.number().optional().describe('Max interactive elements to return (default: 80)'),
+      forceRefresh: z.boolean().optional().describe('Ignore cache and force a fresh observation'),
     });
 
     // Tool: Observe
     const observeTool: AgentTool = {
       name: 'browser_observe',
       description:
-        'Analyze the current page URL/title and return visible interactive elements. Defaults to main content to avoid header/nav noise.',
+        'Analyze the current page URL/title and return visible interactive elements. Defaults to main content to avoid header/nav noise. Caches results for performance; use forceRefresh to bypass.',
       schema: observeSchema,
       execute: async (args: unknown) => {
-        const { scope, maxElements } = observeSchema.parse(args ?? {});
+        const { scope, maxElements, forceRefresh } = observeSchema.parse(args ?? {});
         try {
             const target = await this.getTarget();
-            const url = target.getURL();
+            const targetId = target.id;
+            const currentUrl = target.getURL();
+
+            // Check cache
+            if (!forceRefresh) {
+              const cached = this.observeCache.get(targetId);
+              if (cached && cached.url === currentUrl && Date.now() - cached.timestamp < 2000) {
+                return JSON.stringify({ ...cached.data, _meta: { cached: true, timestamp: cached.timestamp } }, null, 2);
+              }
+            }
+
+            const url = currentUrl;
             const title = await target.executeJavaScript(`document.title`, true);
 
             const elements = await target.executeJavaScript(
@@ -281,7 +299,9 @@ export class BrowserAutomationService {
               true
             );
 
-            return JSON.stringify({ url, title, ...elements }, null, 2);
+            const resultData = { url, title, ...elements };
+            this.observeCache.set(targetId, { url, data: resultData, timestamp: Date.now() });
+            return JSON.stringify(resultData, null, 2);
         } catch (e: any) {
             return `Failed to observe page: ${e.message}`;
         }
@@ -297,6 +317,7 @@ export class BrowserAutomationService {
         const target = await this.getTarget();
         if (target.canGoBack()) {
           target.goBack();
+          this.invalidateCache(target.id);
           await this.delay(500);
           return 'Navigated back';
         }
@@ -312,6 +333,7 @@ export class BrowserAutomationService {
         const target = await this.getTarget();
         if (target.canGoForward()) {
           target.goForward();
+          this.invalidateCache(target.id);
           await this.delay(500);
           return 'Navigated forward';
         }
@@ -326,6 +348,7 @@ export class BrowserAutomationService {
       execute: async () => {
         const target = await this.getTarget();
         target.reload();
+        this.invalidateCache(target.id);
         await this.delay(1000);
         return 'Page reloading triggered';
       },
@@ -394,6 +417,7 @@ export class BrowserAutomationService {
               // ignore URL parse issues; loadURL will handle
             }
 
+            this.invalidateCache(target.id);
             const loadTimeout = timeoutMs ?? 8000;
             try {
               await target.loadURL(url);
@@ -443,6 +467,7 @@ export class BrowserAutomationService {
       schema: scrollSchema,
       execute: async ({ selector, direction, amount }) => {
         const target = await this.getTarget();
+        this.invalidateCache(target.id);
         if (selector) {
           await target.executeJavaScript(
             `(() => {
@@ -479,6 +504,7 @@ export class BrowserAutomationService {
         try {
           target.sendInputEvent({ type: 'keyDown', keyCode: key });
           target.sendInputEvent({ type: 'keyUp', keyCode: key });
+          this.invalidateCache(target.id);
           return `Pressed key: ${key}`;
         } catch (e: any) {
           return `Failed to press key: ${e.message}`;
@@ -560,6 +586,7 @@ export class BrowserAutomationService {
              if (el) el.focus();
            })()`
         );
+        this.invalidateCache(target.id);
         return `Focused "${selector}"`;
       },
     };
@@ -583,6 +610,7 @@ export class BrowserAutomationService {
              }
            })()`
         );
+        this.invalidateCache(target.id);
         return `Cleared input "${selector}"`;
       },
     };
@@ -674,6 +702,7 @@ export class BrowserAutomationService {
             if (!result.ok) {
               return `Failed to click ${selector}: ${result.error}`;
             }
+            this.invalidateCache(target.id);
             return `Clicked element ${selector}`;
         } catch (e: any) {
             return `Failed to click ${selector}: ${e.message}`;
@@ -736,6 +765,7 @@ export class BrowserAutomationService {
               })()`,
               true
             );
+            this.invalidateCache(target.id);
             return `Typed into ${selector}. Current value: ${JSON.stringify(typedValue)}`;
         } catch (e: any) {
              return `Failed to type into ${selector}: ${e.message}`;
@@ -952,6 +982,7 @@ export class BrowserAutomationService {
             })()`,
             true
           );
+          this.invalidateCache(target.id);
           return `Selected value ${JSON.stringify(selected)} on ${selector}`;
         } catch (e: any) {
           return `Failed to select on ${selector}: ${e.message}`;
