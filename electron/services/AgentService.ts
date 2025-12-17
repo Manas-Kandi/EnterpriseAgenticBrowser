@@ -103,6 +103,32 @@ export class AgentService {
   // 50 messages ≈ 12-25 turns of context
   private static readonly MAX_HISTORY_MESSAGES = 50;
 
+  /**
+   * Redact common secrets from text before sending to LLM
+   */
+  private redactSecrets(text: string): string {
+    if (!text) return text;
+    let redacted = text;
+
+    const patterns = [
+      // Bearer tokens
+      { re: /Bearer\s+[a-zA-Z0-9\-\._]+/gi, repl: 'Bearer [REDACTED_TOKEN]' },
+      // OpenAI sk- keys
+      { re: /sk-[a-zA-Z0-9]{32,}/g, repl: '[REDACTED_OPENAI_KEY]' },
+      // AWS Access Keys
+      { re: /AKIA[0-9A-Z]{16}/g, repl: '[REDACTED_AWS_KEY]' },
+      // Generic "password": "..." patterns (loose match)
+      { re: /"(password|client_secret|client_secret|access_token|id_token)"\s*:\s*"[^"]+"/gi, repl: '"$1": "[REDACTED]"' },
+      // Private Keys
+      { re: /-----BEGIN [A-Z]+ PRIVATE KEY-----[\s\S]*?-----END [A-Z]+ PRIVATE KEY-----/g, repl: '[REDACTED_PRIVATE_KEY]' },
+    ];
+
+    for (const { re, repl } of patterns) {
+      redacted = redacted.replace(re, repl);
+    }
+    return redacted;
+  }
+
   private extractJsonObject(input: string): string | null {
     const text = input.replace(/```json/g, '').replace(/```/g, '').trim();
     const start = text.indexOf('{');
@@ -273,7 +299,10 @@ export class AgentService {
     
     try {
       // Use provided browser context or default
-      const context = browserContext || 'Current browser state: No context provided';
+      let context = browserContext || 'Current browser state: No context provided';
+      context = this.redactSecrets(context);
+      
+      const safeUserMessage = this.redactSecrets(userMessage);
       
       // Build system prompt with tools (refresh each call in case tools changed)
       this.systemPrompt = new SystemMessage(`You are a helpful enterprise assistant integrated into a browser. 
@@ -369,7 +398,7 @@ export class AgentService {
         `);
       
       // Add user message to conversation history with browser context
-      const contextualUserMessage = new HumanMessage(`[${context}]\n\nUser request: ${userMessage}`);
+      const contextualUserMessage = new HumanMessage(`[${context}]\n\nUser request: ${safeUserMessage}`);
       this.conversationHistory.push(contextualUserMessage);
       
       // Trim history if it's getting too long
