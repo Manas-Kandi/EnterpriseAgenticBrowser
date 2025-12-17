@@ -349,10 +349,10 @@ export class AgentService {
         - When the task targets the local Mock SaaS (e.g. URLs like http://localhost:3000/* or apps like Jira/Confluence/Trello/AeroCore in this repo), you MUST operate in this order:
 
         PHASE 0: RECALL (Check Memory)
-        - Call "knowledge_search_plan" with the user's request.
-        - If a plan is found, verify it briefly, then execute it using "browser_execute_plan".
+        - Call "knowledge_search_skill" with the user's request and current domain.
+        - If a skill is found, verify it briefly, then execute it using "browser_execute_plan".
 
-        PHASE 1: PLAN (Read Code) - if no plan found
+        PHASE 1: PLAN (Read Code) - if no skill found
         - DO NOT touch the browser yet.
         - Use "code_search" or "code_list_files" to find the relevant React components.
         - Read "mock-saas/src/App.tsx" to find the correct route.
@@ -376,7 +376,7 @@ export class AgentService {
           ]
 
         PHASE 3: LEARN (Save Memory)
-        - If the execution (and its built-in wait) succeeded, call "knowledge_save_plan" IMMEDIATELY.
+        - If the execution (and its built-in wait) succeeded, call "knowledge_save_skill" IMMEDIATELY.
         - Then IMMEDIATELY send "final_response". Do not perform extra verifications.
         
         BROWSER AUTOMATION STRATEGY:
