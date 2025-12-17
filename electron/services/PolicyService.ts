@@ -20,6 +20,7 @@ export interface PolicyContext {
   url?: string;
   domain?: string;
   userMode?: 'standard' | 'developer' | 'admin';
+  observeOnly?: boolean;
   runId?: string;
 }
 
@@ -63,6 +64,7 @@ const TOOL_RISK_LEVELS: Record<string, RiskLevel> = {
   'browser_submit_form': RiskLevel.MEDIUM,
   'browser_clear_form': RiskLevel.MEDIUM,
   'browser_upload_file': RiskLevel.HIGH,
+  'browser_extract_main_text': RiskLevel.MEDIUM, // Extraction is risky but read-only
   
   // Complex browser operations - HIGH risk
   'browser_execute_plan': RiskLevel.HIGH,
@@ -132,6 +134,53 @@ export class PolicyService {
   }
 
   private initializeDefaultRules() {
+    // Rule 0: Observe-only mode enforcement (Highest Priority)
+    this.addRule({
+      name: 'observe-only-enforcement',
+      description: 'Block state-modifying tools in observe-only mode',
+      priority: 1000,
+      match: (ctx) => Boolean(ctx.observeOnly),
+      evaluate: (ctx) => {
+        const allowedTools = [
+          'browser_observe',
+          'browser_get_page_info',
+          'browser_navigate', // Allowed to move around to observe
+          'browser_go_back',
+          'browser_go_forward',
+          'browser_reload',
+          'browser_scroll',
+          'browser_wait_for_selector',
+          'browser_wait_for_url',
+          'browser_wait_for_text',
+          'browser_wait_for_text_in',
+          'browser_get_text',
+          'browser_find_text',
+          'browser_extract_main_text',
+          'browser_screenshot',
+          'code_read_file',
+          'code_list_files',
+          'code_search',
+        ];
+
+        if (!allowedTools.includes(ctx.toolName)) {
+          return {
+            decision: PolicyDecision.DENY,
+            riskLevel: RiskLevel.HIGH,
+            reason: 'Tool execution denied: Observe-only mode is active',
+            matchedRule: 'observe-only-enforcement',
+          };
+        }
+
+        // If allowed, continue to other rules (e.g. domain checks)
+        return {
+          decision: PolicyDecision.ALLOW,
+          riskLevel: RiskLevel.LOW,
+          reason: 'Tool allowed in observe-only mode (pending further checks)',
+          matchedRule: 'observe-only-enforcement',
+        };
+      },
+    });
+
     // Rule 1: Explicit deny for dangerous operations
     this.addRule({
       name: 'dangerous-operations-deny',

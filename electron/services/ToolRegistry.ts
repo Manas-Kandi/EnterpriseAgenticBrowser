@@ -109,6 +109,7 @@ export class ToolRegistry {
               url: browserContext?.url,
               domain: browserContext?.domain,
               userMode: 'standard', // TODO: Map from user settings (personal->standard, dev->developer, add admin mode)
+              observeOnly: agentRunContext.getObserveOnly(),
               runId,
             };
             

@@ -7,6 +7,7 @@ type AgentRunStore = {
     url?: string;
     domain?: string;
   };
+  observeOnly?: boolean;
 };
 
 export class AgentRunContext {
@@ -32,6 +33,17 @@ export class AgentRunContext {
     const store = this.storage.getStore();
     if (store) {
       store.browserContext = context;
+    }
+  }
+
+  getObserveOnly(): boolean {
+    return this.storage.getStore()?.observeOnly ?? false;
+  }
+
+  setObserveOnly(observeOnly: boolean): void {
+    const store = this.storage.getStore();
+    if (store) {
+      store.observeOnly = observeOnly;
     }
   }
 }
