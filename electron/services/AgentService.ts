@@ -209,15 +209,50 @@ export class AgentService {
     const parsedRelaxed = tryParse(relaxed);
     if (parsedRelaxed) return parsedRelaxed;
 
+    // Try fixing common JSON issues from thinking models
+    // 1. Unescaped newlines in strings
+    const fixedNewlines = candidate.replace(/:\s*"([^"]*)\n([^"]*)"/g, ': "$1\\n$2"');
+    const parsedNewlines = tryParse(fixedNewlines);
+    if (parsedNewlines) return parsedNewlines;
+
+    // 2. Single quotes instead of double quotes
+    const fixedQuotes = candidate.replace(/'/g, '"');
+    const parsedQuotes = tryParse(fixedQuotes);
+    if (parsedQuotes) return parsedQuotes;
+
     // Very loose fallback: if it *looks* like a final_response, salvage a best-effort tool object.
-    // This is intentionally conservative; it exists to avoid burning turns after a verified UI outcome.
+    // Extended to handle any tool, not just final_response
     const toolMatch = cleaned.match(/"tool"\s*:\s*"([^"]+)"/);
     if (!toolMatch) return null;
     const tool = toolMatch[1];
-    if (tool !== 'final_response') return null;
-    const messageMatch = cleaned.match(/"message"\s*:\s*"([\s\S]*?)"\s*(?:,|\})/);
-    const message = messageMatch ? messageMatch[1] : '';
-    return { tool, args: { message } };
+    
+    // For final_response, extract the message
+    if (tool === 'final_response') {
+      // Try multiple patterns for message extraction
+      const messagePatterns = [
+        /"message"\s*:\s*"([\s\S]*?)"\s*(?:,|\})/,
+        /"message"\s*:\s*"([^"]*)"/,
+        /"message"\s*:\s*'([^']*)'/,
+      ];
+      for (const pattern of messagePatterns) {
+        const match = cleaned.match(pattern);
+        if (match) {
+          return { tool, args: { message: match[1] } };
+        }
+      }
+      // If we found tool=final_response but no message, return empty message
+      return { tool, args: { message: '' } };
+    }
+    
+    // For other tools, try to extract args object
+    const argsMatch = cleaned.match(/"args"\s*:\s*(\{[^}]+\})/);
+    if (argsMatch) {
+      const argsStr = argsMatch[1];
+      const args = tryParse(argsStr);
+      if (args) return { tool, args };
+    }
+    
+    return null;
   }
 
   constructor() {
