@@ -51,6 +51,8 @@ contextBridge.exposeInMainWorld('agent', {
   },
   respondApproval: (requestId: string, approved: boolean) =>
     ipcRenderer.send('agent:approval-response', { requestId, approved }),
+  sendFeedback: (skillId: string, success: boolean) => 
+    ipcRenderer.invoke('agent:feedback', { skillId, success }),
   onStep: (callback: (step: any) => void) => {
     const listener = (_: unknown, step: unknown) => callback(step);
     ipcRenderer.on('agent:step', listener);

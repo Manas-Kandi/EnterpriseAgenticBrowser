@@ -5,6 +5,7 @@ import crypto from 'node:crypto'
 import { v4 as uuidv4 } from 'uuid'
 import { vaultService } from './services/VaultService'
 import { agentService, AVAILABLE_MODELS } from './services/AgentService'
+import { taskKnowledgeService } from './services/TaskKnowledgeService'
 import { auditService } from './services/AuditService'
 import { toolRegistry } from './services/ToolRegistry'
 import { browserTargetService } from './services/BrowserTargetService'
@@ -190,6 +191,13 @@ app.whenReady().then(() => {
     });
   });
 
+  ipcMain.handle('agent:feedback', async (_, { skillId, success }) => {
+    if (typeof skillId === 'string' && typeof success === 'boolean') {
+      taskKnowledgeService.recordOutcome(skillId, success);
+    }
+    return true;
+  });
+
   // Agent IPC Handlers
   ipcMain.handle('agent:chat', async (event, message) => {
     const runId = uuidv4();
@@ -208,17 +216,19 @@ app.whenReady().then(() => {
     let url: string | undefined;
     let domain: string | undefined;
     try {
-      const activeWebview = browserTargetService.getActiveWebview();
+      const activeWebview = browserTargetService.getActiveWebContents();
       if (activeWebview && !activeWebview.isDestroyed()) {
         url = activeWebview.getURL();
-        try {
-          const urlObj = new URL(url);
-          domain = urlObj.hostname;
-          if (urlObj.port) {
-            domain += `:${urlObj.port}`;
+        if (url) {
+          try {
+            const urlObj = new URL(url);
+            domain = urlObj.hostname;
+            if (urlObj.port) {
+              domain += `:${urlObj.port}`;
+            }
+          } catch {
+            // Invalid URL, ignore domain extraction
           }
-        } catch {
-          // Invalid URL, ignore domain extraction
         }
       }
     } catch {

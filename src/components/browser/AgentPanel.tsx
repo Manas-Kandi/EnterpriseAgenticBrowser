@@ -1,7 +1,7 @@
 import ReactMarkdown from 'react-markdown';
 import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
-import { Settings, Send, User, Bot, AlertTriangle, Check, X, ChevronDown, Brain, Zap, RotateCcw } from 'lucide-react';
+import { Send, User, Bot, AlertTriangle, Check, X, ChevronDown, Brain, Zap, RotateCcw, ThumbsUp, ThumbsDown } from 'lucide-react';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -32,8 +32,33 @@ export function AgentPanel() {
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [currentModelId, setCurrentModelId] = useState<string>('');
   const [showModelSelector, setShowModelSelector] = useState(false);
+  const [feedbackMap, setFeedbackMap] = useState<Record<number, 'up' | 'down'>>({});
 
   const approvalRequest = approvalQueue.length > 0 ? approvalQueue[0] : null;
+
+  // Helper to extract skill ID from observation
+  const getSkillIdFromMessage = (content: string): string | null => {
+    try {
+      if (!content.includes('"skill"') || !content.includes('"id"')) return null;
+      // Try to find the JSON object if it's wrapped in text
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      const jsonStr = jsonMatch ? jsonMatch[0] : content;
+      const data = JSON.parse(jsonStr);
+      return data?.skill?.id || null;
+    } catch {
+      return null;
+    }
+  };
+
+  const handleFeedback = async (skillId: string, success: boolean, index: number) => {
+    if (!window.agent) return;
+    try {
+        await window.agent.sendFeedback(skillId, success);
+        setFeedbackMap(prev => ({ ...prev, [index]: success ? 'up' : 'down' }));
+    } catch (err) {
+        console.error('Failed to send feedback:', err);
+    }
+  };
 
   useEffect(() => {
     if (!window.agent) return;
@@ -190,13 +215,42 @@ export function AgentPanel() {
                                     {msg.content}
                                 </ReactMarkdown>
                             ) : msg.type === 'observation' ? (
-                                <details className="group">
-                                    <summary className="cursor-pointer hover:text-foreground list-none flex items-center gap-1 select-none opacity-70 hover:opacity-100 transition-opacity">
-                                        <div className="w-1 h-1 rounded-full bg-current" />
-                                        <span>Output</span>
-                                    </summary>
-                                    <div className="mt-1 pl-2 border-l border-border/30 whitespace-pre-wrap opacity-90">{msg.content}</div>
-                                </details>
+                                <div className="group">
+                                    <details>
+                                        <summary className="cursor-pointer hover:text-foreground list-none flex items-center gap-1 select-none opacity-70 hover:opacity-100 transition-opacity">
+                                            <div className="w-1 h-1 rounded-full bg-current" />
+                                            <span>Output</span>
+                                        </summary>
+                                        <div className="mt-1 pl-2 border-l border-border/30 whitespace-pre-wrap opacity-90">{msg.content}</div>
+                                    </details>
+                                    {/* Feedback Buttons for Skills */}
+                                    {getSkillIdFromMessage(msg.content) && (
+                                        <div className="flex gap-2 mt-1 ml-2 opacity-50 hover:opacity-100 transition-opacity">
+                                            <button 
+                                                onClick={() => {
+                                                    const id = getSkillIdFromMessage(msg.content);
+                                                    if (id) handleFeedback(id, true, i);
+                                                }}
+                                                className={cn("p-1 hover:text-green-500 hover:bg-green-500/10 rounded transition-colors", feedbackMap[i] === 'up' && "text-green-500 bg-green-500/10")}
+                                                disabled={!!feedbackMap[i]}
+                                                title="This skill worked"
+                                            >
+                                                <ThumbsUp size={10} />
+                                            </button>
+                                            <button 
+                                                onClick={() => {
+                                                    const id = getSkillIdFromMessage(msg.content);
+                                                    if (id) handleFeedback(id, false, i);
+                                                }}
+                                                className={cn("p-1 hover:text-red-500 hover:bg-red-500/10 rounded transition-colors", feedbackMap[i] === 'down' && "text-red-500 bg-red-500/10")}
+                                                disabled={!!feedbackMap[i]}
+                                                title="This skill failed"
+                                            >
+                                                <ThumbsDown size={10} />
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
                             ) : msg.content}
                         </div>
                     </div>

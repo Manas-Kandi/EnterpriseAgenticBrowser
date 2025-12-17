@@ -14,9 +14,10 @@ interface Window {
     getCurrentModel: () => Promise<string>;
     setModel: (modelId: string) => Promise<{ success: boolean; modelId: string }>;
     onApprovalRequest: (callback: (payload: { requestId: string; toolName: string; args: unknown; runId?: string; timeoutMs?: number }) => void) => (() => void);
-    onApprovalTimeout: (callback: (payload: { requestId: string; toolName: string; runId?: string }) => void) => (() => void);
+    onApprovalTimeout: (callback: (payload: any) => void) => () => void;
     respondApproval: (requestId: string, approved: boolean) => void;
-    onStep: (callback: (step: unknown) => void) => (() => void);
+    sendFeedback: (skillId: string, success: boolean) => Promise<boolean>;
+    onStep: (callback: (step: any) => void) => () => void;
   }
   vault?: {
     set: (account: string, secret: string) => Promise<void>;
