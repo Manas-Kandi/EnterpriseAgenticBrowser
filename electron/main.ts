@@ -218,7 +218,7 @@ app.whenReady().then(() => {
       event.sender.send('agent:step', {
         type: 'observation',
         content: `Run started: ${runId}`,
-        metadata: { runId },
+        metadata: { runId, ts: new Date().toISOString() },
       });
     } catch {
       // ignore

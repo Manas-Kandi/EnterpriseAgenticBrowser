@@ -33,6 +33,7 @@ export function AgentPanel() {
   const [currentModelId, setCurrentModelId] = useState<string>('');
   const [showModelSelector, setShowModelSelector] = useState(false);
   const [feedbackMap, setFeedbackMap] = useState<Record<number, 'up' | 'down'>>({});
+  const [showTrace, setShowTrace] = useState(false);
 
   const approvalRequest = approvalQueue.length > 0 ? approvalQueue[0] : null;
 
@@ -173,7 +174,7 @@ export function AgentPanel() {
         ) : (
             messages.map((msg, i) => (
                 <div key={i} className={cn("flex flex-col gap-0.5 text-xs", msg.role === 'user' ? "items-end" : "items-start")}>
-                    <div className={cn("flex gap-2 max-w-full", msg.role === 'user' ? "flex-row-reverse" : "")}>
+                    <div className={cn("flex gap-2 max-w-full", msg.role === 'user' ? "flex-row-reverse" : "")}> 
                         {msg.role === 'user' && (
                            <div className="shrink-0 w-6 h-6 rounded-full flex items-center justify-center border bg-primary/10 border-primary/20 text-primary">
                                <User size={12} />
@@ -192,6 +193,24 @@ export function AgentPanel() {
                                             ? "font-mono text-[11px] bg-secondary/10 border border-border/20 text-muted-foreground px-2 py-1 rounded-sm w-full"
                                             : "text-foreground/90 w-full"
                         )}>
+                            {msg.role === 'assistant' && msg.type && msg.type !== 'text' && msg.metadata ? (
+                              <div className="flex items-center justify-between gap-2 text-[10px] font-mono opacity-70 mb-1">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  {typeof msg.metadata?.tool === 'string' ? (
+                                    <span className="truncate">{msg.metadata.tool}</span>
+                                  ) : null}
+                                  {typeof msg.metadata?.durationMs === 'number' ? (
+                                    <span className="shrink-0">{Math.round(msg.metadata.durationMs)}ms</span>
+                                  ) : null}
+                                </div>
+                                {typeof msg.metadata?.ts === 'string' ? (
+                                  <span className="shrink-0">
+                                    {new Date(msg.metadata.ts).toLocaleTimeString()}
+                                  </span>
+                                ) : null}
+                              </div>
+                            ) : null}
+
                             {msg.role === 'assistant' && (!msg.type || msg.type === 'text') ? (
                                 <ReactMarkdown
                                     components={{
@@ -369,8 +388,65 @@ export function AgentPanel() {
                     >
                         <RotateCcw size={12} />
                     </button>
+                    <button
+                        onClick={() => setShowTrace((v) => !v)}
+                        className={cn(
+                          "p-1 hover:text-foreground hover:bg-secondary/50 rounded transition-colors",
+                          showTrace && "text-foreground"
+                        )}
+                        title="Toggle trace view"
+                    >
+                        <ChevronDown size={12} className={cn("transition-transform", showTrace && "rotate-180")} />
+                    </button>
                 </div>
             </div>
+
+
+            {showTrace && (
+              <div className="mt-2 border border-border/40 rounded-md bg-secondary/10">
+                <div className="px-2 py-1 text-[10px] uppercase tracking-wider text-muted-foreground border-b border-border/30">
+                  Trace
+                </div>
+                <div className="max-h-40 overflow-y-auto">
+                  {messages
+                    .filter((m) => m.role === 'assistant' && m.type && m.type !== 'text')
+                    .map((m, idx) => {
+                      const ts = m?.metadata?.ts;
+                      const durationMs = m?.metadata?.durationMs;
+                      const tool = m?.metadata?.tool;
+                      const timeLabel = typeof ts === 'string' ? new Date(ts).toLocaleTimeString() : '';
+                      return (
+                        <div key={idx} className="px-2 py-1 text-[10px] border-b border-border/20 last:border-b-0">
+                          <div className="flex items-center gap-2 font-mono text-muted-foreground">
+                            <span className="opacity-70 shrink-0">{timeLabel}</span>
+                            <span className={cn(
+                              "shrink-0",
+                              m.type === 'action' ? "text-primary" : m.type === 'thought' ? "text-primary/70" : "text-muted-foreground"
+                            )}>
+                              {m.type}
+                            </span>
+                            {tool ? <span className="shrink-0">{tool}</span> : null}
+                            {typeof durationMs === 'number' ? (
+                              <span className="shrink-0 opacity-70">{Math.round(durationMs)}ms</span>
+                            ) : null}
+                          </div>
+                          <div className="font-mono text-[10px] text-foreground/80 whitespace-pre-wrap break-words">
+                            {m.content}
+                          </div>
+                          {m.metadata && (
+                            <details className="mt-1">
+                              <summary className="cursor-pointer text-[10px] text-muted-foreground/70 hover:text-muted-foreground select-none">metadata</summary>
+                              <pre className="mt-1 text-[10px] font-mono bg-secondary/30 p-2 rounded border border-border/30 overflow-x-auto text-muted-foreground">
+                                {JSON.stringify(m.metadata, null, 2)}
+                              </pre>
+                            </details>
+                          )}
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+            )}
         </div>
       </div>
     </div>

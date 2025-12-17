@@ -313,7 +313,13 @@ export class AgentService {
 
   private emitStep(type: AgentStep['type'], content: string, metadata?: any) {
       if (this.onStep) {
-          this.onStep({ type, content, metadata });
+          const runId = agentRunContext.getRunId() ?? undefined;
+          const enrichedMetadata = {
+            ...(metadata ?? {}),
+            ts: new Date().toISOString(),
+            runId,
+          };
+          this.onStep({ type, content, metadata: enrichedMetadata });
       }
   }
 
@@ -449,6 +455,12 @@ export class AgentService {
         const runId = agentRunContext.getRunId() ?? undefined;
         const llmCallId = uuidv4();
         const llmStartedAt = Date.now();
+        this.emitStep('thought', `Calling model ${this.currentModelId} (turn ${i + 1})`, {
+          phase: 'llm_start',
+          llmCallId,
+          turnIndex: i,
+          modelId: this.currentModelId,
+        });
         try {
           await telemetryService.emit({
             eventId: uuidv4(),
@@ -474,13 +486,39 @@ export class AgentService {
         );
         
         let response: AIMessage;
+        let progressTimer: NodeJS.Timeout | null = null;
+        let progressCount = 0;
         try {
+          progressTimer = setInterval(() => {
+            progressCount += 1;
+            const elapsedMs = Date.now() - llmStartedAt;
+            if (progressCount <= 6) {
+              this.emitStep('thought', `Still thinking... (${Math.round(elapsedMs / 1000)}s)`, {
+                phase: 'llm_wait',
+                llmCallId,
+                turnIndex: i,
+                modelId: this.currentModelId,
+                elapsedMs,
+              });
+            }
+          }, 5000);
+
           response = await Promise.race([
             this.model.invoke(messages),
             timeoutPromise
           ]) as AIMessage;
         } catch (timeoutErr: any) {
+          if (progressTimer) clearInterval(progressTimer);
           const durationMs = Date.now() - llmStartedAt;
+          this.emitStep('observation', `LLM timed out after ${Math.round(durationMs)}ms`, {
+            phase: 'llm_end',
+            ok: false,
+            llmCallId,
+            turnIndex: i,
+            modelId: this.currentModelId,
+            durationMs,
+            errorMessage: String(timeoutErr?.message ?? timeoutErr),
+          });
           try {
             await telemetryService.emit({
               eventId: uuidv4(),
@@ -503,8 +541,18 @@ export class AgentService {
           return "The request timed out. Try breaking it into smaller steps or use a faster model.";
         }
 
+        if (progressTimer) clearInterval(progressTimer);
+
         try {
           const durationMs = Date.now() - llmStartedAt;
+          this.emitStep('thought', `Model responded in ${Math.round(durationMs)}ms`, {
+            phase: 'llm_end',
+            ok: true,
+            llmCallId,
+            turnIndex: i,
+            modelId: this.currentModelId,
+            durationMs,
+          });
           await telemetryService.emit({
             eventId: uuidv4(),
             runId,
@@ -620,12 +668,26 @@ export class AgentService {
         const tool = tools.find((t: any) => t.name === (action as any).tool);
         if (tool) {
             console.log(`Executing tool: ${tool.name} with args:`, action.args);
-            this.emitStep('action', `Executing ${tool.name}`, { tool: tool.name, args: action.args });
+            const toolCallId = uuidv4();
+            const toolStartedAt = Date.now();
+            this.emitStep('action', `Executing ${tool.name}`, {
+              tool: tool.name,
+              args: action.args,
+              toolCallId,
+              phase: 'tool_start',
+            });
             
             try {
                 // Execute tool
                 const result = await tool.invoke((action as any).args);
-                this.emitStep('observation', `Tool Output: ${result}`, { tool: tool.name, result });
+                const toolDurationMs = Date.now() - toolStartedAt;
+                this.emitStep('observation', `Tool Output: ${result}`, {
+                  tool: tool.name,
+                  result,
+                  toolCallId,
+                  phase: 'tool_end',
+                  durationMs: toolDurationMs,
+                });
 
                 if (tool.name.startsWith('browser_')) usedBrowserTools = true;
                 if (
@@ -706,6 +768,15 @@ export class AgentService {
                 this.conversationHistory.push(toolOutputMsg);
             } catch (err: any) {
                 console.error(`Tool execution failed: ${err}`);
+                const toolDurationMs = Date.now() - toolStartedAt;
+                this.emitStep('observation', `Tool Execution Error: ${err.message}`, {
+                  tool: tool.name,
+                  toolCallId,
+                  phase: 'tool_end',
+                  ok: false,
+                  durationMs: toolDurationMs,
+                  errorMessage: String(err?.message ?? err),
+                });
                 const aiMsg = new AIMessage(content);
                 const errorMsg = new SystemMessage(`Tool Execution Error: ${err.message}`);
                 messages.push(aiMsg);
