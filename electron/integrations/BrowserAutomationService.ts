@@ -92,7 +92,7 @@ export class BrowserAutomationService {
     }
   }
 
-  private async getTarget(): Promise<WebContents> {
+  public async getTarget(): Promise<WebContents> {
     return browserTargetService.getActiveWebContents();
   }
 

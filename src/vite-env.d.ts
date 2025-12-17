@@ -32,4 +32,10 @@ interface Window {
     setActiveTab: (tabId: string | null) => Promise<void>;
     onNavigateTo: (callback: (url: string) => void) => (() => void);
   }
+  telemetry?: {
+    export: () => Promise<{ success: boolean; count: number; path: string }>;
+  }
+  benchmark?: {
+    runSuite: (filter?: string) => Promise<Array<{ scenarioId: string; success: boolean; durationMs: number; steps: number; error?: string; runId: string }>>;
+  }
 }

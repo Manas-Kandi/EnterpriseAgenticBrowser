@@ -70,3 +70,11 @@ contextBridge.exposeInMainWorld('browser', {
     return () => ipcRenderer.off('browser:navigate-to', listener);
   },
 })
+
+contextBridge.exposeInMainWorld('telemetry', {
+  export: () => ipcRenderer.invoke('telemetry:export'),
+})
+
+contextBridge.exposeInMainWorld('benchmark', {
+  runSuite: (filter?: string) => ipcRenderer.invoke('benchmark:runSuite', filter),
+})

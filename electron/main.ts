@@ -12,6 +12,7 @@ import { browserTargetService } from './services/BrowserTargetService'
 import { agentRunContext } from './services/AgentRunContext'
 import { telemetryService } from './services/TelemetryService'
 import { PolicyService } from './services/PolicyService'
+import { benchmarkService } from './services/BenchmarkService'
 import './services/CodeReaderService'
 import './integrations/mock/MockJiraConnector'; // Initialize Mock Jira
 import './integrations/mock/MockConfluenceConnector'; // Initialize Mock Confluence
@@ -202,6 +203,11 @@ app.whenReady().then(() => {
     const exportPath = path.join(app.getPath('userData'), 'trajectories_export.json');
     const count = await telemetryService.exportTrajectories(exportPath);
     return { success: true, count, path: exportPath };
+  });
+
+  ipcMain.handle('benchmark:runSuite', async (_, filter?: string) => {
+    const results = await benchmarkService.runSuite(filter);
+    return results;
   });
 
   // Agent IPC Handlers
