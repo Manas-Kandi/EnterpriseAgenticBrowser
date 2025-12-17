@@ -8,10 +8,11 @@ import { AgentTool, toolRegistry } from '../services/ToolRegistry';
 import { browserTargetService } from '../services/BrowserTargetService';
 import { agentRunContext } from '../services/AgentRunContext';
 import { telemetryService } from '../services/TelemetryService';
-import type { WebContents } from 'electron';
+import { app, webContents, type WebContents } from 'electron';
 
 export class BrowserAutomationService {
   constructor() {
+    this.setupWebContentsInvalidation();
     this.registerTools();
   }
 
@@ -19,10 +20,81 @@ export class BrowserAutomationService {
     | { loadedAt: number; routes: Set<string> }
     | null = null;
 
-  private observeCache = new Map<number, { url: string; data: any; timestamp: number }>();
+  private observeCache = new Map<
+    number,
+    { url: string; title: string; argsKey: string; data: any; timestamp: number; domVersion: number }
+  >();
+
+  private attachedWebContentsIds = new Set<number>();
+
+  private setupWebContentsInvalidation() {
+    try {
+      for (const wc of webContents.getAllWebContents()) {
+        this.attachWebContentsListeners(wc);
+      }
+    } catch {
+      // ignore
+    }
+
+    try {
+      app.on('web-contents-created', (_event: Electron.Event, wc: WebContents) => {
+        this.attachWebContentsListeners(wc);
+      });
+    } catch {
+      // ignore
+    }
+  }
+
+  private attachWebContentsListeners(wc: WebContents) {
+    try {
+      if (!wc || wc.isDestroyed()) return;
+      if (this.attachedWebContentsIds.has(wc.id)) return;
+      this.attachedWebContentsIds.add(wc.id);
+
+      const invalidate = () => this.invalidateCache(wc.id);
+
+      wc.on('did-start-navigation', invalidate);
+      wc.on('did-navigate', invalidate);
+      wc.on('did-navigate-in-page', invalidate);
+      wc.on('dom-ready', invalidate);
+      wc.on('destroyed', () => {
+        this.invalidateCache(wc.id);
+        this.attachedWebContentsIds.delete(wc.id);
+      });
+    } catch {
+      // ignore
+    }
+  }
 
   private invalidateCache(webContentsId: number) {
     this.observeCache.delete(webContentsId);
+  }
+
+  private async getDomVersion(target: WebContents): Promise<number> {
+    try {
+      const v = await target.executeJavaScript(
+        `(() => {
+          const w = window;
+          if (typeof w.__enterprise_observe_dom_version !== 'number') {
+            w.__enterprise_observe_dom_version = 0;
+          }
+          if (!w.__enterprise_observe_dom_observer) {
+            const bump = () => { w.__enterprise_observe_dom_version += 1; };
+            const obs = new MutationObserver(() => bump());
+            const root = document.documentElement || document.body;
+            if (root) {
+              obs.observe(root, { subtree: true, childList: true, attributes: true, characterData: true });
+            }
+            w.__enterprise_observe_dom_observer = obs;
+          }
+          return w.__enterprise_observe_dom_version;
+        })()`,
+        true
+      );
+      return Number(v) || 0;
+    } catch {
+      return 0;
+    }
   }
 
   private async delay(ms: number) {
@@ -136,12 +208,36 @@ export class BrowserAutomationService {
             const target = await this.getTarget();
             const targetId = target.id;
             const currentUrl = target.getURL();
+            const argsKey = JSON.stringify({ scope: scope ?? 'main', maxElements: maxElements ?? 80 });
+            const domVersion = await this.getDomVersion(target);
 
             // Check cache
             if (!forceRefresh) {
               const cached = this.observeCache.get(targetId);
-              if (cached && cached.url === currentUrl && Date.now() - cached.timestamp < 2000) {
-                return JSON.stringify({ ...cached.data, _meta: { cached: true, timestamp: cached.timestamp } }, null, 2);
+              if (
+                cached &&
+                cached.url === currentUrl &&
+                cached.argsKey === argsKey &&
+                cached.domVersion === domVersion &&
+                Date.now() - cached.timestamp < 5000
+              ) {
+                const ageMs = Date.now() - cached.timestamp;
+                return JSON.stringify(
+                  {
+                    ...cached.data,
+                    _meta: {
+                      cached: true,
+                      timestamp: cached.timestamp,
+                      ageMs,
+                      url: cached.url,
+                      title: cached.title,
+                      domVersion: cached.domVersion,
+                      args: { scope: scope ?? 'main', maxElements: maxElements ?? 80 },
+                    },
+                  },
+                  null,
+                  2
+                );
               }
             }
 
@@ -300,8 +396,32 @@ export class BrowserAutomationService {
             );
 
             const resultData = { url, title, ...elements };
-            this.observeCache.set(targetId, { url, data: resultData, timestamp: Date.now() });
-            return JSON.stringify(resultData, null, 2);
+            const timestamp = Date.now();
+            this.observeCache.set(targetId, {
+              url,
+              title: String(title ?? ''),
+              argsKey,
+              data: resultData,
+              timestamp,
+              domVersion,
+            });
+
+            return JSON.stringify(
+              {
+                ...resultData,
+                _meta: {
+                  cached: false,
+                  timestamp,
+                  ageMs: 0,
+                  url,
+                  title: String(title ?? ''),
+                  domVersion,
+                  args: { scope: scope ?? 'main', maxElements: maxElements ?? 80 },
+                },
+              },
+              null,
+              2
+            );
         } catch (e: any) {
             return `Failed to observe page: ${e.message}`;
         }
