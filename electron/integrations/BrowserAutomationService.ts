@@ -2,7 +2,6 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { URL } from 'node:url';
 import { z } from 'zod';
-import crypto from 'node:crypto';
 import { v4 as uuidv4 } from 'uuid';
 import { AgentTool, toolRegistry } from '../services/ToolRegistry';
 import { browserTargetService } from '../services/BrowserTargetService';
@@ -1344,8 +1343,8 @@ export class BrowserAutomationService {
         const target = await this.getTarget();
         const text = await target.executeJavaScript(
           `(() => {
-            const node = document.querySelector('main, [role=\"main\"]') || document.body;
-            const raw = (node?.innerText || '').replace(/\\s+/g, ' ').trim();
+            const node = document.querySelector('main, [role="main"]') || document.body;
+            const raw = (node?.innerText || '').replace(/\s+/g, ' ').trim();
             return raw.slice(0, Math.max(1, Math.min(20000, ${JSON.stringify(maxChars ?? 4000)})));
           })()`,
           true
@@ -1354,33 +1353,141 @@ export class BrowserAutomationService {
       },
     };
 
-    const executePlanTool: AgentTool = {
+    const executePlanStepSchema = z.object({
+      action: z.enum(['navigate', 'click', 'type', 'select', 'wait']),
+      url: z.string().optional().describe('For navigate action'),
+      selector: z.string().optional().describe('For click/type/select actions'),
+      value: z.string().optional().describe('For type/select actions'),
+      text: z.string().optional().describe('For wait action'),
+      index: z.number().optional().describe('For click actions: index to disambiguate (0-based)'),
+      matchText: z.string().optional().describe('For click actions: filter candidates by visible text'),
+      withinSelector: z
+        .string()
+        .optional()
+        .describe('For click actions: scope search to a unique container selector'),
+    });
+    const executePlanSchema = z.object({
+      steps: z.array(executePlanStepSchema),
+    });
+
+    const executePlanTool: AgentTool<typeof executePlanSchema> = {
       name: 'browser_execute_plan',
       description:
         'Execute a batch of browser actions (navigate, click, type, select, wait). Use this for Mock SaaS tasks where you have read the code and know the selectors.',
-      schema: z.object({
-        steps: z.array(
-          z.object({
-            action: z.enum(['navigate', 'click', 'type', 'select', 'wait']),
-            url: z.string().optional().describe('For navigate action'),
-            selector: z.string().optional().describe('For click/type/select actions'),
-            value: z.string().optional().describe('For type/select actions'),
-            text: z.string().optional().describe('For wait action'),
-            index: z.number().optional().describe('For click actions: index to disambiguate (0-based)'),
-            matchText: z.string().optional().describe('For click actions: filter candidates by visible text'),
-            withinSelector: z.string().optional().describe('For click actions: scope search to a unique container selector'),
-          })
-        ),
-      }),
+      schema: executePlanSchema,
       execute: async (input: unknown) => {
-        const { steps } = input as { steps: any[] };
-        const results = [];
+        const parsed = executePlanSchema.parse(input ?? {});
+        const steps = parsed.steps;
+        const results: string[] = [];
         const runId = agentRunContext.getRunId() ?? undefined;
         const planId = uuidv4();
+
+        if (!Array.isArray(steps) || steps.length === 0) {
+          return 'Plan rejected: steps must be a non-empty array.';
+        }
+
+        // Up-front validation so we fail before causing side effects.
+        for (const [i, step] of steps.entries()) {
+          if (step.action === 'navigate') {
+            if (!step.url) return `Plan rejected: step ${i + 1} navigate is missing url.`;
+          }
+          if (step.action === 'click') {
+            if (!step.selector) return `Plan rejected: step ${i + 1} click is missing selector.`;
+          }
+          if (step.action === 'type') {
+            if (!step.selector) return `Plan rejected: step ${i + 1} type is missing selector.`;
+            if (step.value === undefined) return `Plan rejected: step ${i + 1} type is missing value.`;
+          }
+          if (step.action === 'select') {
+            if (!step.selector) return `Plan rejected: step ${i + 1} select is missing selector.`;
+            if (step.value === undefined) return `Plan rejected: step ${i + 1} select is missing value.`;
+          }
+          if (step.action === 'wait') {
+            if (!step.text) return `Plan rejected: step ${i + 1} wait is missing text.`;
+          }
+        }
+
+        const hasInteraction = steps.some((s) => s.action === 'click' || s.action === 'type' || s.action === 'select');
+        if (hasInteraction) {
+          const last = steps[steps.length - 1];
+          if (last?.action !== 'wait' || !last?.text) {
+            return 'Plan rejected: plans with interactions must end with a verification wait step (action="wait" with text).';
+          }
+        }
+
+        // Policy preflight: fail fast on DENY before executing any steps.
+        const policyService = toolRegistry.getPolicyService();
+        if (policyService) {
+          const browserContext = agentRunContext.getBrowserContext();
+          for (const [i, step] of steps.entries()) {
+            const toolNameForStep = (() => {
+              switch (step.action) {
+                case 'navigate':
+                  return 'browser_navigate';
+                case 'click':
+                  return 'browser_click';
+                case 'type':
+                  return 'browser_type';
+                case 'select':
+                  return 'browser_select';
+                case 'wait':
+                  return 'browser_wait_for_text';
+                default:
+                  return 'browser_execute_plan_step';
+              }
+            })();
+
+            const argsForStep: any = (() => {
+              switch (step.action) {
+                case 'navigate':
+                  return { url: step.url };
+                case 'click':
+                  return {
+                    selector: step.selector,
+                    index: step.index,
+                    matchText: step.matchText,
+                    withinSelector: step.withinSelector,
+                  };
+                case 'type':
+                  return { selector: step.selector, text: step.value };
+                case 'select':
+                  return { selector: step.selector, value: step.value };
+                case 'wait':
+                  return { text: step.text };
+              }
+            })();
+
+            const decision = await policyService.evaluate({
+              toolName: toolNameForStep,
+              args: argsForStep,
+              url: browserContext?.url,
+              domain: browserContext?.domain,
+              userMode: 'standard',
+              observeOnly: agentRunContext.getObserveOnly(),
+              runId,
+            });
+
+            if (decision.decision === 'deny') {
+              return `Plan rejected by policy at step ${i + 1} (${toolNameForStep}): ${decision.reason}`;
+            }
+          }
+        }
+
+        const isFailureOutput = (s: string) => {
+          const t = String(s ?? '');
+          return (
+            t.startsWith('Refusing') ||
+            t.startsWith('Failed') ||
+            t.startsWith('Timeout') ||
+            t.startsWith('Operation denied by policy') ||
+            t.startsWith('User denied') ||
+            t.startsWith('Tool execution failed')
+          );
+        };
+
         for (const [i, step] of steps.entries()) {
           const stepId = uuidv4();
           const startedAt = Date.now();
-          let toolCallStarted = false;
           try {
             await telemetryService.emit({
               eventId: uuidv4(),
@@ -1399,130 +1506,50 @@ export class BrowserAutomationService {
             // ignore telemetry failures
           }
           try {
-            let res = '';
-            let toolNameForStep = '';
-            let toolArgsForStep: any = {};
-
-            if (step.action === 'navigate') {
-              if (!step.url) throw new Error('Missing url for navigate');
-              toolNameForStep = 'browser_navigate';
-              toolArgsForStep = { url: step.url };
-            } else if (step.action === 'click') {
-              if (!step.selector) throw new Error('Missing selector for click');
-              toolNameForStep = 'browser_click';
-              toolArgsForStep = {
-                selector: step.selector,
-                index: step.index,
-                matchText: step.matchText,
-                withinSelector: step.withinSelector,
-              };
-            } else if (step.action === 'type') {
-              if (!step.selector || step.value === undefined) throw new Error('Missing selector/value for type');
-              toolNameForStep = 'browser_type';
-              toolArgsForStep = { selector: step.selector, text: step.value };
-            } else if (step.action === 'select') {
-              if (!step.selector || step.value === undefined) throw new Error('Missing selector/value for select');
-              toolNameForStep = 'browser_select';
-              toolArgsForStep = { selector: step.selector, value: step.value };
-            } else if (step.action === 'wait') {
-              if (!step.text) throw new Error('Missing text for wait');
-              toolNameForStep = 'browser_wait_for_text';
-              toolArgsForStep = { text: step.text };
-            } else {
-              throw new Error(`Unknown action ${step.action}`);
-            }
-
-            const toolCallId = uuidv4();
-            const argsJson = (() => {
-              try {
-                return JSON.stringify(toolArgsForStep ?? null);
-              } catch {
-                return '[unserializable_args]';
+            const toolNameForStep = (() => {
+              switch (step.action) {
+                case 'navigate':
+                  return 'browser_navigate';
+                case 'click':
+                  return 'browser_click';
+                case 'type':
+                  return 'browser_type';
+                case 'select':
+                  return 'browser_select';
+                case 'wait':
+                  return 'browser_wait_for_text';
+                default:
+                  return 'browser_execute_plan_step';
               }
             })();
-            const argsHash = crypto.createHash('sha256').update(argsJson).digest('hex');
 
-            const toolStartedAt = Date.now();
-            toolCallStarted = true;
-            try {
-              await telemetryService.emit({
-                eventId: uuidv4(),
-                runId,
-                ts: new Date().toISOString(),
-                type: 'tool_call_start',
-                name: toolNameForStep,
-                data: { toolCallId, argsHash, planId, stepId, stepIndex: i, invokedBy: 'browser_execute_plan' },
-              });
-            } catch {
-              // ignore telemetry failures
-            }
-
-            try {
-              if (step.action === 'navigate') {
-                res = await navigateTool.execute({ url: step.url });
-              } else if (step.action === 'click') {
-                res = await clickTool.execute({
-                  selector: step.selector,
-                  index: step.index,
-                  matchText: step.matchText,
-                  withinSelector: step.withinSelector,
-                });
-              } else if (step.action === 'type') {
-                res = await typeTool.execute({ selector: step.selector, text: step.value });
-              } else if (step.action === 'select') {
-                res = await selectTool.execute({ selector: step.selector, value: step.value });
-              } else if (step.action === 'wait') {
-                res = await waitForTextTool.execute({ text: step.text });
+            const toolArgsForStep: any = (() => {
+              switch (step.action) {
+                case 'navigate':
+                  return { url: step.url };
+                case 'click':
+                  return {
+                    selector: step.selector,
+                    index: step.index,
+                    matchText: step.matchText,
+                    withinSelector: step.withinSelector,
+                  };
+                case 'type':
+                  return { selector: step.selector, text: step.value };
+                case 'select':
+                  return { selector: step.selector, value: step.value };
+                case 'wait':
+                  return { text: step.text };
               }
-            } catch (innerErr: any) {
-              const toolDurationMs = Date.now() - toolStartedAt;
-              try {
-                await telemetryService.emit({
-                  eventId: uuidv4(),
-                  runId,
-                  ts: new Date().toISOString(),
-                  type: 'tool_call_end',
-                  name: toolNameForStep,
-                  data: {
-                    toolCallId,
-                    argsHash,
-                    planId,
-                    stepId,
-                    stepIndex: i,
-                    invokedBy: 'browser_execute_plan',
-                    ok: false,
-                    durationMs: toolDurationMs,
-                    errorMessage: String(innerErr?.message ?? innerErr),
-                  },
-                });
-              } catch {
-                // ignore telemetry failures
-              }
-              throw innerErr;
-            }
+            })();
 
-            const toolDurationMs = Date.now() - toolStartedAt;
-            try {
-              await telemetryService.emit({
-                eventId: uuidv4(),
-                runId,
-                ts: new Date().toISOString(),
-                type: 'tool_call_end',
-                name: toolNameForStep,
-                data: {
-                  toolCallId,
-                  argsHash,
-                  planId,
-                  stepId,
-                  stepIndex: i,
-                  invokedBy: 'browser_execute_plan',
-                  ok: true,
-                  durationMs: toolDurationMs,
-                  resultLength: String(res ?? '').length,
-                },
-              });
-            } catch {
-              // ignore telemetry failures
+            const res = await toolRegistry.invokeTool(toolNameForStep, toolArgsForStep);
+            const resStr = String(res ?? '');
+            if (isFailureOutput(resStr)) {
+              throw new Error(resStr);
+            }
+            if (step.action === 'wait' && !resStr.startsWith('Found text')) {
+              throw new Error(resStr);
             }
 
             const durationMs = Date.now() - startedAt;
@@ -1540,64 +1567,14 @@ export class BrowserAutomationService {
                   action: String(step?.action ?? ''),
                   ok: true,
                   durationMs,
-                  resultLength: String(res ?? '').length,
+                  resultLength: String(resStr ?? '').length,
                 },
               });
             } catch {
               // ignore telemetry failures
             }
-            results.push(`Step ${i + 1} (${step.action}): ${res}`);
+            results.push(`Step ${i + 1} (${step.action}): ${resStr}`);
           } catch (e: any) {
-            // If we failed before we could start/emit tool telemetry (e.g. missing url/selector), emit a best-effort tool_call_end.
-            if (!toolCallStarted) {
-              try {
-                const toolCallId = uuidv4();
-                const toolNameForStep = (() => {
-                  switch (step?.action) {
-                    case 'navigate':
-                      return 'browser_navigate';
-                    case 'click':
-                      return 'browser_click';
-                    case 'type':
-                      return 'browser_type';
-                    case 'select':
-                      return 'browser_select';
-                    case 'wait':
-                      return 'browser_wait_for_text';
-                    default:
-                      return 'browser_execute_plan_step';
-                  }
-                })();
-                const argsJson = (() => {
-                  try {
-                    return JSON.stringify(step ?? null);
-                  } catch {
-                    return '[unserializable_args]';
-                  }
-                })();
-                const argsHash = crypto.createHash('sha256').update(argsJson).digest('hex');
-                await telemetryService.emit({
-                  eventId: uuidv4(),
-                  runId,
-                  ts: new Date().toISOString(),
-                  type: 'tool_call_end',
-                  name: toolNameForStep,
-                  data: {
-                    toolCallId,
-                    argsHash,
-                    planId,
-                    stepId,
-                    stepIndex: i,
-                    invokedBy: 'browser_execute_plan',
-                    ok: false,
-                    durationMs: Date.now() - startedAt,
-                    errorMessage: String(e?.message ?? e),
-                  },
-                });
-              } catch {
-                // ignore telemetry failures
-              }
-            }
             const durationMs = Date.now() - startedAt;
             try {
               await telemetryService.emit({

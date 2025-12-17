@@ -353,8 +353,8 @@ export class AgentService {
 
         PREFERRED WORKFLOW (SPEED & RELIABILITY):
         1. OBSERVE: If the page state is unknown, call 'browser_observe'.
-        2. PLAN: For multi-step tasks (e.g. filling forms, navigating then clicking), ALWAYS use 'browser_execute_plan'. This is significantly faster than individual tool calls.
-        3. EXECUTE: Submit the plan. Only use single actions (browser_click, browser_type) for one-off interactions or debugging.
+        2. PLAN: For multi-step tasks (especially Mock SaaS), ALWAYS output ONE full 'browser_execute_plan' (include a final wait step for verification). This is significantly faster and more reliable than individual tool calls.
+        3. EXECUTE: Submit the plan once. Avoid calling browser_click/browser_type in separate turns for multi-step tasks.
 
         CONVERSATION CONTEXT:
         - You have memory of the entire conversation. Use previous messages to understand context.
@@ -641,23 +641,20 @@ export class AgentService {
                 // This dramatically improves perceived speed for common operations
                 const resultStr = String(result);
                 const toolName = (action as any).tool;
+
+                if (toolName === 'browser_execute_plan' && resultStr.startsWith('Plan completed successfully.')) {
+                  const fastResponse = `Completed the requested steps and verified the outcome.`;
+                  this.conversationHistory.push(
+                    new AIMessage(
+                      JSON.stringify({ tool: 'final_response', args: { message: fastResponse } })
+                    )
+                  );
+                  return fastResponse;
+                }
                 
                 if (toolName === 'browser_navigate' && resultStr.includes('Navigated to')) {
                   const url = (action as any).args?.url || 'the page';
                   const fastResponse = `Opened ${url}`;
-                  this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: 'final_response', args: { message: fastResponse } })));
-                  return fastResponse;
-                }
-                
-                if (toolName === 'browser_click' && !resultStr.toLowerCase().includes('error') && !resultStr.toLowerCase().includes('failed')) {
-                  const fastResponse = `Clicked the element.`;
-                  this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: 'final_response', args: { message: fastResponse } })));
-                  return fastResponse;
-                }
-                
-                if (toolName === 'browser_type' && !resultStr.toLowerCase().includes('error') && !resultStr.toLowerCase().includes('failed') && !resultStr.toLowerCase().includes('timeout')) {
-                  const text = (action as any).args?.text || '';
-                  const fastResponse = text ? `Typed "${text.slice(0, 50)}${text.length > 50 ? '...' : ''}"` : `Typed the text.`;
                   this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: 'final_response', args: { message: fastResponse } })));
                   return fastResponse;
                 }

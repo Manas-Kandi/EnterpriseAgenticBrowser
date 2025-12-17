@@ -32,6 +32,10 @@ export class ToolRegistry {
     this.policyService = policyService;
   }
 
+  getPolicyService(): PolicyService | null {
+    return this.policyService;
+  }
+
   register(tool: AgentTool) {
     if (this.tools.has(tool.name)) {
       console.warn(`Tool with name ${tool.name} is already registered. Overwriting.`);
@@ -47,367 +51,349 @@ export class ToolRegistry {
     return Array.from(this.tools.values());
   }
 
-  // Convert to LangChain tools format
-  toLangChainTools(): StructuredTool[] {
-    const getApprovalHandler = () => this.approvalHandler;
+  private async invokeToolInternal(tool: AgentTool, arg: any): Promise<string> {
+    const runId = agentRunContext.getRunId() ?? undefined;
+    const argsJson = (() => {
+      try {
+        return JSON.stringify(arg ?? null);
+      } catch {
+        return '[unserializable_args]';
+      }
+    })();
+    const argsHash = crypto.createHash('sha256').update(argsJson).digest('hex');
+    const toolCallId = uuidv4();
+    const startedAt = Date.now();
+
+    try {
+      await telemetryService.emit({
+        eventId: uuidv4(),
+        runId,
+        ts: new Date().toISOString(),
+        type: 'tool_call_start',
+        name: tool.name,
+        data: { toolCallId, argsHash },
+      });
+    } catch {
+      // ignore telemetry failures
+    }
+
+    try {
+      auditService
+        .log({
+          actor: 'agent',
+          action: 'tool_call_start',
+          details: { runId, toolName: tool.name, toolCallId, argsHash },
+          status: 'pending',
+        })
+        .catch(() => undefined);
+    } catch {
+      // ignore
+    }
+
+    const approvalHandler = this.approvalHandler;
     const policyService = this.policyService;
 
-    return this.getAllTools().map(tool => {
-       return new class extends StructuredTool {
-        name = tool.name;
-        description = tool.description;
-        schema = tool.schema;
-        
-        async _call(arg: any): Promise<string> {
-          const runId = agentRunContext.getRunId() ?? undefined;
-          const argsJson = (() => {
-            try {
-              return JSON.stringify(arg ?? null);
-            } catch {
-              return '[unserializable_args]';
-            }
-          })();
-          const argsHash = crypto.createHash('sha256').update(argsJson).digest('hex');
-          const toolCallId = uuidv4();
-          const startedAt = Date.now();
+    if (policyService) {
+      const browserContext = agentRunContext.getBrowserContext();
+      const context: PolicyContext = {
+        toolName: tool.name,
+        args: arg,
+        url: browserContext?.url,
+        domain: browserContext?.domain,
+        userMode: 'standard',
+        observeOnly: agentRunContext.getObserveOnly(),
+        runId,
+      };
 
+      const policyEvaluation = await policyService.evaluate(context);
+
+      if (policyEvaluation.decision === PolicyDecision.DENY) {
+        const durationMs = Date.now() - startedAt;
+        try {
+          await telemetryService.emit({
+            eventId: uuidv4(),
+            runId,
+            ts: new Date().toISOString(),
+            type: 'tool_call_end',
+            name: tool.name,
+            data: { toolCallId, argsHash, durationMs, error: 'Policy denied' },
+          });
+        } catch {
+          // ignore
+        }
+
+        try {
+          auditService
+            .log({
+              actor: 'system',
+              action: 'tool_call_denied',
+              details: { runId, toolName: tool.name, toolCallId, reason: policyEvaluation.reason },
+              status: 'failure',
+            })
+            .catch(() => undefined);
+        } catch {
+          // ignore
+        }
+
+        return `Operation denied by policy: ${policyEvaluation.reason}`;
+      }
+
+      if (policyEvaluation.decision === PolicyDecision.NEEDS_APPROVAL && approvalHandler) {
+        try {
+          await telemetryService.emit({
+            eventId: uuidv4(),
+            runId,
+            ts: new Date().toISOString(),
+            type: 'approval_request',
+            name: tool.name,
+            data: { toolCallId, argsHash, riskLevel: policyEvaluation.riskLevel },
+          });
+        } catch {
+          // ignore
+        }
+
+        try {
+          auditService
+            .log({
+              actor: 'system',
+              action: 'approval_request',
+              details: { runId, toolName: tool.name, toolCallId, argsHash, reason: policyEvaluation.reason },
+              status: 'pending',
+            })
+            .catch(() => undefined);
+        } catch {
+          // ignore
+        }
+
+        const approved = await approvalHandler(tool.name, arg);
+
+        try {
+          await telemetryService.emit({
+            eventId: uuidv4(),
+            runId,
+            ts: new Date().toISOString(),
+            type: 'approval_decision',
+            name: tool.name,
+            data: { toolCallId, argsHash, approved },
+          });
+        } catch {
+          // ignore
+        }
+
+        try {
+          auditService
+            .log({
+              actor: 'system',
+              action: 'approval_decision',
+              details: { runId, toolName: tool.name, toolCallId, argsHash, approved },
+              status: approved ? 'success' : 'failure',
+            })
+            .catch(() => undefined);
+        } catch {
+          // ignore
+        }
+
+        if (!approved) {
+          const durationMs = Date.now() - startedAt;
           try {
             await telemetryService.emit({
               eventId: uuidv4(),
               runId,
               ts: new Date().toISOString(),
-              type: 'tool_call_start',
+              type: 'tool_call_end',
               name: tool.name,
-              data: { toolCallId, argsHash },
+              data: { toolCallId, argsHash, durationMs, error: 'User denied' },
             });
           } catch {
-            // ignore telemetry failures
+            // ignore
           }
 
           try {
             auditService
               .log({
-                actor: 'agent',
-                action: 'tool_call_start',
-                details: { runId, toolName: tool.name, toolCallId, argsHash },
-                status: 'pending',
+                actor: 'user',
+                action: 'tool_call_denied',
+                details: { runId, toolName: tool.name, toolCallId },
+                status: 'failure',
               })
               .catch(() => undefined);
           } catch {
             // ignore
           }
 
-          const approvalHandler = getApprovalHandler();
-          
-          // Use PolicyService if available, otherwise fall back to legacy approval
-          if (policyService) {
-            // Build policy context
-            const browserContext = agentRunContext.getBrowserContext();
-            const context: PolicyContext = {
-              toolName: tool.name,
-              args: arg,
-              url: browserContext?.url,
-              domain: browserContext?.domain,
-              userMode: 'standard', // TODO: Map from user settings (personal->standard, dev->developer, add admin mode)
-              observeOnly: agentRunContext.getObserveOnly(),
-              runId,
-            };
-            
-            // Evaluate policy
-            const policyEvaluation = await policyService.evaluate(context);
-            
-            // Handle policy decision
-            if (policyEvaluation.decision === PolicyDecision.DENY) {
-              const durationMs = Date.now() - startedAt;
-              try {
-                await telemetryService.emit({
-                  eventId: uuidv4(),
-                  runId,
-                  ts: new Date().toISOString(),
-                  type: 'tool_call_end',
-                  name: tool.name,
-                  data: { toolCallId, argsHash, durationMs, error: 'Policy denied' },
-                });
-              } catch {
-                // ignore telemetry failures
-              }
-              
-              try {
-                auditService
-                  .log({
-                    actor: 'system',
-                    action: 'tool_call_denied',
-                    details: { runId, toolName: tool.name, toolCallId, reason: policyEvaluation.reason },
-                    status: 'failure',
-                  })
-                  .catch(() => undefined);
-              } catch {
-                // ignore
-              }
-              
-              return `Operation denied by policy: ${policyEvaluation.reason}`;
-            }
-            
-            if (policyEvaluation.decision === PolicyDecision.NEEDS_APPROVAL && approvalHandler) {
-              try {
-                await telemetryService.emit({
-                  eventId: uuidv4(),
-                  runId,
-                  ts: new Date().toISOString(),
-                  type: 'approval_request',
-                  name: tool.name,
-                  data: { toolCallId, argsHash, riskLevel: policyEvaluation.riskLevel },
-                });
-              } catch {
-                // ignore telemetry failures
-              }
-
-              try {
-                auditService
-                  .log({
-                    actor: 'system',
-                    action: 'approval_request',
-                    details: { runId, toolName: tool.name, toolCallId, argsHash, reason: policyEvaluation.reason },
-                    status: 'pending',
-                  })
-                  .catch(() => undefined);
-              } catch {
-                // ignore
-              }
-
-              const approved = await approvalHandler(tool.name, arg);
-
-              try {
-                await telemetryService.emit({
-                  eventId: uuidv4(),
-                  runId,
-                  ts: new Date().toISOString(),
-                  type: 'approval_decision',
-                  name: tool.name,
-                  data: { toolCallId, argsHash, approved },
-                });
-              } catch {
-                // ignore telemetry failures
-              }
-
-              try {
-                auditService
-                  .log({
-                    actor: 'system',
-                    action: 'approval_decision',
-                    details: { runId, toolName: tool.name, toolCallId, argsHash, approved },
-                    status: approved ? 'success' : 'failure',
-                  })
-                  .catch(() => undefined);
-              } catch {
-                // ignore
-              }
-
-              if (!approved) {
-                const durationMs = Date.now() - startedAt;
-                try {
-                  await telemetryService.emit({
-                    eventId: uuidv4(),
-                    runId,
-                    ts: new Date().toISOString(),
-                    type: 'tool_call_end',
-                    name: tool.name,
-                    data: { toolCallId, argsHash, durationMs, error: 'User denied' },
-                  });
-                } catch {
-                  // ignore telemetry failures
-                }
-
-                try {
-                  auditService
-                    .log({
-                      actor: 'user',
-                      action: 'tool_call_denied',
-                      details: { runId, toolName: tool.name, toolCallId },
-                      status: 'failure',
-                    })
-                    .catch(() => undefined);
-                } catch {
-                  // ignore
-                }
-
-                return 'User denied execution of this tool.';
-              }
-            }
-          } else if (tool.requiresApproval && approvalHandler) {
-            try {
-              await telemetryService.emit({
-                eventId: uuidv4(),
-                runId,
-                ts: new Date().toISOString(),
-                type: 'approval_request',
-                name: tool.name,
-                data: { toolCallId, argsHash },
-              });
-            } catch {
-              // ignore telemetry failures
-            }
-
-            try {
-              auditService
-                .log({
-                  actor: 'system',
-                  action: 'approval_request',
-                  details: { runId, toolName: tool.name, toolCallId, argsHash },
-                  status: 'pending',
-                })
-                .catch(() => undefined);
-            } catch {
-              // ignore
-            }
-
-            const approved = await approvalHandler(tool.name, arg);
-
-            try {
-              await telemetryService.emit({
-                eventId: uuidv4(),
-                runId,
-                ts: new Date().toISOString(),
-                type: 'approval_decision',
-                name: tool.name,
-                data: { toolCallId, argsHash, approved },
-              });
-            } catch {
-              // ignore telemetry failures
-            }
-
-            try {
-              auditService
-                .log({
-                  actor: 'system',
-                  action: 'approval_decision',
-                  details: { runId, toolName: tool.name, toolCallId, argsHash, approved },
-                  status: approved ? 'success' : 'failure',
-                })
-                .catch(() => undefined);
-            } catch {
-              // ignore
-            }
-
-            if (!approved) {
-              const durationMs = Date.now() - startedAt;
-              try {
-                await telemetryService.emit({
-                  eventId: uuidv4(),
-                  runId,
-                  ts: new Date().toISOString(),
-                  type: 'tool_call_end',
-                  name: tool.name,
-                  data: { toolCallId, argsHash, ok: false, denied: true, durationMs },
-                });
-              } catch {
-                // ignore telemetry failures
-              }
-
-              try {
-                auditService
-                  .log({
-                    actor: 'agent',
-                    action: 'tool_call_end',
-                    details: { runId, toolName: tool.name, toolCallId, argsHash, ok: false, denied: true, durationMs },
-                    status: 'failure',
-                  })
-                  .catch(() => undefined);
-              } catch {
-                // ignore
-              }
-              return "User denied execution of this tool.";
-            }
-          }
-
-          try {
-            const result = await tool.execute(arg);
-            const durationMs = Date.now() - startedAt;
-            try {
-              await telemetryService.emit({
-                eventId: uuidv4(),
-                runId,
-                ts: new Date().toISOString(),
-                type: 'tool_call_end',
-                name: tool.name,
-                data: {
-                  toolCallId,
-                  argsHash,
-                  ok: true,
-                  durationMs,
-                  resultLength: String(result ?? '').length,
-                },
-              });
-            } catch {
-              // ignore telemetry failures
-            }
-
-            try {
-              auditService
-                .log({
-                  actor: 'agent',
-                  action: 'tool_call_end',
-                  details: {
-                    runId,
-                    toolName: tool.name,
-                    toolCallId,
-                    argsHash,
-                    ok: true,
-                    durationMs,
-                    resultLength: String(result ?? '').length,
-                  },
-                  status: 'success',
-                })
-                .catch(() => undefined);
-            } catch {
-              // ignore
-            }
-            return result;
-          } catch (err: any) {
-            const durationMs = Date.now() - startedAt;
-            try {
-              await telemetryService.emit({
-                eventId: uuidv4(),
-                runId,
-                ts: new Date().toISOString(),
-                type: 'tool_call_end',
-                name: tool.name,
-                data: {
-                  toolCallId,
-                  argsHash,
-                  ok: false,
-                  durationMs,
-                  errorMessage: String(err?.message ?? err),
-                },
-              });
-            } catch {
-              // ignore telemetry failures
-            }
-
-            try {
-              auditService
-                .log({
-                  actor: 'agent',
-                  action: 'tool_call_end',
-                  details: {
-                    runId,
-                    toolName: tool.name,
-                    toolCallId,
-                    argsHash,
-                    ok: false,
-                    durationMs,
-                    errorMessage: String(err?.message ?? err),
-                  },
-                  status: 'failure',
-                })
-                .catch(() => undefined);
-            } catch {
-              // ignore
-            }
-            throw err;
-          }
+          return 'User denied execution of this tool.';
         }
-      };
+      }
+    } else if (tool.requiresApproval && approvalHandler) {
+      try {
+        await telemetryService.emit({
+          eventId: uuidv4(),
+          runId,
+          ts: new Date().toISOString(),
+          type: 'approval_request',
+          name: tool.name,
+          data: { toolCallId, argsHash },
+        });
+      } catch {
+        // ignore
+      }
+
+      try {
+        auditService
+          .log({
+            actor: 'system',
+            action: 'approval_request',
+            details: { runId, toolName: tool.name, toolCallId, argsHash },
+            status: 'pending',
+          })
+          .catch(() => undefined);
+      } catch {
+        // ignore
+      }
+
+      const approved = await approvalHandler(tool.name, arg);
+
+      try {
+        await telemetryService.emit({
+          eventId: uuidv4(),
+          runId,
+          ts: new Date().toISOString(),
+          type: 'approval_decision',
+          name: tool.name,
+          data: { toolCallId, argsHash, approved },
+        });
+      } catch {
+        // ignore
+      }
+
+      try {
+        auditService
+          .log({
+            actor: 'system',
+            action: 'approval_decision',
+            details: { runId, toolName: tool.name, toolCallId, argsHash, approved },
+            status: approved ? 'success' : 'failure',
+          })
+          .catch(() => undefined);
+      } catch {
+        // ignore
+      }
+
+      if (!approved) {
+        const durationMs = Date.now() - startedAt;
+        try {
+          await telemetryService.emit({
+            eventId: uuidv4(),
+            runId,
+            ts: new Date().toISOString(),
+            type: 'tool_call_end',
+            name: tool.name,
+            data: { toolCallId, argsHash, durationMs, error: 'User denied' },
+          });
+        } catch {
+          // ignore
+        }
+
+        try {
+          auditService
+            .log({
+              actor: 'user',
+              action: 'tool_call_denied',
+              details: { runId, toolName: tool.name, toolCallId },
+              status: 'failure',
+            })
+            .catch(() => undefined);
+        } catch {
+          // ignore
+        }
+
+        return 'User denied execution of this tool.';
+      }
+    }
+
+    try {
+      const parsedArgs = (tool as any).schema?.parse ? (tool as any).schema.parse(arg ?? {}) : arg;
+      const result = await tool.execute(parsedArgs);
+      const durationMs = Date.now() - startedAt;
+      try {
+        await telemetryService.emit({
+          eventId: uuidv4(),
+          runId,
+          ts: new Date().toISOString(),
+          type: 'tool_call_end',
+          name: tool.name,
+          data: { toolCallId, argsHash, durationMs, resultLength: String(result ?? '').length },
+        });
+      } catch {
+        // ignore
+      }
+
+      try {
+        auditService
+          .log({
+            actor: 'agent',
+            action: 'tool_call_end',
+            details: { runId, toolName: tool.name, toolCallId, durationMs },
+            status: 'success',
+          })
+          .catch(() => undefined);
+      } catch {
+        // ignore
+      }
+
+      return result;
+    } catch (e: any) {
+      const durationMs = Date.now() - startedAt;
+      try {
+        await telemetryService.emit({
+          eventId: uuidv4(),
+          runId,
+          ts: new Date().toISOString(),
+          type: 'tool_call_end',
+          name: tool.name,
+          data: { toolCallId, argsHash, durationMs, error: String(e?.message ?? e) },
+        });
+      } catch {
+        // ignore
+      }
+
+      try {
+        auditService
+          .log({
+            actor: 'agent',
+            action: 'tool_call_end',
+            details: { runId, toolName: tool.name, toolCallId, durationMs, error: String(e?.message ?? e) },
+            status: 'failure',
+          })
+          .catch(() => undefined);
+      } catch {
+        // ignore
+      }
+
+      return `Tool execution failed: ${String(e?.message ?? e)}`;
+    }
+  }
+
+  async invokeTool(toolName: string, arg: any): Promise<string> {
+    const tool = this.tools.get(toolName);
+    if (!tool) return `Error: Tool '${toolName}' not found.`;
+    return this.invokeToolInternal(tool, arg);
+  }
+
+  // Convert to LangChain tools format
+  toLangChainTools(): StructuredTool[] {
+    const registry = this;
+
+    return this.getAllTools().map(tool => {
+      return new (class extends StructuredTool {
+        name = tool.name;
+        description = tool.description;
+        schema = tool.schema;
+
+        async _call(arg: any): Promise<string> {
+          return registry.invokeToolInternal(tool, arg);
+        }
+      })();
     });
   }
 }
