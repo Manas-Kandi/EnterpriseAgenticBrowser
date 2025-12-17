@@ -295,6 +295,11 @@ export class AgentService {
              "args": { "message": "Your text here" }
            }
 
+        PREFERRED WORKFLOW (SPEED & RELIABILITY):
+        1. OBSERVE: If the page state is unknown, call 'browser_observe'.
+        2. PLAN: For multi-step tasks (e.g. filling forms, navigating then clicking), ALWAYS use 'browser_execute_plan'. This is significantly faster than individual tool calls.
+        3. EXECUTE: Submit the plan. Only use single actions (browser_click, browser_type) for one-off interactions or debugging.
+
         CONVERSATION CONTEXT:
         - You have memory of the entire conversation. Use previous messages to understand context.
         - If the user refers to "it", "this page", "here", etc., use the conversation history and current browser state to understand what they mean.
