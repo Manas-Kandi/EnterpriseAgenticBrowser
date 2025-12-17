@@ -151,9 +151,7 @@ Review / Done criteria
 You can run benchmarks locally and see regressions; dataset export is reliable.
 Wrap-up
 Review that task was completed well, and GitHub commit and push.
-Status
-Task list produced (15 items, each ending with review + commit + push).
-Feedback submitted
+
 
 
 

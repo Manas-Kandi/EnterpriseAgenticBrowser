@@ -6,6 +6,7 @@ function WebViewInstance({ tab, active }: { tab: BrowserTab; active: boolean }) 
   const { updateTab, addToHistory } = useBrowserStore();
   const webviewRef = useRef<any>(null);
   const registeredRef = useRef(false);
+  const domReadyRef = useRef(false);
   const initialUrlRef = useRef(tab.url); // Track initial URL to prevent reload loops
   const lastNavigatedUrlRef = useRef(tab.url); // Track last URL we navigated to
 
@@ -38,28 +39,32 @@ function WebViewInstance({ tab, active }: { tab: BrowserTab; active: boolean }) 
     if (isNewTab) return; 
 
     const el = webviewRef.current;
-    if (!el || !tab.action) return;
+    if (!el || !tab.action || !domReadyRef.current) return;
 
-    if (tab.action === 'back' && el.canGoBack()) {
-      el.goBack();
-    } else if (tab.action === 'forward' && el.canGoForward()) {
-      el.goForward();
-    } else if (tab.action === 'reload') {
-      el.reload();
-    } else if (tab.action === 'stop') {
-        el.stop();
-    } else if (tab.action === 'devtools') {
-        if (el.isDevToolsOpened()) {
-            el.closeDevTools();
-        } else {
-            el.openDevTools();
-        }
-    } else if (tab.action === 'zoomIn') {
-        const current = el.getZoomLevel();
-        el.setZoomLevel(current + 0.5);
-    } else if (tab.action === 'zoomOut') {
-        const current = el.getZoomLevel();
-        el.setZoomLevel(current - 0.5);
+    try {
+      if (tab.action === 'back' && el.canGoBack()) {
+        el.goBack();
+      } else if (tab.action === 'forward' && el.canGoForward()) {
+        el.goForward();
+      } else if (tab.action === 'reload') {
+        el.reload();
+      } else if (tab.action === 'stop') {
+          el.stop();
+      } else if (tab.action === 'devtools') {
+          if (el.isDevToolsOpened()) {
+              el.closeDevTools();
+          } else {
+              el.openDevTools();
+          }
+      } else if (tab.action === 'zoomIn') {
+          const current = el.getZoomLevel();
+          el.setZoomLevel(current + 0.5);
+      } else if (tab.action === 'zoomOut') {
+          const current = el.getZoomLevel();
+          el.setZoomLevel(current - 0.5);
+      }
+    } catch (e) {
+      // Webview not ready yet, ignore
     }
 
     // Reset action immediately
@@ -85,6 +90,7 @@ function WebViewInstance({ tab, active }: { tab: BrowserTab; active: boolean }) 
     };
 
     el.addEventListener('dom-ready', register);
+    el.addEventListener('dom-ready', () => { domReadyRef.current = true; });
     el.addEventListener('did-navigate', register); // Re-register on nav just in case
     register();
 
