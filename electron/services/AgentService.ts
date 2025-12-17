@@ -471,6 +471,17 @@ export class AgentService {
         
         // Log raw response for debugging
         console.log(`[Agent Turn ${i}] Raw Response:`, content);
+
+        // Capture thought if present (text before the first JSON brace)
+        const jsonStart = content.indexOf('{');
+        if (jsonStart > 10) {
+          const thought = content.slice(0, jsonStart).trim();
+          // Filter out markdown blocks if the thought is just ```json
+          const cleanThought = thought.replace(/```json/g, '').replace(/```/g, '').trim();
+          if (cleanThought.length > 5) {
+            this.emitStep('thought', cleanThought);
+          }
+        }
         
         const action = this.parseToolCall(content);
         
