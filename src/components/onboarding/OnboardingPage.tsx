@@ -1,13 +1,13 @@
-import { User, Code, Check, Lock, X } from 'lucide-react';
+import { User, Code, Check, Lock, X, Building2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
 
 interface OnboardingPageProps {
-    onSelectMode: (mode: 'personal' | 'dev') => void;
+    onSelectMode: (mode: 'personal' | 'dev' | 'saas') => void;
 }
 
 export function OnboardingPage({ onSelectMode }: OnboardingPageProps) {
-    const [selected, setSelected] = useState<'personal' | 'dev' | null>(null);
+    const [selected, setSelected] = useState<'personal' | 'dev' | 'saas' | null>(null);
     const [showPassword, setShowPassword] = useState(false);
     const [password, setPassword] = useState('');
     const [error, setError] = useState(false);
@@ -82,7 +82,7 @@ export function OnboardingPage({ onSelectMode }: OnboardingPageProps) {
 
     return (
         <div className="fixed inset-0 z-50 bg-background flex flex-col items-center justify-center p-6">
-            <div className="max-w-4xl w-full flex flex-col items-center gap-12">
+            <div className="max-w-6xl w-full flex flex-col items-center gap-12">
                 
                 <div className="text-center space-y-4">
                     <h1 className="text-4xl md:text-5xl font-light tracking-tight text-foreground">
@@ -93,7 +93,7 @@ export function OnboardingPage({ onSelectMode }: OnboardingPageProps) {
                     </p>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full">
                     
                     {/* Personal Card */}
                     <button
@@ -146,6 +146,33 @@ export function OnboardingPage({ onSelectMode }: OnboardingPageProps) {
                         <h3 className="text-2xl font-medium mb-2">Developer Mode</h3>
                         <p className="text-center text-muted-foreground">
                             Full access to Mock SaaS environment, Agent Tools, and Enterprise integrations.
+                        </p>
+                    </button>
+
+                    {/* SaaS Platform Card */}
+                    <button
+                        onClick={() => setSelected('saas')}
+                        className={cn(
+                            "group relative flex flex-col items-center p-8 rounded-2xl border-2 transition-all duration-300 hover:scale-[1.02]",
+                            selected === 'saas' 
+                                ? "border-purple-500 bg-purple-500/5 shadow-xl shadow-purple-500/10" 
+                                : "border-border bg-card hover:border-purple-500/50 hover:bg-secondary/30"
+                        )}
+                    >
+                        {selected === 'saas' && (
+                            <div className="absolute top-4 right-4 bg-purple-500 text-white rounded-full p-1">
+                                <Check size={16} />
+                            </div>
+                        )}
+                        <div className={cn(
+                            "w-20 h-20 rounded-full flex items-center justify-center mb-6 transition-colors",
+                            selected === 'saas' ? "bg-purple-500 text-white" : "bg-secondary text-muted-foreground group-hover:bg-purple-500/20 group-hover:text-purple-500"
+                        )}>
+                            <Building2 size={40} />
+                        </div>
+                        <h3 className="text-2xl font-medium mb-2">SaaS Platform</h3>
+                        <p className="text-center text-muted-foreground">
+                            Build and configure your own custom browser instance for your organization.
                         </p>
                     </button>
 

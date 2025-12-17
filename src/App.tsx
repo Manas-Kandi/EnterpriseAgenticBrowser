@@ -3,6 +3,7 @@ import { BrowserView } from '@/components/browser/BrowserView';
 import { WorkspaceSidebar } from '@/components/browser/WorkspaceSidebar';
 import { WorkspacePanel } from '@/components/browser/WorkspacePanel';
 import { OnboardingPage } from '@/components/onboarding/OnboardingPage';
+import { SaasSetupPage } from '@/components/onboarding/SaasSetupPage';
 import { useEffect } from 'react';
 import { useBrowserStore } from '@/lib/store';
 
@@ -36,6 +37,10 @@ function App() {
 
   if (!appMode) {
       return <OnboardingPage onSelectMode={setAppMode} />;
+  }
+
+  if (appMode === 'saas') {
+      return <SaasSetupPage />;
   }
 
   return (

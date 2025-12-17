@@ -28,7 +28,7 @@ interface BrowserState {
   history: HistoryItem[];
   activeSidebarPanel: 'drive' | 'gmail' | 'calendar' | 'slack' | 'agent' | 'extensions' | null;
   user: { name: string; email: string; avatar?: string } | null;
-  appMode: 'personal' | 'dev' | null;
+  appMode: 'personal' | 'dev' | 'saas' | null;
   agentMode: AgentMode;
   agentPermissionMode: AgentPermissionMode;
   
@@ -41,7 +41,7 @@ interface BrowserState {
   addToHistory: (url: string, title: string) => void;
   setSidebarPanel: (panel: 'drive' | 'gmail' | 'calendar' | 'slack' | null) => void;
   setUser: (user: { name: string; email: string; avatar?: string } | null) => void;
-  setAppMode: (mode: 'personal' | 'dev' | null) => void;
+  setAppMode: (mode: 'personal' | 'dev' | 'saas' | null) => void;
   setAgentMode: (mode: AgentMode) => void;
   setAgentPermissionMode: (mode: AgentPermissionMode) => void;
 }
