@@ -1337,15 +1337,16 @@ export class BrowserAutomationService {
       name: 'browser_extract_main_text',
       description: 'Extract visible text from the main content area (role=main/main tag) to support scraping/QA.',
       schema: z.object({
-        maxChars: z.number().optional().describe('Max characters to return (default 4000)'),
+        maxChars: z.number().optional().describe('Max characters to return (default 2000, hard cap 4000)'),
       }),
       execute: async ({ maxChars }: { maxChars?: number }) => {
         const target = await this.getTarget();
+        const limit = Math.max(1, Math.min(4000, Math.floor(maxChars ?? 2000)));
         const text = await target.executeJavaScript(
           `(() => {
             const node = document.querySelector('main, [role="main"]') || document.body;
             const raw = (node?.innerText || '').replace(/\s+/g, ' ').trim();
-            return raw.slice(0, Math.max(1, Math.min(20000, ${JSON.stringify(maxChars ?? 4000)})));
+            return raw.slice(0, ${JSON.stringify(limit)});
           })()`,
           true
         );

@@ -243,6 +243,31 @@ export class PolicyService {
       }),
     });
 
+    this.addRule({
+      name: 'extract-main-text-gating',
+      description: 'Gate browser_extract_main_text to reduce sensitive data exposure',
+      priority: 85,
+      match: (ctx) => ctx.toolName === 'browser_extract_main_text',
+      evaluate: (ctx) => {
+        const domainRisk = ctx.domain ? DOMAIN_RISK_LEVELS[ctx.domain] : undefined;
+        const effectiveRisk = domainRisk === undefined ? RiskLevel.HIGH : domainRisk;
+        if (effectiveRisk === RiskLevel.LOW) {
+          return {
+            decision: PolicyDecision.NEEDS_APPROVAL,
+            riskLevel: RiskLevel.MEDIUM,
+            reason: 'Extract main text requires approval',
+            matchedRule: 'extract-main-text-gating',
+          };
+        }
+        return {
+          decision: PolicyDecision.NEEDS_APPROVAL,
+          riskLevel: RiskLevel.HIGH,
+          reason: `Extract main text on non-low-risk domain: ${ctx.domain ?? 'unknown'}`,
+          matchedRule: 'extract-main-text-gating',
+        };
+      },
+    });
+
     // Rule 4: File operations on external domains need approval
     this.addRule({
       name: 'external-file-operations',

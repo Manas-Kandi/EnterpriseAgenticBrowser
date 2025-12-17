@@ -123,12 +123,22 @@ export class AgentService {
     const patterns = [
       // Bearer tokens
       { re: /Bearer\s+[a-zA-Z0-9\-\._]+/gi, repl: 'Bearer [REDACTED_TOKEN]' },
+      // Authorization header
+      { re: /Authorization\s*:\s*Bearer\s+[a-zA-Z0-9\-\._]+/gi, repl: 'Authorization: Bearer [REDACTED_TOKEN]' },
       // OpenAI sk- keys
       { re: /sk-[a-zA-Z0-9]{32,}/g, repl: '[REDACTED_OPENAI_KEY]' },
+      // GitHub tokens
+      { re: /gh[pousr]_[A-Za-z0-9_]{20,}/g, repl: '[REDACTED_GITHUB_TOKEN]' },
+      // Slack tokens
+      { re: /xox[baprs]-[A-Za-z0-9-]{10,}/g, repl: '[REDACTED_SLACK_TOKEN]' },
       // AWS Access Keys
       { re: /AKIA[0-9A-Z]{16}/g, repl: '[REDACTED_AWS_KEY]' },
+      // JWT-like tokens
+      { re: /\beyJ[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}\b/g, repl: '[REDACTED_JWT]' },
       // Generic "password": "..." patterns (loose match)
-      { re: /"(password|client_secret|client_secret|access_token|id_token)"\s*:\s*"[^"]+"/gi, repl: '"$1": "[REDACTED]"' },
+      { re: /"(password|client_secret|access_token|id_token|refresh_token|api_key|apikey)"\s*:\s*"[^"]+"/gi, repl: '"$1": "[REDACTED]"' },
+      // password=... / token=... forms
+      { re: /(password|passwd|pwd|token|secret|api[_-]?key)\s*[:=]\s*[^\s\n"']+/gi, repl: '$1=[REDACTED]' },
       // Private Keys
       { re: /-----BEGIN [A-Z]+ PRIVATE KEY-----[\s\S]*?-----END [A-Z]+ PRIVATE KEY-----/g, repl: '[REDACTED_PRIVATE_KEY]' },
     ];
@@ -573,8 +583,7 @@ export class AgentService {
         
         const content = response.content as string;
         
-        // Log raw response for debugging
-        console.log(`[Agent Turn ${i}] Raw Response:`, content);
+        console.log(`[Agent Turn ${i}] Raw Response:`, this.redactSecrets(content));
 
         // Capture thought if present (text before the first JSON brace)
         const jsonStart = content.indexOf('{');
@@ -605,7 +614,7 @@ export class AgentService {
           parseFailures++;
           this.emitStep('observation', `Model returned invalid JSON (attempt ${parseFailures}/3).`);
           console.warn("Failed to parse JSON response:", content);
-          messages.push(response);
+          messages.push(new AIMessage(this.redactSecrets(String((response as any)?.content ?? ''))));
           messages.push(
             new SystemMessage(
               `Error: Output ONLY valid JSON. Format: {"tool":"tool_name","args":{...}}\n` +
@@ -660,7 +669,7 @@ export class AgentService {
               }
             }
             // Save final response to conversation history
-            this.conversationHistory.push(new AIMessage(content));
+            this.conversationHistory.push(new AIMessage(this.redactSecrets(content)));
             return finalMessage;
         }
 
@@ -759,8 +768,10 @@ export class AgentService {
                 }
                 
                 // Add interaction to both local messages and persistent history
-                const aiMsg = new AIMessage(content);
-                const toolOutputMsg = new SystemMessage(`Tool '${(action as any).tool}' Output:\n${result}`);
+                const safeToolCall = this.redactSecrets(content);
+                const safeResult = this.redactSecrets(String(result ?? ''));
+                const aiMsg = new AIMessage(safeToolCall);
+                const toolOutputMsg = new SystemMessage(`Tool '${(action as any).tool}' Output:\n${safeResult}`);
                 messages.push(aiMsg);
                 messages.push(toolOutputMsg);
                 // Persist to conversation history for future calls
@@ -777,7 +788,7 @@ export class AgentService {
                   durationMs: toolDurationMs,
                   errorMessage: String(err?.message ?? err),
                 });
-                const aiMsg = new AIMessage(content);
+                const aiMsg = new AIMessage(this.redactSecrets(content));
                 const errorMsg = new SystemMessage(`Tool Execution Error: ${err.message}`);
                 messages.push(aiMsg);
                 messages.push(errorMsg);
