@@ -19,6 +19,7 @@ import './integrations/mock/MockConfluenceConnector'; // Initialize Mock Conflue
 import './integrations/mock/MockTrelloConnector'; // Initialize Mock Trello
 import './integrations/BrowserAutomationService'; // Initialize Playwright Automation
 import './services/WebAPIService'; // Initialize Web API tools (GitHub, HN, Wikipedia APIs)
+import './services/CodeExecutionService'; // Initialize dynamic code execution for agent
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 

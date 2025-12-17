@@ -516,6 +516,23 @@ You can answer questions about what's on the page, explain content, summarize in
         - Cryptocurrency prices (Bitcoin, Ethereum, etc.) → use "api_crypto_price" (instead of coinmarketcap.com)
         - Any JSON API → use "api_http_get"
         
+        DYNAMIC CODE EXECUTION (for APIs without pre-built tools):
+        If no existing tool fits your needs, use "execute_code" to write JavaScript that calls any API.
+        This makes you self-sufficient - you can call ANY public API by writing code.
+        
+        Example: Weather (using Open-Meteo API, free, no key needed)
+        1. First get coordinates: { "tool": "lookup_city_coordinates", "args": { "city": "New York" } }
+        2. Then fetch weather: { "tool": "execute_code", "args": { 
+             "code": "const res = await fetch('https://api.open-meteo.com/v1/forecast?latitude=40.71&longitude=-74.01&current=temperature_2m&temperature_unit=fahrenheit'); const data = await res.json(); return { temperature: data.current.temperature_2m, unit: 'F' };",
+             "description": "Get New York weather from Open-Meteo"
+           }}
+        
+        Example: Any public API
+        { "tool": "execute_code", "args": { 
+            "code": "const res = await fetch('https://api.example.com/data'); return await res.json();",
+            "description": "Fetch data from example API"
+          }}
+        
         APIs are 10-100x faster than browser automation. Only fall back to browser if:
         1. The API fails or is rate-limited
         2. The task requires interaction (clicking, form filling)
