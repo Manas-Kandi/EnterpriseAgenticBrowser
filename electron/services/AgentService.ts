@@ -509,37 +509,35 @@ You can answer questions about what's on the page, explain content, summarize in
            }
 
         API-FIRST STRATEGY (CRITICAL FOR SPEED):
-        For data retrieval from common websites, ALWAYS try API tools first:
-        - GitHub search/stars → use "api_github_search" (returns repos with star counts instantly)
+        For data retrieval, ALWAYS use APIs instead of browser automation:
+        - GitHub search/stars → use "api_github_search"
         - Hacker News top stories → use "api_hackernews_top"
         - Wikipedia featured article → use "api_wikipedia_featured"
-        - Cryptocurrency prices (Bitcoin, Ethereum, etc.) → use "api_crypto_price" (instead of coinmarketcap.com)
-        - Any JSON API → use "api_http_get"
+        - Cryptocurrency prices → use "api_crypto_price"
+        - Weather data (weather.com, accuweather, etc.) → use "execute_code" with Open-Meteo API
+        - Any other data → use "execute_code" to call a public API
         
-        DYNAMIC CODE EXECUTION (for APIs without pre-built tools):
-        If no existing tool fits your needs, use "execute_code" to write JavaScript that calls any API.
-        This makes you self-sufficient - you can call ANY public API by writing code.
+        WEATHER TASKS - ALWAYS USE API, NOT BROWSER:
+        Weather.com has a terrible DOM for automation. ALWAYS use Open-Meteo API instead:
         
-        Example: Weather (using Open-Meteo API, free, no key needed)
-        1. First get coordinates: { "tool": "lookup_city_coordinates", "args": { "city": "New York" } }
-        2. Then fetch weather: { "tool": "execute_code", "args": { 
-             "code": "const res = await fetch('https://api.open-meteo.com/v1/forecast?latitude=40.71&longitude=-74.01&current=temperature_2m&temperature_unit=fahrenheit'); const data = await res.json(); return { temperature: data.current.temperature_2m, unit: 'F' };",
-             "description": "Get New York weather from Open-Meteo"
-           }}
+        Step 1: Get coordinates for each city
+        { "tool": "lookup_city_coordinates", "args": { "city": "New York" } }
         
-        Example: Any public API
+        Step 2: Fetch weather using execute_code
         { "tool": "execute_code", "args": { 
-            "code": "const res = await fetch('https://api.example.com/data'); return await res.json();",
-            "description": "Fetch data from example API"
+            "code": "const res = await fetch('https://api.open-meteo.com/v1/forecast?latitude=40.71&longitude=-74.01&current=temperature_2m&temperature_unit=fahrenheit'); const data = await res.json(); return { city: 'New York', temperature: data.current.temperature_2m, unit: 'F' };",
+            "description": "Get New York weather"
           }}
         
-        APIs are 10-100x faster than browser automation. Only fall back to browser if:
-        1. The API fails or is rate-limited
-        2. The task requires interaction (clicking, form filling)
-        3. No API exists for the data you need
-
-        IMPORTANT: If the user says "go to" or "click" or "navigate", they want to SEE the page in the browser.
-        In this case, use the API to get the data quickly, then ALSO navigate the browser to show them the result.
+        For multiple cities, call lookup_city_coordinates and execute_code for EACH city, then combine results.
+        
+        APIs are 10-100x faster than browser automation. Only use browser if:
+        1. The task REQUIRES clicking buttons or filling forms
+        2. No API exists AND the user explicitly needs to SEE the page
+        
+        WHEN TO NAVIGATE BROWSER:
+        If user says "go to X" AND the task is primarily about SEEING/INTERACTING with the page, navigate.
+        If user says "go to X and tell me Y" where Y is DATA, use API first, then optionally navigate to show them.
         
         CRITICAL - NO HALLUCINATION RULE:
         - NEVER claim you have done something you haven't actually done.

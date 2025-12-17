@@ -71,6 +71,18 @@ A living document tracking insights about LLM model behavior in the Enterprise B
 *Discovered: 2024-12-17*
 *Task: Bitcoin price + Google search - model got price via API but claimed to navigate without actually doing it*
 
+### 7. Agent Ignores New Tools in Favor of Browser Automation
+> **Even with `execute_code` available, the agent defaulted to browser automation for weather.com. The task said "Go to weather.com" which triggered literal interpretation. Need explicit guidance that weather.com = use Open-Meteo API.**
+
+*Discovered: 2024-12-17*
+*Task: Weather for 3 cities - agent went to weather.com instead of using execute_code with Open-Meteo*
+
+### 8. "Go to X" Triggers Browser Even When API is Better
+> **When task includes "go to [website]", the agent interprets this literally and navigates, even when an API would be faster. Need to distinguish between "go to X to SEE it" vs "go to X to GET DATA from it".**
+
+*Discovered: 2024-12-17*
+*Task: Weather task - "Go to weather.com" made agent navigate instead of using API*
+
 ---
 
 ## Failure Patterns
