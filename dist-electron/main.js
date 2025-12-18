@@ -14,6 +14,7 @@ import crypto$3 from "crypto";
 import fs$1 from "node:fs/promises";
 import { AsyncLocalStorage } from "node:async_hooks";
 import Database from "better-sqlite3";
+import os$1 from "node:os";
 import * as vm from "vm";
 const byteToHex$2 = [];
 for (let i = 0; i < 256; ++i) {
@@ -43834,6 +43835,41 @@ class BrowserTargetService {
   }
 }
 const browserTargetService = new BrowserTargetService();
+const FILE_NAME = "saved_plans.json";
+class PlanMemory {
+  constructor() {
+    __publicField(this, "filePath");
+    __publicField(this, "plans", []);
+    const userDataDir = path$2.join(os$1.homedir(), ".enterprise_agent");
+    this.filePath = path$2.join(userDataDir, FILE_NAME);
+    fs$1.mkdir(userDataDir, { recursive: true }).catch(() => void 0);
+    this.load();
+  }
+  async load() {
+    try {
+      const data = await fs$1.readFile(this.filePath, "utf-8");
+      this.plans = JSON.parse(data);
+    } catch {
+      this.plans = [];
+    }
+  }
+  async persist() {
+    await fs$1.writeFile(this.filePath, JSON.stringify(this.plans, null, 2), "utf-8");
+  }
+  async getPlans() {
+    await this.load();
+    return [...this.plans];
+  }
+  async savePlan(taskId, plan) {
+    this.plans = this.plans.filter((p) => p.id !== taskId);
+    this.plans.push({ id: taskId, ts: Date.now(), plan });
+    await this.persist();
+  }
+  async deletePlan(taskId) {
+    this.plans = this.plans.filter((p) => p.id !== taskId);
+    await this.persist();
+  }
+}
 class BrowserAutomationService {
   constructor() {
     __publicField(this, "mockSaasRoutesCache", null);
@@ -45419,6 +45455,11 @@ class BenchmarkService {
     __publicField(this, "trajectory", []);
     __publicField(this, "llmCalls", 0);
     __publicField(this, "retries", 0);
+    __publicField(this, "planMemory", new PlanMemory());
+    __publicField(this, "autoLearnEnabled", false);
+  }
+  setAutoLearn(enabled) {
+    this.autoLearnEnabled = enabled;
   }
   async runSuite(filter, enableActionsPolicy) {
     const scenarios = filter ? BENCHMARK_SUITE.filter((s) => s.id.includes(filter)) : BENCHMARK_SUITE;
@@ -45454,6 +45495,13 @@ class BenchmarkService {
       agentService.setStepHandler(stepCollector);
       await agentService.chat(scenario.userMessage);
       const success = await this.verifyOutcome(scenario);
+      if (success && this.autoLearnEnabled) {
+        const planSteps = this.extractPlanSteps(this.trajectory);
+        if (planSteps.length > 0) {
+          await this.planMemory.savePlan(scenario.id, planSteps);
+          console.log(`[Benchmark] Auto-saved plan for ${scenario.id}`);
+        }
+      }
       return {
         scenarioId: scenario.id,
         success,
@@ -45479,6 +45527,16 @@ class BenchmarkService {
     } finally {
       agentService.clearStepHandler();
     }
+  }
+  extractPlanSteps(trajectory) {
+    return trajectory.filter((e) => {
+      var _a3;
+      return e.type === "action" && ((_a3 = e.metadata) == null ? void 0 : _a3.tool);
+    }).map((e) => {
+      const tool2 = e.metadata.tool;
+      const content = e.content || "";
+      return `${tool2}: ${content.replace(/^Executing\s+/i, "").substring(0, 100)}`;
+    });
   }
   extractNormalizedPlan(trajectory) {
     const toolCalls = trajectory.filter((e) => {
@@ -46481,6 +46539,7 @@ EXAMPLES:
   }
 }
 new CodeExecutionService();
+const planMemory = new PlanMemory();
 const __dirname$1 = path$2.dirname(fileURLToPath(import.meta.url));
 process.env.APP_ROOT = path$2.join(__dirname$1, "..");
 const VITE_DEV_SERVER_URL = process.env["VITE_DEV_SERVER_URL"];
@@ -46632,6 +46691,10 @@ app.whenReady().then(() => {
     const results = await benchmarkService.runSuite(filter);
     return results;
   });
+  ipcMain.handle("agent:set-auto-learn", async (_, enabled) => {
+    benchmarkService.setAutoLearn(enabled);
+    return { success: true, enabled };
+  });
   ipcMain.handle("benchmark:runSuiteWithFlag", async (_, filter, enableActionsPolicy) => {
     const results = await benchmarkService.runSuite(filter, enableActionsPolicy);
     return results;
@@ -46639,6 +46702,17 @@ app.whenReady().then(() => {
   ipcMain.handle("benchmark:exportTrajectories", async (_, results) => {
     const filePath = await benchmarkService.exportTrajectories(results);
     return { success: true, path: filePath };
+  });
+  ipcMain.handle("agent:get-saved-plans", async () => {
+    return planMemory.getPlans();
+  });
+  ipcMain.handle("agent:save-plan", async (_event, taskId, plan) => {
+    await planMemory.savePlan(taskId, plan);
+    return { success: true };
+  });
+  ipcMain.handle("agent:delete-plan", async (_event, taskId) => {
+    await planMemory.deletePlan(taskId);
+    return { success: true };
   });
   ipcMain.handle("agent:chat", async (event, message) => {
     const runId = v4$2();
