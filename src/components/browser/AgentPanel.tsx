@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { Send, X, ChevronDown, Brain, Zap, RotateCcw, MessageSquare, Play, Shield, Activity, Plus, History, MoreHorizontal, ChevronRight, Globe, Search, MousePointerClick } from 'lucide-react';
 import { useBrowserStore } from '@/lib/store';
+import { PlanVisualizer } from './PlanVisualizer';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -42,11 +43,10 @@ export function AgentPanel() {
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [currentModelId, setCurrentModelId] = useState<string>('');
   const [showModelSelector, setShowModelSelector] = useState(false);
-  const [feedbackMap, setFeedbackMap] = useState<Record<number, 'worked' | 'failed' | 'partial'>>({});
-  const [showTrace, setShowTrace] = useState(false);
   const [showBenchmarks, setShowBenchmarks] = useState(false);
   const [benchmarkResults, setBenchmarkResults] = useState<BenchmarkResult[]>([]);
   const [runningBenchmark, setRunningBenchmark] = useState(false);
+  const [currentPlanStep, setCurrentPlanStep] = useState<number>(0);
 
   const approvalRequest = approvalQueue.length > 0 ? approvalQueue[0] : null;
 
@@ -61,43 +61,6 @@ export function AgentPanel() {
       console.error('Benchmark failed:', err);
     } finally {
       setRunningBenchmark(false);
-    }
-  };
-
-  // Helper to extract skill ID from observation
-  const getSkillIdFromMessage = (content: string): string | null => {
-    try {
-      if (!content.includes('"skill"') || !content.includes('"id"')) return null;
-      // Try to find the JSON object if it's wrapped in text
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
-      const jsonStr = jsonMatch ? jsonMatch[0] : content;
-      const data = JSON.parse(jsonStr);
-      return data?.skill?.id || null;
-    } catch {
-      return null;
-    }
-  };
-
-  const getSkillVersionFromMessage = (content: string): number | null => {
-    try {
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
-      const jsonStr = jsonMatch ? jsonMatch[0] : content;
-      const data = JSON.parse(jsonStr);
-      const v = data?.skill?.currentVersion;
-      return typeof v === 'number' ? v : null;
-    } catch {
-      return null;
-    }
-  };
-
-  const handleFeedback = async (skillId: string, label: 'worked' | 'failed' | 'partial', index: number) => {
-    if (!window.agent) return;
-    try {
-      const skillVersion = getSkillVersionFromMessage(messages[index]?.content ?? '') ?? undefined;
-      await window.agent.sendFeedback(skillId, label, skillVersion);
-      setFeedbackMap(prev => ({ ...prev, [index]: label }));
-    } catch (err) {
-      console.error('Failed to send feedback:', err);
     }
   };
 
@@ -128,6 +91,15 @@ export function AgentPanel() {
     });
     // Listen for agent steps
     const offStep = window.agent.onStep((step: any) => {
+      // Track progress through plans
+      if (step.type === 'thought' && step.metadata?.plan && Array.isArray(step.metadata.plan)) {
+        // Reset plan step when a new plan is created
+        setCurrentPlanStep(0);
+      } else if (step.type === 'action') {
+        // Increment plan step when an action is executed
+        setCurrentPlanStep(prev => prev + 1);
+      }
+      
       setMessages((prev) => [
         ...prev,
         {
@@ -379,6 +351,28 @@ export function AgentPanel() {
 
               // Handle Assistant Messages (Thoughts, Actions, Observations, Text)
               if (msg.type === 'thought') {
+                // Check if this thought contains a structured plan
+                if (msg.metadata?.plan && Array.isArray(msg.metadata.plan)) {
+                  return (
+                    <details key={i} className="group/thought">
+                      <summary className="flex items-center gap-2 text-[11px] text-muted-foreground/40 hover:text-muted-foreground/70 cursor-pointer list-none select-none py-0.5 transition-colors">
+                        <ChevronRight size={12} className="group-open/thought:rotate-90 transition-transform opacity-50" />
+                        <span>Thought for {msg.metadata?.durationMs ? Math.round(msg.metadata.durationMs / 1000) : '<1'}s</span>
+                      </summary>
+                      <div className="pl-5 pt-1 space-y-3">
+                        <div className="text-[11px] text-muted-foreground/50 italic leading-relaxed border-l border-border/10 ml-[5px] mb-2 font-mono">
+                          {msg.content}
+                        </div>
+                        <PlanVisualizer 
+                          plan={msg.metadata.plan} 
+                          currentStepIndex={currentPlanStep}
+                        />
+                      </div>
+                    </details>
+                  );
+                }
+                
+                // Regular thought without plan
                 return (
                   <details key={i} className="group/thought">
                     <summary className="flex items-center gap-2 text-[11px] text-muted-foreground/40 hover:text-muted-foreground/70 cursor-pointer list-none select-none py-0.5 transition-colors">
