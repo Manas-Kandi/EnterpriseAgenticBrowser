@@ -44854,18 +44854,36 @@ User request: ${safeUserMessage} `);
       if (warmStartHit) {
         this.emitStep("thought", `Found matching skill: "${warmStartHit.skill.name}" (similarity: ${warmStartHit.similarity.toFixed(2)}). Attempting warm-start execution.`);
         try {
-          const executePlanTool = tools.find((t2) => t2.name === "browser_execute_plan");
-          if (executePlanTool && warmStartHit.skill.steps.length > 0) {
-            const planResult = await executePlanTool.invoke({ steps: warmStartHit.skill.steps });
-            const resultStr = String(planResult);
-            if (resultStr.includes("successfully") || resultStr.includes("completed")) {
-              taskKnowledgeService.recordOutcome(warmStartHit.skill.id, true);
-              const fastResponse = `Completed using saved skill "${warmStartHit.skill.name}".`;
-              this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: "final_response", args: { message: fastResponse } })));
-              return fastResponse;
-            } else {
-              this.emitStep("thought", `Warm-start execution failed. Falling back to normal planning.`);
-              taskKnowledgeService.markStale(warmStartHit.skill.id);
+          const steps = warmStartHit.skill.steps;
+          if (steps.length === 1 && steps[0].action === "navigate" && steps[0].url) {
+            const navigateTool = tools.find((t2) => t2.name === "browser_navigate");
+            if (navigateTool) {
+              const navResult = await navigateTool.invoke({ url: steps[0].url });
+              const navResultStr = String(navResult);
+              if (!navResultStr.toLowerCase().includes("error")) {
+                taskKnowledgeService.recordOutcome(warmStartHit.skill.id, true);
+                const fastResponse = `Navigated to ${steps[0].url}`;
+                this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: "final_response", args: { message: fastResponse } })));
+                return fastResponse;
+              } else {
+                this.emitStep("thought", `Warm-start navigation failed: ${navResultStr}. Falling back.`);
+                taskKnowledgeService.markStale(warmStartHit.skill.id);
+              }
+            }
+          } else if (steps.length > 0) {
+            const executePlanTool = tools.find((t2) => t2.name === "browser_execute_plan");
+            if (executePlanTool) {
+              const planResult = await executePlanTool.invoke({ steps });
+              const resultStr = String(planResult);
+              if (resultStr.includes("successfully") || resultStr.includes("completed") || resultStr.includes("Plan completed")) {
+                taskKnowledgeService.recordOutcome(warmStartHit.skill.id, true);
+                const fastResponse = `Completed using saved skill "${warmStartHit.skill.name}".`;
+                this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: "final_response", args: { message: fastResponse } })));
+                return fastResponse;
+              } else {
+                this.emitStep("thought", `Warm-start execution result: ${resultStr.substring(0, 100)}. Falling back.`);
+                taskKnowledgeService.markStale(warmStartHit.skill.id);
+              }
             }
           }
         } catch (warmStartErr) {

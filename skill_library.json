@@ -654,10 +654,12 @@
     ],
     "currentVersion": 1,
     "stats": {
-      "successes": 0,
-      "failures": 0,
-      "lastUsed": 1765952069084,
-      "partials": 0
+      "successes": 1,
+      "failures": 1,
+      "lastUsed": 1766099551195,
+      "partials": 0,
+      "lastOutcomeAt": 1766099551195,
+      "lastOutcomeSuccess": true
     },
     "versions": [
       {
@@ -676,7 +678,16 @@
       "admin",
       "console"
     ],
-    "feedback": [],
+    "feedback": [
+      {
+        "ts": 1766099551195,
+        "label": "worked",
+        "version": 1,
+        "runId": "2e0f9484-4079-445f-8697-02f4af714dc1",
+        "domain": "github.com",
+        "fingerprint": "/Manas-Kandi/EnterpriseAgenticBrowser"
+      }
+    ],
     "embedding": [
       0,
       0,

@@ -725,26 +725,45 @@ ${tools.map((t: any) => `- ${t.name}: ${t.description}`).join('\n')}
         this.emitStep('thought', `Found matching skill: "${warmStartHit.skill.name}" (similarity: ${warmStartHit.similarity.toFixed(2)}). Attempting warm-start execution.`);
         
         try {
-          // Execute the saved plan directly using browser_execute_plan
-          const executePlanTool = tools.find((t: any) => t.name === 'browser_execute_plan');
-          if (executePlanTool && warmStartHit.skill.steps.length > 0) {
-            const planResult = await executePlanTool.invoke({ steps: warmStartHit.skill.steps });
-            const resultStr = String(planResult);
-            
-            if (resultStr.includes('successfully') || resultStr.includes('completed')) {
-              // Success - record positive outcome
-              taskKnowledgeService.recordOutcome(warmStartHit.skill.id, true);
-              const fastResponse = `Completed using saved skill "${warmStartHit.skill.name}".`;
-              this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: 'final_response', args: { message: fastResponse } })));
-              return fastResponse;
-            } else {
-              // Execution failed - mark stale and fall back to normal flow
-              this.emitStep('thought', `Warm-start execution failed. Falling back to normal planning.`);
-              taskKnowledgeService.markStale(warmStartHit.skill.id);
+          const steps = warmStartHit.skill.steps;
+          
+          // For simple single-step navigation, use browser_navigate directly (faster)
+          if (steps.length === 1 && steps[0].action === 'navigate' && steps[0].url) {
+            const navigateTool = tools.find((t: any) => t.name === 'browser_navigate');
+            if (navigateTool) {
+              const navResult = await navigateTool.invoke({ url: steps[0].url });
+              const navResultStr = String(navResult);
+              
+              if (!navResultStr.toLowerCase().includes('error')) {
+                taskKnowledgeService.recordOutcome(warmStartHit.skill.id, true);
+                const fastResponse = `Navigated to ${steps[0].url}`;
+                this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: 'final_response', args: { message: fastResponse } })));
+                return fastResponse;
+              } else {
+                this.emitStep('thought', `Warm-start navigation failed: ${navResultStr}. Falling back.`);
+                taskKnowledgeService.markStale(warmStartHit.skill.id);
+              }
+            }
+          } else if (steps.length > 0) {
+            // For multi-step plans, use browser_execute_plan
+            const executePlanTool = tools.find((t: any) => t.name === 'browser_execute_plan');
+            if (executePlanTool) {
+              const planResult = await executePlanTool.invoke({ steps });
+              const resultStr = String(planResult);
+              
+              // Check for success indicators
+              if (resultStr.includes('successfully') || resultStr.includes('completed') || resultStr.includes('Plan completed')) {
+                taskKnowledgeService.recordOutcome(warmStartHit.skill.id, true);
+                const fastResponse = `Completed using saved skill "${warmStartHit.skill.name}".`;
+                this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: 'final_response', args: { message: fastResponse } })));
+                return fastResponse;
+              } else {
+                this.emitStep('thought', `Warm-start execution result: ${resultStr.substring(0, 100)}. Falling back.`);
+                taskKnowledgeService.markStale(warmStartHit.skill.id);
+              }
             }
           }
         } catch (warmStartErr: any) {
-          // Warm-start failed - mark skill as stale and continue with normal flow
           this.emitStep('thought', `Warm-start error: ${warmStartErr.message}. Falling back to normal planning.`);
           taskKnowledgeService.markStale(warmStartHit.skill.id);
         }
