@@ -1,7 +1,7 @@
 import ReactMarkdown from 'react-markdown';
 import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
-import { Send, User, Bot, AlertTriangle, Check, X, ChevronDown, Brain, Zap, RotateCcw, MessageSquare, Eye, Play, Shield, Rocket, Activity } from 'lucide-react';
+import { Send, X, ChevronDown, Brain, Zap, RotateCcw, MessageSquare, Play, Shield, Activity, Plus, History, MoreHorizontal, ChevronRight, Folder, FileText } from 'lucide-react';
 import { useBrowserStore } from '@/lib/store';
 
 interface Message {
@@ -55,12 +55,12 @@ export function AgentPanel() {
     setRunningBenchmark(true);
     setBenchmarkResults([]);
     try {
-        const results = await window.agent.runBenchmarkSuite(filter);
-        setBenchmarkResults(results);
+      const results = await window.agent.runBenchmarkSuite(filter);
+      setBenchmarkResults(results);
     } catch (err) {
-        console.error('Benchmark failed:', err);
+      console.error('Benchmark failed:', err);
     } finally {
-        setRunningBenchmark(false);
+      setRunningBenchmark(false);
     }
   };
 
@@ -93,11 +93,11 @@ export function AgentPanel() {
   const handleFeedback = async (skillId: string, label: 'worked' | 'failed' | 'partial', index: number) => {
     if (!window.agent) return;
     try {
-        const skillVersion = getSkillVersionFromMessage(messages[index]?.content ?? '') ?? undefined;
-        await window.agent.sendFeedback(skillId, label, skillVersion);
-        setFeedbackMap(prev => ({ ...prev, [index]: label }));
+      const skillVersion = getSkillVersionFromMessage(messages[index]?.content ?? '') ?? undefined;
+      await window.agent.sendFeedback(skillId, label, skillVersion);
+      setFeedbackMap(prev => ({ ...prev, [index]: label }));
     } catch (err) {
-        console.error('Failed to send feedback:', err);
+      console.error('Failed to send feedback:', err);
     }
   };
 
@@ -175,9 +175,9 @@ export function AgentPanel() {
       window.agent.respondApproval(approvalRequest.requestId, approved);
       setApprovalQueue((prev) => prev.filter((req) => req.requestId !== approvalRequest.requestId));
       // Optimistically add a system message
-      setMessages(prev => [...prev, { 
-          role: 'assistant', 
-          content: approved ? `✅ Approved execution of ${approvalRequest.toolName}` : `❌ Denied execution of ${approvalRequest.toolName}` 
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: approved ? `✅ Approved execution of ${approvalRequest.toolName}` : `❌ Denied execution of ${approvalRequest.toolName}`
       }]);
     }
   };
@@ -223,462 +223,396 @@ export function AgentPanel() {
   };
 
   return (
-    <div className="h-full flex flex-col bg-background/50 relative">
+    <div className="h-full flex flex-col bg-background relative">
+      {/* Header */}
+      <div className="h-10 shrink-0 flex items-center justify-between px-3 border-b border-border/50 bg-background/50 backdrop-blur-sm z-20">
+        <div className="flex items-center gap-2 overflow-hidden">
+          {/* No title here as requested */}
+        </div>
+        <div className="flex items-center gap-1">
+          <button onClick={handleResetConversation} className="p-1.5 hover:bg-secondary rounded-md text-muted-foreground hover:text-foreground transition-colors" title="New Chat">
+            <Plus size={14} />
+          </button>
+          <button className="p-1.5 hover:bg-secondary rounded-md text-muted-foreground hover:text-foreground transition-colors" title="History">
+            <History size={14} />
+          </button>
+          <button className="p-1.5 hover:bg-secondary rounded-md text-muted-foreground hover:text-foreground transition-colors" title="More">
+            <MoreHorizontal size={14} />
+          </button>
+          <button onClick={() => useBrowserStore.getState().setSidebarPanel(null)} className="p-1.5 hover:bg-secondary rounded-md text-muted-foreground hover:text-foreground transition-colors" title="Close Panel">
+            <X size={14} />
+          </button>
+        </div>
+      </div>
+
       {/* Benchmark Overlay */}
       {showBenchmarks && (
         <div className="absolute inset-0 z-50 bg-background/95 backdrop-blur-sm p-4 flex flex-col">
-            <div className="flex items-center justify-between mb-4">
-                <h2 className="text-sm font-bold flex items-center gap-2">
-                    <Activity size={16} className="text-primary" />
-                    Agent Benchmarks
-                </h2>
-                <button onClick={() => setShowBenchmarks(false)} className="p-1 hover:bg-secondary rounded">
-                    <X size={16} />
-                </button>
-            </div>
-            
-            <div className="flex gap-2 mb-4">
-                <button
-                    onClick={() => handleRunBenchmark('personal')}
-                    disabled={runningBenchmark}
-                    className="flex-1 bg-primary text-primary-foreground py-2 rounded text-xs font-medium hover:opacity-90 disabled:opacity-50"
-                >
-                    Run Personal Suite
-                </button>
-                 <button
-                    onClick={() => handleRunBenchmark('aerocore')}
-                    disabled={runningBenchmark}
-                    className="flex-1 bg-secondary text-secondary-foreground py-2 rounded text-xs font-medium hover:opacity-90 disabled:opacity-50"
-                >
-                    Run AeroCore Suite
-                </button>
-            </div>
-            
-            {benchmarkResults.length > 0 && !runningBenchmark && (
-                <button
-                    onClick={async () => {
-                        if (window.agent) {
-                            try {
-                                const { path } = await window.agent.exportBenchmarkTrajectories(benchmarkResults);
-                                alert(`Exported to ${path}`);
-                            } catch (e) {
-                                console.error(e);
-                                alert('Export failed');
-                            }
-                        }
-                    }}
-                    className="w-full mb-4 bg-secondary/50 text-foreground py-1.5 rounded text-xs hover:bg-secondary border border-border/50"
-                >
-                    Export Results to JSONL
-                </button>
-            )}
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-bold flex items-center gap-2">
+              <Activity size={16} className="text-primary" />
+              Agent Benchmarks
+            </h2>
+            <button onClick={() => setShowBenchmarks(false)} className="p-1 hover:bg-secondary rounded">
+              <X size={16} />
+            </button>
+          </div>
 
-            <div className="flex-1 overflow-y-auto space-y-2">
-                {runningBenchmark && benchmarkResults.length === 0 && (
-                    <div className="text-center py-8 text-muted-foreground text-xs animate-pulse">
-                        Running benchmarks... please wait...
-                    </div>
-                )}
-                {benchmarkResults.map((res) => (
-                    <div key={res.scenarioId} className={cn(
-                        "p-3 rounded border text-xs flex items-center justify-between",
-                        res.success ? "bg-green-500/10 border-green-500/20" : "bg-red-500/10 border-red-500/20"
-                    )}>
-                        <div>
-                            <div className="font-bold mb-1">{res.scenarioId}</div>
-                            <div className="text-muted-foreground flex gap-3">
-                                <span>{Math.round(res.durationMs / 1000)}s</span>
-                                <span>{res.steps} steps</span>
-                                <span>{res.llmCalls} LLM calls</span>
-                            </div>
-                        </div>
-                        <div className={cn("font-bold", res.success ? "text-green-500" : "text-red-500")}>
-                            {res.success ? 'PASS' : 'FAIL'}
-                        </div>
-                    </div>
-                ))}
-            </div>
+          <div className="flex gap-2 mb-4">
+            <button
+              onClick={() => handleRunBenchmark('personal')}
+              disabled={runningBenchmark}
+              className="flex-1 bg-primary text-primary-foreground py-2 rounded text-xs font-medium hover:opacity-90 disabled:opacity-50"
+            >
+              Run Personal Suite
+            </button>
+            <button
+              onClick={() => handleRunBenchmark('aerocore')}
+              disabled={runningBenchmark}
+              className="flex-1 bg-secondary text-secondary-foreground py-2 rounded text-xs font-medium hover:opacity-90 disabled:opacity-50"
+            >
+              Run AeroCore Suite
+            </button>
+          </div>
+
+          {benchmarkResults.length > 0 && !runningBenchmark && (
+            <button
+              onClick={async () => {
+                if (window.agent) {
+                  try {
+                    const { path } = await window.agent.exportBenchmarkTrajectories(benchmarkResults);
+                    alert(`Exported to ${path}`);
+                  } catch (e) {
+                    console.error(e);
+                    alert('Export failed');
+                  }
+                }
+              }}
+              className="w-full mb-4 bg-secondary/50 text-foreground py-1.5 rounded text-xs hover:bg-secondary border border-border/50"
+            >
+              Export Results to JSONL
+            </button>
+          )}
+
+          <div className="flex-1 overflow-y-auto space-y-2">
+            {runningBenchmark && benchmarkResults.length === 0 && (
+              <div className="text-center py-8 text-muted-foreground text-xs animate-pulse">
+                Running benchmarks... please wait...
+              </div>
+            )}
+            {benchmarkResults.map((res) => (
+              <div key={res.scenarioId} className={cn(
+                "p-3 rounded border text-xs flex items-center justify-between",
+                res.success ? "bg-green-500/10 border-green-500/20" : "bg-red-500/10 border-red-500/20"
+              )}>
+                <div>
+                  <div className="font-bold mb-1">{res.scenarioId}</div>
+                  <div className="text-muted-foreground flex gap-3">
+                    <span>{Math.round(res.durationMs / 1000)}s</span>
+                    <span>{res.steps} steps</span>
+                    <span>{res.llmCalls} LLM calls</span>
+                  </div>
+                </div>
+                <div className={cn("font-bold", res.success ? "text-green-500" : "text-red-500")}>
+                  {res.success ? 'PASS' : 'FAIL'}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
-      {/* Messages Area */}
-      <div className="flex-1 overflow-y-auto p-3 space-y-3">
+      {/* Main Content Area */}
+      <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-6 scrollbar-hide">
         {messages.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-muted-foreground/50 pb-10">
-                <Bot className="mb-2 opacity-20" size={32} />
-                <p className="text-xs">How can I help you today?</p>
-            </div>
+          <div className="flex flex-col items-center justify-center h-full text-muted-foreground/30 pb-20">
+            <Brain className="mb-4 opacity-10 animate-pulse" size={48} />
+            <p className="text-sm font-medium tracking-tight">Antigravity Agent</p>
+            <p className="text-xs opacity-60">Ready to assist your development</p>
+          </div>
         ) : (
-            messages.map((msg, i) => (
-                <div key={i} className={cn("flex flex-col gap-0.5 text-xs", msg.role === 'user' ? "items-end" : "items-start")}>
-                    <div className={cn("flex gap-2 max-w-full", msg.role === 'user' ? "flex-row-reverse" : "")}> 
-                        {msg.role === 'user' && (
-                           <div className="shrink-0 w-6 h-6 rounded-full flex items-center justify-center border bg-primary/10 border-primary/20 text-primary">
-                               <User size={12} />
-                           </div>
-                        )}
-                        
-                        <div className={cn(
-                            "leading-relaxed break-words",
-                            msg.role === 'user' 
-                                ? "bg-secondary text-foreground rounded-md px-3 py-2" 
-                                : msg.type === 'thought'
-                                    ? "text-muted-foreground/70 italic pl-3 border-l-2 border-primary/20 rounded-none bg-transparent py-0.5"
-                                    : msg.type === 'action'
-                                        ? "font-mono text-[11px] bg-secondary/30 border border-border/40 text-primary/90 px-2 py-1 rounded-sm my-0.5 w-full"
-                                        : msg.type === 'observation'
-                                            ? "font-mono text-[11px] bg-secondary/10 border border-border/20 text-muted-foreground px-2 py-1 rounded-sm w-full"
-                                            : "text-foreground/90 w-full"
-                        )}>
-                            {msg.role === 'assistant' && msg.type && msg.type !== 'text' && msg.metadata ? (
-                              <div className="flex items-center justify-between gap-2 text-[10px] font-mono opacity-70 mb-1">
-                                <div className="flex items-center gap-2 min-w-0">
-                                  {typeof msg.metadata?.tool === 'string' ? (
-                                    <span className="truncate">{msg.metadata.tool}</span>
-                                  ) : null}
-                                  {typeof msg.metadata?.durationMs === 'number' ? (
-                                    <span className="shrink-0">{Math.round(msg.metadata.durationMs)}ms</span>
-                                  ) : null}
-                                </div>
-                                {typeof msg.metadata?.ts === 'string' ? (
-                                  <span className="shrink-0">
-                                    {new Date(msg.metadata.ts).toLocaleTimeString()}
-                                  </span>
-                                ) : null}
-                              </div>
-                            ) : null}
-
-                            {msg.role === 'assistant' && (!msg.type || msg.type === 'text') ? (
-                                <ReactMarkdown
-                                    components={{
-                                        p: ({children}) => <p className="mb-1.5 last:mb-0">{children}</p>,
-                                        h1: ({children}) => <h1 className="text-sm font-bold mt-3 mb-1.5 first:mt-0 text-foreground">{children}</h1>,
-                                        h2: ({children}) => <h2 className="text-xs font-bold mt-2.5 mb-1 text-foreground/90 uppercase tracking-wide">{children}</h2>,
-                                        h3: ({children}) => <h3 className="text-xs font-semibold mt-2 mb-0.5 text-foreground/80">{children}</h3>,
-                                        ul: ({children}) => <ul className="list-disc pl-4 mb-1.5 space-y-0.5">{children}</ul>,
-                                        ol: ({children}) => <ol className="list-decimal pl-4 mb-1.5 space-y-0.5">{children}</ol>,
-                                        code: ({className, children}) => {
-                                            const match = /language-(\w+)/.exec(className || '')
-                                            return !match ? (
-                                                <code className="bg-secondary/50 px-1 py-0.5 rounded text-[10px] font-mono border border-border/40">{children}</code>
-                                            ) : (
-                                                <code className={className}>{children}</code>
-                                            )
-                                        },
-                                        pre: ({children}) => <pre className="bg-secondary/30 p-2 rounded-md overflow-x-auto text-[10px] my-1.5 border border-border/40 font-mono">{children}</pre>
-                                    }}
-                                >
-                                    {msg.content}
-                                </ReactMarkdown>
-                            ) : msg.type === 'observation' ? (
-                                <div className="group">
-                                    <details>
-                                        <summary className="cursor-pointer hover:text-foreground list-none flex items-center gap-1 select-none opacity-70 hover:opacity-100 transition-opacity">
-                                            <div className="w-1 h-1 rounded-full bg-current" />
-                                            <span>Output</span>
-                                        </summary>
-                                        <div className="mt-1 pl-2 border-l border-border/30 whitespace-pre-wrap opacity-90">{msg.content}</div>
-                                    </details>
-                                    {/* Feedback Buttons for Skills */}
-                                    {getSkillIdFromMessage(msg.content) && (
-                                        <div className="flex gap-2 mt-1 ml-2 opacity-60 hover:opacity-100 transition-opacity">
-                                            <button
-                                                onClick={() => {
-                                                    const id = getSkillIdFromMessage(msg.content);
-                                                    if (id) handleFeedback(id, 'worked', i);
-                                                }}
-                                                className={cn(
-                                                  "px-2 py-0.5 rounded border border-border/40 hover:bg-green-500/10 hover:text-green-500 transition-colors",
-                                                  feedbackMap[i] === 'worked' && "bg-green-500/10 text-green-500"
-                                                )}
-                                                disabled={!!feedbackMap[i]}
-                                                title="Worked"
-                                            >
-                                                Worked
-                                            </button>
-                                            <button
-                                                onClick={() => {
-                                                    const id = getSkillIdFromMessage(msg.content);
-                                                    if (id) handleFeedback(id, 'partial', i);
-                                                }}
-                                                className={cn(
-                                                  "px-2 py-0.5 rounded border border-border/40 hover:bg-amber-500/10 hover:text-amber-500 transition-colors",
-                                                  feedbackMap[i] === 'partial' && "bg-amber-500/10 text-amber-500"
-                                                )}
-                                                disabled={!!feedbackMap[i]}
-                                                title="Partially"
-                                            >
-                                                Partial
-                                            </button>
-                                            <button
-                                                onClick={() => {
-                                                    const id = getSkillIdFromMessage(msg.content);
-                                                    if (id) handleFeedback(id, 'failed', i);
-                                                }}
-                                                className={cn(
-                                                  "px-2 py-0.5 rounded border border-border/40 hover:bg-red-500/10 hover:text-red-500 transition-colors",
-                                                  feedbackMap[i] === 'failed' && "bg-red-500/10 text-red-500"
-                                                )}
-                                                disabled={!!feedbackMap[i]}
-                                                title="Didn’t work"
-                                            >
-                                                Didn’t work
-                                            </button>
-                                        </div>
-                                    )}
-                                </div>
-                            ) : msg.content}
-                        </div>
+          <div className="space-y-4">
+            {messages.map((msg, i) => {
+              if (msg.role === 'user') {
+                return (
+                  <div key={i} className="group relative">
+                    <div className="text-sm text-foreground/90 whitespace-pre-wrap leading-relaxed pr-6">
+                      {msg.content}
                     </div>
+                    <button className="absolute right-0 top-0 opacity-0 group-hover:opacity-100 p-1 hover:bg-secondary rounded transition-opacity">
+                      <RotateCcw size={12} className="text-muted-foreground" />
+                    </button>
+                  </div>
+                );
+              }
+
+              // Handle Assistant Messages (Thoughts, Actions, Observations, Text)
+              if (msg.type === 'thought') {
+                return (
+                  <details key={i} className="group/thought">
+                    <summary className="flex items-center gap-2 text-[11px] text-muted-foreground/40 hover:text-muted-foreground/70 cursor-pointer list-none select-none py-0.5 transition-colors">
+                      <ChevronRight size={12} className="group-open/thought:rotate-90 transition-transform opacity-50" />
+                      <span>Thought for {msg.metadata?.durationMs ? Math.round(msg.metadata.durationMs / 1000) : '<1'}s</span>
+                    </summary>
+                    <div className="pl-5 pt-1 text-[11px] text-muted-foreground/50 italic leading-relaxed border-l border-border/10 ml-[5px] mb-2 font-mono">
+                      {msg.content}
+                    </div>
+                  </details>
+                );
+              }
+
+              if (msg.type === 'action' || msg.type === 'observation') {
+                const isAction = msg.type === 'action';
+                return (
+                  <div key={i} className="flex items-center gap-2 group/item py-0.5">
+                    <div className="shrink-0 opacity-40 group-hover/item:opacity-70 transition-opacity">
+                      {isAction ? (
+                        <Folder size={12} className="text-blue-400" />
+                      ) : (
+                        <FileText size={12} className="text-muted-foreground" />
+                      )}
+                    </div>
+                    <div className="flex-1 flex items-center justify-between overflow-hidden gap-2">
+                      <span className="text-[11px] font-medium text-foreground/50 truncate group-hover/item:text-foreground/70 transition-colors">
+                        {isAction ? (
+                          <>Analyzed <span className="text-foreground/30 font-normal">~/.../{msg.content.split('/').pop()}</span></>
+                        ) : (
+                          <>Read <span className="text-foreground/30 font-normal">~/.../{msg.content.split('/').pop()}</span></>
+                        )}
+                      </span>
+                      <span className="text-[9px] text-muted-foreground/20 font-mono group-hover/item:text-muted-foreground/40 transition-colors shrink-0">
+                        {msg.metadata?.durationMs ? Math.round(msg.metadata.durationMs) + 'ms' : ''}
+                      </span>
+                    </div>
+                  </div>
+                );
+              }
+
+              // Default Text Message (Bot Response)
+              if (!msg.type || msg.type === 'text') {
+                // Special Case: High-level Task Card (usually first bot response or major update)
+                const isTaskSummary = msg.content.includes('#') || msg.content.length > 200;
+
+                if (isTaskSummary) {
+                  return (
+                    <div key={i} className="rounded-xl border border-border/40 bg-secondary/10 p-4 space-y-4 shadow-sm backdrop-blur-sm">
+                      <div className="space-y-1.5">
+                        <h3 className="text-sm font-bold text-foreground leading-tight">
+                          {msg.content.split('\n')[0].replace(/^#+\s*/, '')}
+                        </h3>
+                        <p className="text-xs text-muted-foreground leading-relaxed">
+                          {msg.content.split('\n').slice(1).find(l => l.trim() && !l.startsWith('-'))?.substring(0, 150)}...
+                        </p>
+                      </div>
+
+                      {/* Files Edited Section */}
+                      <div className="space-y-2">
+                        <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60 font-semibold">Files Edited</div>
+                        <div className="space-y-1.5">
+                          {/* Mocking file list extraction or using manual ones for visual */}
+                          <div className="flex items-center gap-2 text-xs text-blue-400 hover:underline cursor-pointer">
+                            <FileText size={12} />
+                            AgentService.ts
+                          </div>
+                          <div className="flex items-center gap-2 text-xs text-blue-400 hover:underline cursor-pointer">
+                            <FileText size={12} />
+                            tasks_agent_evaluation.md
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Progress Updates */}
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60 font-semibold">Progress Updates</div>
+                          <div className="flex items-center gap-1 text-[10px] text-muted-foreground/40 hover:text-muted-foreground cursor-pointer transition-colors">
+                            Expand all <ChevronRight size={10} />
+                          </div>
+                        </div>
+                        <div className="space-y-2 relative pl-4 before:absolute before:left-1 before:top-2 before:bottom-2 before:w-px before:bg-border/30">
+                          <div className="text-xs flex gap-3 text-foreground/80">
+                            <span className="text-muted-foreground/30 font-mono text-[10px]">1</span>
+                            <span>Exploring src and electron directories...</span>
+                          </div>
+                          <div className="text-xs flex gap-3 text-foreground/80">
+                            <span className="text-muted-foreground/30 font-mono text-[10px]">2</span>
+                            <span>Reading AgentService.ts to understand loop...</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div key={i} className="text-sm text-foreground/80 leading-relaxed message-markdown">
+                    <ReactMarkdown
+                      components={{
+                        p: ({ children }) => <p className="mb-3 last:mb-0">{children}</p>,
+                        h1: ({ children }) => <h1 className="text-sm font-bold mt-4 mb-2 first:mt-0 text-foreground">{children}</h1>,
+                        h2: ({ children }) => <h2 className="text-xs font-bold mt-3 mb-1.5 text-foreground/90 uppercase tracking-wide">{children}</h2>,
+                        h3: ({ children }) => <h3 className="text-xs font-semibold mt-2.5 mb-1 text-foreground/80">{children}</h3>,
+                        ul: ({ children }) => <ul className="list-disc pl-4 mb-3 space-y-1">{children}</ul>,
+                        ol: ({ children }) => <ol className="list-decimal pl-4 mb-3 space-y-1">{children}</ol>,
+                        code: ({ className, children }) => {
+                          const match = /language-(\w+)/.exec(className || '')
+                          return !match ? (
+                            <code className="bg-secondary/50 px-1 py-0.5 rounded text-[11px] font-mono border border-border/40 text-primary/80">{children}</code>
+                          ) : (
+                            <code className={cn("block bg-secondary/30 p-3 rounded-lg text-[11px] font-mono border border-border/20 my-3 overflow-x-auto", className)}>{children}</code>
+                          )
+                        },
+                        pre: ({ children }) => <div className="relative group">{children}</div>
+                      }}
+                    >
+                      {msg.content}
+                    </ReactMarkdown>
+                  </div>
+                );
+              }
+
+              return null;
+            })}
+
+            {approvalRequest && (
+              <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 space-y-3 animate-in fade-in slide-in-from-bottom-2">
+                <div className="flex items-center gap-2 text-amber-500 font-semibold text-xs uppercase tracking-tight">
+                  <Shield size={14} />
+                  Action Required
                 </div>
-            ))
-        )}
-        {approvalRequest && (
-            <div className="bg-background/80 border border-amber-500/20 rounded-md p-3 space-y-2">
-                <div className="flex items-center gap-2 text-amber-500/90 font-medium text-xs">
-                    <AlertTriangle size={14} />
-                    Approval Required
+                <div className="text-sm font-medium text-foreground/90">
+                  Agent wants to run <code className="bg-amber-500/10 px-1.5 py-0.5 rounded text-xs select-all">{approvalRequest.toolName}</code>
                 </div>
-                <div className="text-[10px] text-muted-foreground uppercase tracking-wider">
-                    {approvalRequest.toolName}
-                </div>
-                <pre className="text-[10px] font-mono bg-secondary/30 p-2 rounded border border-border/30 overflow-x-auto text-muted-foreground">
-                    {JSON.stringify(approvalRequest.args, null, 2)}
+                <pre className="text-[10px] font-mono bg-background/50 p-2.5 rounded-lg border border-amber-500/10 overflow-x-auto text-muted-foreground max-h-40">
+                  {JSON.stringify(approvalRequest.args, null, 2)}
                 </pre>
                 <div className="flex gap-2 pt-1">
-                    <button 
-                        onClick={() => handleApproval(false)}
-                        className="flex-1 flex items-center justify-center gap-1 bg-secondary hover:bg-destructive/10 text-muted-foreground hover:text-destructive text-xs py-1 rounded transition-colors border border-border/50"
-                    >
-                        <X size={12} /> Deny
-                    </button>
-                    <button 
-                        onClick={() => handleApproval(true)}
-                        className="flex-1 flex items-center justify-center gap-1 bg-primary/10 hover:bg-primary/20 text-primary text-xs py-1 rounded transition-colors border border-primary/20"
-                    >
-                        <Check size={12} /> Approve
-                    </button>
-                </div>
-            </div>
-        )}
-        {loading && (
-             <div className="flex gap-2 items-center text-muted-foreground/50">
-                <Bot size={14} />
-                <div className="flex gap-1">
-                    <span className="w-1 h-1 bg-current rounded-full animate-bounce" />
-                    <span className="w-1 h-1 bg-current rounded-full animate-bounce delay-75" />
-                    <span className="w-1 h-1 bg-current rounded-full animate-bounce delay-150" />
-                </div>
-             </div>
-        )}
-      </div>
-
-      {/* Input Area */}
-      <div className="p-3 border-t border-border/50 bg-background/50">
-        <form onSubmit={handleSubmit} className="relative">
-            <input 
-                className="w-full bg-secondary/50 border border-transparent rounded-md pl-3 pr-10 py-2.5 text-xs focus:outline-none focus:border-primary/30 focus:bg-secondary transition-all placeholder:text-muted-foreground/50"
-                placeholder="Ask the agent..."
-                value={input}
-                onChange={e => setInput(e.target.value)}
-                disabled={loading}
-            />
-            <button 
-                type="submit" 
-                disabled={loading || !input.trim()} 
-                className="absolute right-1 top-1 p-1.5 text-muted-foreground hover:text-primary disabled:opacity-30 transition-colors"
-            >
-                <Send size={14} />
-            </button>
-        </form>
-        
-        <div className="mt-2 space-y-2">
-            {/* Model Selector */}
-            <div className="relative">
-                <button
-                    onClick={() => setShowModelSelector(!showModelSelector)}
-                    className="w-full flex items-center justify-between gap-2 px-2 py-1.5 text-[10px] bg-secondary/30 hover:bg-secondary/50 rounded border border-border/30 transition-colors"
-                >
-                    <div className="flex items-center gap-1.5 truncate">
-                        {models.find(m => m.id === currentModelId)?.supportsThinking ? (
-                            <Brain size={10} className="text-primary shrink-0" />
-                        ) : (
-                            <Zap size={10} className="text-amber-500 shrink-0" />
-                        )}
-                        <span className="truncate text-muted-foreground">
-                            {models.find(m => m.id === currentModelId)?.name || 'Select Model'}
-                        </span>
-                    </div>
-                    <ChevronDown size={10} className={cn("text-muted-foreground transition-transform", showModelSelector && "rotate-180")} />
-                </button>
-                
-                {showModelSelector && (
-                    <div className="absolute bottom-full left-0 right-0 mb-1 bg-background border border-border rounded-md shadow-lg overflow-hidden z-50">
-                        {models.map((model) => (
-                            <button
-                                key={model.id}
-                                onClick={() => handleModelChange(model.id)}
-                                className={cn(
-                                    "w-full flex items-center gap-2 px-2 py-1.5 text-[10px] hover:bg-secondary/50 transition-colors text-left",
-                                    model.id === currentModelId && "bg-secondary/30"
-                                )}
-                            >
-                                {model.supportsThinking ? (
-                                    <Brain size={10} className="text-primary shrink-0" />
-                                ) : (
-                                    <Zap size={10} className="text-amber-500 shrink-0" />
-                                )}
-                                <span className="truncate">{model.name}</span>
-                            </button>
-                        ))}
-                    </div>
-                )}
-            </div>
-
-            {/* Agent Mode Selector */}
-            <div className="flex items-center gap-1 p-1 bg-secondary/20 rounded-md border border-border/30">
-                <button
-                    onClick={() => handleModeChange('chat')}
-                    className={cn(
-                        "flex-1 flex items-center justify-center gap-1 px-2 py-1 text-[10px] rounded transition-colors",
-                        agentMode === 'chat' ? "bg-primary/20 text-primary" : "text-muted-foreground hover:text-foreground hover:bg-secondary/50"
-                    )}
-                    title="Chat mode - Regular chatbot, no browser access"
-                >
-                    <MessageSquare size={10} />
-                    <span>Chat</span>
-                </button>
-                <button
-                    onClick={() => handleModeChange('read')}
-                    className={cn(
-                        "flex-1 flex items-center justify-center gap-1 px-2 py-1 text-[10px] rounded transition-colors",
-                        agentMode === 'read' ? "bg-primary/20 text-primary" : "text-muted-foreground hover:text-foreground hover:bg-secondary/50"
-                    )}
-                    title="Read mode - Can see browser, no actions"
-                >
-                    <Eye size={10} />
-                    <span>Read</span>
-                </button>
-                <button
-                    onClick={() => handleModeChange('do')}
-                    className={cn(
-                        "flex-1 flex items-center justify-center gap-1 px-2 py-1 text-[10px] rounded transition-colors",
-                        agentMode === 'do' ? "bg-primary/20 text-primary" : "text-muted-foreground hover:text-foreground hover:bg-secondary/50"
-                    )}
-                    title="Do mode - Full agentic actions"
-                >
-                    <Play size={10} />
-                    <span>Do</span>
-                </button>
-            </div>
-
-            {/* YOLO Toggle - Only visible in Do mode */}
-            {agentMode === 'do' && (
-                <div className="flex items-center gap-2 p-1.5 bg-secondary/10 rounded-md border border-border/20">
-                    <span className="text-[10px] text-muted-foreground">Permissions:</span>
-                    <div className="flex items-center gap-1 flex-1">
-                        <button
-                            onClick={() => handlePermissionModeChange('permissions')}
-                            className={cn(
-                                "flex-1 flex items-center justify-center gap-1 px-2 py-0.5 text-[10px] rounded transition-colors",
-                                agentPermissionMode === 'permissions' ? "bg-blue-500/20 text-blue-400" : "text-muted-foreground hover:text-foreground hover:bg-secondary/50"
-                            )}
-                            title="Ask for permission before actions"
-                        >
-                            <Shield size={9} />
-                            <span>Safe</span>
-                        </button>
-                        <button
-                            onClick={() => handlePermissionModeChange('yolo')}
-                            className={cn(
-                                "flex-1 flex items-center justify-center gap-1 px-2 py-0.5 text-[10px] rounded transition-colors",
-                                agentPermissionMode === 'yolo' ? "bg-amber-500/20 text-amber-400" : "text-muted-foreground hover:text-foreground hover:bg-secondary/50"
-                            )}
-                            title="YOLO mode - No permission prompts"
-                        >
-                            <Rocket size={9} />
-                            <span>YOLO</span>
-                        </button>
-                    </div>
-                </div>
-            )}
-            
-            {/* Footer controls */}
-            <div className="flex items-center justify-between text-[10px] text-muted-foreground">
-                <div className="flex items-center gap-2">
-                    <button 
-                        onClick={handleResetConversation}
-                        className="p-1 hover:text-foreground hover:bg-secondary/50 rounded transition-colors"
-                        title="Clear conversation"
-                    >
-                        <RotateCcw size={12} />
-                    </button>
-                    <button
-                        onClick={() => setShowBenchmarks(true)}
-                        className="p-1 hover:text-foreground hover:bg-secondary/50 rounded transition-colors"
-                        title="Run Benchmarks"
-                    >
-                        <Activity size={12} />
-                    </button>
-                    <button
-                        onClick={() => setShowTrace((v) => !v)}
-                        className={cn(
-                          "p-1 hover:text-foreground hover:bg-secondary/50 rounded transition-colors",
-                          showTrace && "text-foreground"
-                        )}
-                        title="Toggle trace view"
-                    >
-                        <ChevronDown size={12} className={cn("transition-transform", showTrace && "rotate-180")} />
-                    </button>
-                </div>
-            </div>
-
-
-            {showTrace && (
-              <div className="mt-2 border border-border/40 rounded-md bg-secondary/10">
-                <div className="px-2 py-1 text-[10px] uppercase tracking-wider text-muted-foreground border-b border-border/30">
-                  Trace
-                </div>
-                <div className="max-h-40 overflow-y-auto">
-                  {messages
-                    .filter((m) => m.role === 'assistant' && m.type && m.type !== 'text')
-                    .map((m, idx) => {
-                      const ts = m?.metadata?.ts;
-                      const durationMs = m?.metadata?.durationMs;
-                      const tool = m?.metadata?.tool;
-                      const timeLabel = typeof ts === 'string' ? new Date(ts).toLocaleTimeString() : '';
-                      return (
-                        <div key={idx} className="px-2 py-1 text-[10px] border-b border-border/20 last:border-b-0">
-                          <div className="flex items-center gap-2 font-mono text-muted-foreground">
-                            <span className="opacity-70 shrink-0">{timeLabel}</span>
-                            <span className={cn(
-                              "shrink-0",
-                              m.type === 'action' ? "text-primary" : m.type === 'thought' ? "text-primary/70" : "text-muted-foreground"
-                            )}>
-                              {m.type}
-                            </span>
-                            {tool ? <span className="shrink-0">{tool}</span> : null}
-                            {typeof durationMs === 'number' ? (
-                              <span className="shrink-0 opacity-70">{Math.round(durationMs)}ms</span>
-                            ) : null}
-                          </div>
-                          <div className="font-mono text-[10px] text-foreground/80 whitespace-pre-wrap break-words">
-                            {m.content}
-                          </div>
-                          {m.metadata && (
-                            <details className="mt-1">
-                              <summary className="cursor-pointer text-[10px] text-muted-foreground/70 hover:text-muted-foreground select-none">metadata</summary>
-                              <pre className="mt-1 text-[10px] font-mono bg-secondary/30 p-2 rounded border border-border/30 overflow-x-auto text-muted-foreground">
-                                {JSON.stringify(m.metadata, null, 2)}
-                              </pre>
-                            </details>
-                          )}
-                        </div>
-                      );
-                    })}
+                  <button
+                    onClick={() => handleApproval(false)}
+                    className="flex-1 px-3 py-2 bg-secondary/50 hover:bg-destructive/10 text-muted-foreground hover:text-destructive text-xs font-medium rounded-lg transition-all border border-border/50"
+                  >
+                    Reject
+                  </button>
+                  <button
+                    onClick={() => handleApproval(true)}
+                    className="flex-1 px-3 py-2 bg-primary text-primary-foreground hover:opacity-90 text-xs font-medium rounded-lg transition-all border border-primary"
+                  >
+                    Accept all
+                  </button>
                 </div>
               </div>
             )}
+
+            {loading && (
+              <div className="flex items-center gap-3 py-2">
+                <div className="relative">
+                  <Brain size={16} className="text-primary/40 animate-pulse" />
+                  <span className="absolute -top-1 -right-1 flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-40"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-primary/60"></span>
+                  </span>
+                </div>
+                <span className="text-[11px] font-medium text-muted-foreground/50 tracking-wide uppercase">Processing...</span>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Footer / Input Area */}
+      <div className="shrink-0 p-4 border-t border-border/50 space-y-4 bg-background/80 backdrop-blur-md">
+        <div className="relative group/input">
+          <div className="absolute left-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5 opacity-40 group-focus-within/input:opacity-80 transition-opacity">
+            <button className="p-1 hover:bg-secondary rounded text-muted-foreground">
+              <Plus size={14} />
+            </button>
+          </div>
+          <form onSubmit={handleSubmit}>
+            <input
+              className="w-full bg-secondary/30 border border-border/20 rounded-xl pl-10 pr-12 py-3 text-sm focus:outline-none focus:border-primary/20 focus:bg-secondary/50 transition-all placeholder:text-muted-foreground/30 shadow-inner"
+              placeholder="Ask anything (⌘L), @ to mention, / for workflows"
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              disabled={loading}
+            />
+            <button
+              type="submit"
+              disabled={loading || !input.trim()}
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-muted-foreground hover:text-primary disabled:opacity-0 transition-all scale-90 hover:scale-100"
+            >
+              <Send size={18} />
+            </button>
+          </form>
+        </div>
+
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <button
+                onClick={() => setShowModelSelector(!showModelSelector)}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-medium text-muted-foreground hover:text-foreground hover:bg-secondary/50 rounded-lg transition-all"
+              >
+                {models.find(m => m.id === currentModelId)?.supportsThinking ? (
+                  <Brain size={12} className="text-primary" />
+                ) : (
+                  <Zap size={12} className="text-amber-500" />
+                )}
+                <span>{models.find(m => m.id === currentModelId)?.name || 'Gemini 3 Flash'}</span>
+                <ChevronDown size={10} className={cn("mt-0.5", showModelSelector && "rotate-180")} />
+              </button>
+              {showModelSelector && (
+                <div className="absolute bottom-full left-0 mb-2 w-48 bg-background border border-border/50 rounded-xl shadow-2xl overflow-hidden py-1 z-50 animate-in fade-in slide-in-from-bottom-2">
+                  {models.map((model) => (
+                    <button
+                      key={model.id}
+                      onClick={() => handleModelChange(model.id)}
+                      className={cn(
+                        "w-full flex items-center gap-2 px-3 py-2 text-[11px] hover:bg-secondary/50 transition-colors text-left",
+                        model.id === currentModelId ? "text-primary bg-primary/5" : "text-muted-foreground"
+                      )}
+                    >
+                      {model.supportsThinking ? <Brain size={12} /> : <Zap size={12} />}
+                      <span className="truncate">{model.name}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="h-4 w-px bg-border/30 mx-1" />
+
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => handleModeChange('chat')}
+                className={cn(
+                  "flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-medium rounded-lg transition-all",
+                  agentMode === 'chat' ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground hover:bg-secondary/40"
+                )}
+              >
+                <MessageSquare size={12} />
+                <span>Chat</span>
+              </button>
+              <button
+                onClick={() => handleModeChange('do')}
+                className={cn(
+                  "flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-medium rounded-lg transition-all",
+                  agentMode === 'do' ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground hover:bg-secondary/40"
+                )}
+              >
+                <Play size={12} />
+                <span>Do</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-secondary/50 rounded-lg transition-colors">
+              <Activity size={12} />
+            </button>
+            <button className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-secondary/50 rounded-lg transition-colors">
+              <RotateCcw size={12} />
+            </button>
+          </div>
         </div>
       </div>
     </div>

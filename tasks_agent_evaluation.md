@@ -153,7 +153,75 @@ The following tasks are designed to be run against real-world websites (or stabl
 3.  **Dashboard**: (Future) Build a simple UI to run these tests and view historical trends.
 
 ## Action Items
+---
+
+## Advanced Task Suite (2025-12-17 Update)
+
+### 21. Cross-App Workflow (SaaS Orchestration)
+*   **Task**: "Go to Jira, find 'EB-1' issue, copy its description, and create a new page in Confluence called 'Issue EB-1 Draft' with that description."
+*   **Goal**: Test information transfer between different applications.
+*   **Success Criteria**: Confluence API or UI shows a new page with the exact text from Jira.
+*   **Complexity**: 6+ steps, state management across different domains.
+
+### 22. Skill Library: Learning & Recall
+*   **Task**: "Go to AeroCore Admin, find the 'User Management' button, and click it. Then save this as a skill called 'go_to_user_admin'."
+*   **Follow-up Task**: "Use your saved skill to go to User Management."
+*   **Goal**: Test `knowledge_save_skill` and `knowledge_search_skill` cycle.
+*   **Success Criteria**: Agent calls `knowledge_search_skill`, finds 'go_to_user_admin', and executes the plan.
+
+### 23. Recovery from Ambiguity
+*   **Task**: "In Jira, find the 'Create' button. If there are multiple, click the one in the top navigation bar."
+*   **Goal**: Test disambiguation logic and precise selector selection.
+*   **Success Criteria**: Agent identifies multiple buttons and chooses the correct one based on context.
+
+### 24. Information Synthesis (Comparison)
+*   **Task**: "Compare the stock price of Tesla (TSLA) and Apple (AAPL) using Google Search and tell me which one grew more in the last 24 hours."
+*   **Goal**: Test multi-source data extraction and mathematical comparison.
+*   **Success Criteria**: Correct growth comparison based on real-time data.
+
+### 25. Long-Term Goal Persistence
+*   **Task**: "Search for 'Quantum Computing' on Wikipedia. Read the first paragraph. Now search for 'AI'. Tell me how Quantum Computing might affect AI based on what you just read."
+*   **Goal**: Test memory retention across different page navigations.
+*   **Success Criteria**: Synthesis of information from both search results.
+
+---
+
+## Evaluation-Driven Tuning Workflow
+
+To improve the agent, we must log and analyze its "Internal Monologue" and "Tool Cycle".
+
+### 1. Failure Trace Extraction
+For every unsuccessful benchmark task, we extract:
+- **The System Prompt** used at that time.
+- **The Context** (Browser state, previous messages).
+- **The Agent's Thought**: What it intended to do.
+- **The Tool Call**: The JSON command sent.
+- **The Observation**: The error or unexpected result from the browser.
+
+### 2. Tuning Loop
+| Step | Action | Output |
+|------|--------|--------|
+| **Analyze** | Critic LLM reviews the failure trace. | "Hypothesis: Selector [id=...] was obscured by a cookie banner." |
+| **Mitigate** | Add "Check for overlapping elements" to System Prompt. | Updated `AgentService.ts` instructions. |
+| **Validate** | Re-run the specific task in `BENCHMARK_SUITE`. | Pass/Fail. |
+| **Commit** | Update `model_behavior_learnings.md`. | Persistent knowledge for future development. |
+
+---
+
+## Evaluation Metrics (Updated)
+
+| Metric | Target | Description |
+|--------|--------|-------------|
+| **Skill Reuse Rate** | >30% | % of tasks that use a cached skill instead of raw ReAct. |
+| **Hallucination Rate** | <1% | % of turns where agent claims a result it hasn't verified. |
+| **Tokens per Success** | <5000 | Efficiency of the thought process. |
+| **Parse Error Rate** | <5% | Reliability of JSON output. |
+
+---
+
+## Action Items
 - [x] Add "Personal Browser" scenarios to `electron/benchmarks/suite.ts`.
-- [x] Run a baseline test. (Implemented via UI)
-- [ ] Analyze logs to identify slow steps.
+- [x] Run a baseline test.
+- [ ] Implement Skill-first benchmarking.
+- [ ] Automate Failure Trace extraction to `tuning_logs/`.
 

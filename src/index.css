@@ -42,3 +42,43 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Hide scrollbars globally but keep functionality */
+@layer base {
+  * {
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none; /* IE/Edge */
+  }
+
+  *::-webkit-scrollbar {
+    display: none; /* Chrome/Safari/Opera */
+  }
+}
+
+/* Utility for hidden scrollbars (already used in some components) */
+@layer utilities {
+  .scrollbar-hide {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+  
+  /* Hyper minimal scrollbar for the browser */
+  .browser-minimal-scrollbar::-webkit-scrollbar {
+    display: block;
+    width: 4px;
+    height: 4px;
+  }
+  .browser-minimal-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .browser-minimal-scrollbar::-webkit-scrollbar-thumb {
+    background: rgba(128, 128, 128, 0.2);
+    border-radius: 10px;
+  }
+  .browser-minimal-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: rgba(128, 128, 128, 0.4);
+  }
+}

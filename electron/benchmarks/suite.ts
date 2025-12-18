@@ -75,7 +75,7 @@ export const BENCHMARK_SUITE: BenchmarkScenario[] = [
     expectedOutcome: { type: 'text_present', value: 'logs' },
     timeoutMs: 60000,
   },
-  
+
   // Personal Browser Scenarios
   {
     id: 'personal-wikipedia',
@@ -107,6 +107,40 @@ export const BENCHMARK_SUITE: BenchmarkScenario[] = [
     description: 'Search using DuckDuckGo',
     userMessage: 'Go to duckduckgo.com, type "Enterprise Browser" into the search box, and search.',
     expectedOutcome: { type: 'url_match', value: 'duckduckgo.com/?q=Enterprise+Browser' },
+    timeoutMs: 60000,
+  },
+
+  // Advanced Scenarios
+  {
+    id: 'advanced-cross-app',
+    name: 'Cross-App Workflow',
+    description: 'Information transfer between Apps',
+    userMessage: 'Go to Jira, find "EB-1" issue, copy its description, and create a new page in Confluence called "Issue EB-1 Draft" with that description.',
+    expectedOutcome: { type: 'text_present', value: 'EB-1' },
+    timeoutMs: 120000,
+  },
+  {
+    id: 'skill-learning-cycle',
+    name: 'Skill Learning Cycle',
+    description: 'Save and reuse a skill',
+    userMessage: 'Go to AeroCore Admin, find the "User Management" button, and click it. Then save this as a skill called "go_to_user_admin". Then use it.',
+    expectedOutcome: { type: 'text_present', value: 'User Management' },
+    timeoutMs: 90000,
+  },
+  {
+    id: 'disambiguation-logic',
+    name: 'Disambiguation Logic',
+    description: 'Handle ambiguous selectors',
+    userMessage: 'In Jira, find the "Create" button. If there are multiple, click the one in the top navigation bar.',
+    expectedOutcome: { type: 'text_present', value: 'Create Issue' },
+    timeoutMs: 60000,
+  },
+  {
+    id: 'information-synthesis',
+    name: 'Information Synthesis',
+    description: 'Compare data from search',
+    userMessage: 'Compare the price of Bitcoin and Ethereum and tell me which one is higher.',
+    expectedOutcome: { type: 'text_present', value: 'Bitcoin' },
     timeoutMs: 60000,
   }
 ];
