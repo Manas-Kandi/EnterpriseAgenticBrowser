@@ -31,7 +31,7 @@ export class WebAPIService {
         try {
           const searchType = type === 'repositories' ? 'repositories' : type === 'users' ? 'users' : 'code';
           const url = `https://api.github.com/search/${searchType}?q=${encodeURIComponent(query)}&sort=${sort}&order=desc&per_page=${Math.min(limit, 10)}`;
-          
+
           const response = await fetch(url, {
             headers: {
               'Accept': 'application/vnd.github.v3+json',
@@ -47,7 +47,7 @@ export class WebAPIService {
           }
 
           const data = await response.json();
-          
+
           if (searchType === 'repositories') {
             const results = data.items.slice(0, limit).map((repo: any) => ({
               name: repo.full_name,
@@ -66,7 +66,7 @@ export class WebAPIService {
             }));
             return JSON.stringify({ total_count: data.total_count, results }, null, 2);
           }
-          
+
           return JSON.stringify({ total_count: data.total_count, items: data.items.slice(0, limit) }, null, 2);
         } catch (e: any) {
           return JSON.stringify({ error: `Failed to search GitHub: ${e.message}` });
@@ -91,7 +91,7 @@ export class WebAPIService {
             return JSON.stringify({ error: 'Failed to fetch HN top stories' });
           }
           const ids = await idsResponse.json();
-          
+
           // Fetch details for top N stories
           const storyLimit = Math.min(limit, 30);
           const stories = await Promise.all(
@@ -129,9 +129,9 @@ export class WebAPIService {
           const year = today.getFullYear();
           const month = String(today.getMonth() + 1).padStart(2, '0');
           const day = String(today.getDate()).padStart(2, '0');
-          
+
           const url = `https://api.wikimedia.org/feed/v1/wikipedia/en/featured/${year}/${month}/${day}`;
-          
+
           const response = await fetch(url, {
             headers: {
               'User-Agent': 'EnterpriseBrowser/1.0',
@@ -143,7 +143,7 @@ export class WebAPIService {
           }
 
           const data = await response.json();
-          
+
           const result = {
             title: data.tfa?.title || 'Unknown',
             extract: data.tfa?.extract?.slice(0, 500) || '',
@@ -185,7 +185,7 @@ export class WebAPIService {
             const data = await response.json();
             return JSON.stringify(data, null, 2);
           }
-          
+
           const text = await response.text();
           return text.slice(0, 5000); // Limit response size
         } catch (e: any) {
@@ -219,9 +219,9 @@ export class WebAPIService {
             'avax': 'avalanche-2',
           };
           const coinId = coinMap[coin.toLowerCase()] || coin.toLowerCase();
-          
+
           const url = `https://api.coingecko.com/api/v3/simple/price?ids=${coinId}&vs_currencies=usd&include_24hr_change=true&include_market_cap=true`;
-          
+
           const response = await fetch(url, {
             headers: {
               'User-Agent': 'EnterpriseBrowser/1.0',
@@ -233,7 +233,7 @@ export class WebAPIService {
           }
 
           const data = await response.json();
-          
+
           if (!data[coinId]) {
             return JSON.stringify({ error: `Coin '${coin}' not found. Try the full name (e.g., 'bitcoin' instead of 'btc').` });
           }
@@ -253,12 +253,119 @@ export class WebAPIService {
       },
     };
 
+    // Weather API (using Open-Meteo - free, no API key needed)
+    const weatherSchema = z.object({
+      latitude: z.number().describe('Latitude of the location'),
+      longitude: z.number().describe('Longitude of the location'),
+      city: z.string().optional().describe('City name for display purposes'),
+    });
+
+    const weatherTool: AgentTool<typeof weatherSchema> = {
+      name: 'api_weather',
+      description: 'Get current weather for a specific latitude and longitude via Open-Meteo API. Use lookup_city_coordinates first if you only have a city name.',
+      schema: weatherSchema,
+      execute: async ({ latitude, longitude, city }) => {
+        try {
+          const url = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,rain,showers,snowfall,weather_code,wind_speed_10m&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch`;
+
+          const response = await fetch(url);
+          if (!response.ok) return JSON.stringify({ error: `Weather API error: ${response.status}` });
+
+          const data = await response.json();
+          const current = data.current;
+
+          return JSON.stringify({
+            location: city || `${latitude}, ${longitude}`,
+            temperature: `${current.temperature_2m}°F`,
+            feels_like: `${current.apparent_temperature}°F`,
+            humidity: `${current.relative_humidity_2m}%`,
+            wind_speed: `${current.wind_speed_10m} mph`,
+            condition_code: current.weather_code,
+            units: data.current_units
+          }, null, 2);
+        } catch (e: any) {
+          return JSON.stringify({ error: `Failed to fetch weather: ${e.message}` });
+        }
+      },
+    };
+
+    // Generic Web Search (DuckDuckGo Instant Answer API)
+    const webSearchSchema = z.object({
+      query: z.string().describe('Search query'),
+    });
+
+    const webSearchTool: AgentTool<typeof webSearchSchema> = {
+      name: 'api_web_search',
+      description: 'Search the web via DuckDuckGo Instant Answer API. Returns a summary, related topics, and links. Useful for quick facts or finding official websites.',
+      schema: webSearchSchema,
+      execute: async ({ query }) => {
+        try {
+          const url = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
+          const response = await fetch(url, {
+            headers: { 'User-Agent': 'EnterpriseBrowser/1.0' }
+          });
+          if (!response.ok) return JSON.stringify({ error: `Search API error: ${response.status}` });
+
+          const data = await response.json();
+
+          return JSON.stringify({
+            abstract: data.AbstractText,
+            source: data.AbstractSource,
+            url: data.AbstractURL,
+            related: data.RelatedTopics?.slice(0, 5).map((topic: any) => ({
+              text: topic.Text,
+              url: topic.FirstURL
+            }))
+          }, null, 2);
+        } catch (e: any) {
+          return JSON.stringify({ error: `Failed to search: ${e.message}` });
+        }
+      },
+    };
+
+    // New tool for city to coordinates
+    const cityCoordSchema = z.object({
+      city: z.string().describe('City name (e.g., "San Francisco", "Tokyo")'),
+    });
+
+    const cityCoordTool: AgentTool<typeof cityCoordSchema> = {
+      name: 'lookup_city_coordinates',
+      description: 'Get latitude and longitude for a city name. Use this before calling api_weather.',
+      schema: cityCoordSchema,
+      execute: async ({ city }) => {
+        try {
+          const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=en&format=json`;
+          const response = await fetch(url);
+          if (!response.ok) return JSON.stringify({ error: `Geocoding API error: ${response.status}` });
+
+          const data = await response.json();
+          if (!data.results || data.results.length === 0) {
+            return JSON.stringify({ error: `City '${city}' not found.` });
+          }
+
+          const result = data.results[0];
+          return JSON.stringify({
+            city: result.name,
+            country: result.country,
+            latitude: result.latitude,
+            longitude: result.longitude,
+            timezone: result.timezone
+          }, null, 2);
+        } catch (e: any) {
+          return JSON.stringify({ error: `Failed to lookup city: ${e.message}` });
+        }
+      },
+    };
+
     // Register all tools
     toolRegistry.register(githubSearchTool);
     toolRegistry.register(hnTopStoriesTool);
     toolRegistry.register(wikiTodayTool);
     toolRegistry.register(httpGetTool);
     toolRegistry.register(cryptoPriceTool);
+    toolRegistry.register(weatherTool);
+    toolRegistry.register(webSearchTool);
+    toolRegistry.register(cityCoordTool);
   }
 }
 

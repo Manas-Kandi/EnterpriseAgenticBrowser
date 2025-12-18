@@ -42963,7 +42963,7 @@ const _AgentService = class _AgentService {
           if (ch === "}") depth2--;
           if (depth2 === 0) {
             const potential = candidate.slice(0, i + 1);
-            if (potential.includes('"tool"') || potential.includes("'tool'")) {
+            if (potential.includes('"tool"') || potential.includes("'tool'") || potential.includes('"thought"') || potential.includes("'thought'")) {
               return potential;
             }
           }
@@ -43021,6 +43021,8 @@ const _AgentService = class _AgentService {
     const parsedQuotes = tryParse(fixedQuotes);
     if (parsedQuotes) return parsedQuotes;
     const toolMatch = cleaned.match(/"tool"\s*:\s*"([^"]+)"/);
+    const thoughtMatch = cleaned.match(/"thought"\s*:\s*"([^"]+)"/);
+    const thought = thoughtMatch ? thoughtMatch[1] : void 0;
     if (!toolMatch) return null;
     const tool2 = toolMatch[1];
     if (tool2 === "final_response") {
@@ -43032,16 +43034,16 @@ const _AgentService = class _AgentService {
       for (const pattern of messagePatterns) {
         const match = cleaned.match(pattern);
         if (match) {
-          return { tool: tool2, args: { message: match[1] } };
+          return { tool: tool2, args: { message: match[1] }, thought };
         }
       }
-      return { tool: tool2, args: { message: "" } };
+      return { tool: tool2, args: { message: "" }, thought };
     }
     const argsMatch = cleaned.match(/"args"\s*:\s*(\{[^}]+\})/);
     if (argsMatch) {
       const argsStr = argsMatch[1];
       const args = tryParse(argsStr);
-      if (args) return { tool: tool2, args };
+      if (args) return { tool: tool2, args, thought };
     }
     return null;
   }
@@ -43238,187 +43240,51 @@ You can answer questions about what's on the page, explain content, summarize in
       let context = browserContext || "Current browser state: No context provided";
       context = this.redactSecrets(context);
       const safeUserMessage = this.redactSecrets(userMessage);
-      this.systemPrompt = new SystemMessage(`You are a helpful enterprise assistant integrated into a browser. 
-        
-        You have access to the following tools:
-        ${tools.map((t2) => {
-        var _a4;
-        return `- ${t2.name}: ${t2.description} (Args: ${JSON.stringify(((_a4 = t2.schema) == null ? void 0 : _a4.shape) || {})})`;
-      }).join("\n")}
+      this.systemPrompt = new SystemMessage(`You are a helpful enterprise assistant integrated into a browser.
+Your goal is to help users with their tasks by using tools effectively.
 
-        CRITICAL INSTRUCTIONS:
-        1. You are an agent that MUST use tools to interact with the world.
-        2. To call a tool, you MUST output a VALID JSON object in the following format:
-           {
-             "tool": "tool_name",
-             "args": { "arg_name": "value" }
-           }
-        3. Do not output any other text when calling a tool. Just the JSON.
-        4. If you have completed the task or need to ask the user something, output a JSON with tool "final_response":
-           {
-             "tool": "final_response",
-             "args": { "message": "Your text here" }
-           }
+        CRITICAL RULES:
+          1. RESPONSE FORMAT: You MUST respond ONLY with a single JSON object.
+   - DO NOT include text before / after JSON.
+   - DO NOT use markdown blocks like \`\`\`json.
+   - You MUST include a "thought" field explaining your reasoning.
 
-        API-FIRST STRATEGY (CRITICAL FOR SPEED):
-        For data retrieval, ALWAYS use APIs instead of browser automation:
-        - GitHub search/stars → use "api_github_search"
-        - Hacker News top stories → use "api_hackernews_top"
-        - Wikipedia featured article → use "api_wikipedia_featured"
-        - Cryptocurrency prices → use "api_crypto_price"
-        - Weather data (weather.com, accuweather, etc.) → use "execute_code" with Open-Meteo API
-        - Any other data → use "execute_code" to call a public API
-        
-        WEATHER TASKS - ALWAYS USE API, NOT BROWSER:
-        Weather.com has a terrible DOM for automation. ALWAYS use Open-Meteo API instead:
-        
-        Step 1: Get coordinates for each city
-        { "tool": "lookup_city_coordinates", "args": { "city": "New York" } }
-        
-        Step 2: Fetch weather using execute_code
-        { "tool": "execute_code", "args": { 
-            "code": "const res = await fetch('https://api.open-meteo.com/v1/forecast?latitude=40.71&longitude=-74.01&current=temperature_2m&temperature_unit=fahrenheit'); const data = await res.json(); return { city: 'New York', temperature: data.current.temperature_2m, unit: 'F' };",
-            "description": "Get New York weather"
-          }}
-        
-        For multiple cities, call lookup_city_coordinates and execute_code for EACH city, then combine results.
-        
-        APIs are 10-100x faster than browser automation. Only use browser if:
-        1. The task REQUIRES clicking buttons or filling forms
-        2. No API exists AND the user explicitly needs to SEE the page
-        
-        WHEN TO NAVIGATE BROWSER:
-        If user says "go to X" AND the task is primarily about SEEING/INTERACTING with the page, navigate.
-        If user says "go to X and tell me Y" where Y is DATA, use API first, then optionally navigate to show them.
-        
-        CRITICAL - NO HALLUCINATION RULE:
-        - NEVER claim you have done something you haven't actually done.
-        - If the user asks you to "go to Google and search", you MUST call browser_navigate BEFORE saying you did it.
-        - Do NOT say "I have navigated to X" unless you actually called browser_navigate and got a success response.
-        - If a task has multiple steps (e.g., "get price THEN search Google"), you must complete ALL steps with actual tool calls.
-        
-        Example: Multi-Step Task (Bitcoin price + Google search)
-        User: "Find the Bitcoin price, then go to Google and search for Bitcoin news"
-        Assistant: { "tool": "api_crypto_price", "args": { "coin": "bitcoin" } }
-        User: Tool Output: { "price_usd": 86077 }
-        Assistant: { "tool": "browser_navigate", "args": { "url": "https://www.google.com/search?q=Bitcoin+news+today" } }
-        User: Tool Output: "Navigated to https://www.google.com/search?q=Bitcoin+news+today"
-        Assistant: { "tool": "final_response", "args": { "message": "Bitcoin is currently $86,077. I've navigated to Google search results for 'Bitcoin news today'." } }
+2. JSON STRUCTURE:
+   {
+     "thought": "Your reasoning here.",
+     "tool": "tool_name",
+     "args": { "arg1": "value1" }
+   }
+   FOR FINAL RESPONSE:
+   {
+     "thought": "I have completed the task.",
+     "tool": "final_response",
+     "args": { "content": "Your final message to the user." }
+   }
 
-        Example: GitHub with Navigation
-        User: "Go to GitHub, search for langchain, click the first repo, tell me the stars"
-        Assistant: { "tool": "api_github_search", "args": { "query": "langchain", "sort": "stars", "limit": 1 } }
-        User: Tool Output: { "results": [{ "name": "langchain-ai/langchain", "stars": 122107, "url": "https://github.com/langchain-ai/langchain" }] }
-        Assistant: { "tool": "browser_navigate", "args": { "url": "https://github.com/langchain-ai/langchain" } }
-        User: Tool Output: "Navigated to https://github.com/langchain-ai/langchain"
-        Assistant: { "tool": "final_response", "args": { "message": "langchain-ai/langchain has 122,107 stars on GitHub." } }
+3. API-FIRST STRATEGY (MUCH FASTER):
+   - General Search: use "api_web_search"
+   - Hacker News: use "api_hackernews_top"
+   - GitHub: use "api_github_search"
+   - Wikipedia: use "api_wikipedia_featured"
+   - Weather: use "lookup_city_coordinates" then "api_weather"
+   - Crypto: use "api_crypto_price"
+   - Generic API: use "api_http_get"
+   - ONLY use browser tools (browser_navigate, etc.) if no API is available or the user needs to SEE the page.
 
-        Example: Pure Data Query (no navigation needed)
-        User: "How many stars does langchain have on GitHub?"
-        Assistant: { "tool": "api_github_search", "args": { "query": "langchain", "sort": "stars", "limit": 1 } }
-        User: Tool Output: { "results": [{ "name": "langchain-ai/langchain", "stars": 122107 }] }
-        Assistant: { "tool": "final_response", "args": { "message": "langchain-ai/langchain has 122,107 stars." } }
-        
-        PREFERRED WORKFLOW (SPEED & RELIABILITY):
-        1. API FIRST: Check if an api_* tool can answer the question directly.
-        2. OBSERVE: If browser is needed and page state is unknown, call 'browser_observe'.
-        3. PLAN: For multi-step tasks (especially Mock SaaS), ALWAYS output ONE full 'browser_execute_plan' (include a final wait step for verification). This is significantly faster and more reliable than individual tool calls.
-        4. EXECUTE: Submit the plan once. Avoid calling browser_click/browser_type in separate turns for multi-step tasks.
-        
-        FAIL FAST ON BROWSER ERRORS:
-        - If a selector times out ONCE, do NOT retry with the same selector.
-        - Switch strategies immediately: try a different selector, use browser_click_text, or use direct URL navigation.
-        - If browser_observe fails, use browser_extract_main_text or browser_find_text instead.
-        - Maximum 2 retries for any single action before switching approach.
+4. BROWSER AUTOMATION:
+   - Always "browser_observe" before clicking/typing to get fresh selectors.
+   - If selectors match > 1, use "index", "matchText", or "withinSelector".
+   - "browser_click_text" is safer than CSS selectors when the text is unique.
 
-        CONVERSATION CONTEXT:
-        - You have memory of the entire conversation. Use previous messages to understand context.
-        - If the user refers to "it", "this page", "here", etc., use the conversation history and current browser state to understand what they mean.
-        - ${context}
+5. NO HALLUCINATION: Never claim you did something (e.g., "I navigated to X") unless the tool execution actually succeeded.
 
-        JSON SAFETY:
-        - Tool JSON must be valid JSON. If you include a CSS selector string, it MUST NOT contain unescaped double quotes (").
-        - Prefer selectors returned by browser_observe like [data-testid=jira-create-button] that do not require quotes.
-        - In final_response.message, do not include unescaped double quotes ("). If you need quotes, use single quotes inside the message, e.g. 'fix alignment'.
-
-        VERIFICATION RULE (IMPORTANT):
-        - Verify ONCE. Do not verify multiple times.
-        - If you included a "wait" step in your execution plan and it passed, THAT IS YOUR VERIFICATION. You do not need to verify again.
-        - If you must verify manually, use "browser_wait_for_text".
-        - DO NOT guess container selectors (e.g. do not invent [data-testid=jira-issue-list]). Only use selectors you saw in "browser_observe" or the source code.
-        
-        WHITE-BOX MOCK SaaS MODE (mock-saas):
-        - When the task targets the local Mock SaaS (e.g. URLs like http://localhost:3000/* or apps like Jira/Confluence/Trello/AeroCore in this repo), you MUST operate in this order:
-
-        PHASE 0: RECALL (Check Memory)
-        - Call "knowledge_search_skill" with the user's request and current domain.
-        - If a skill is found, verify it briefly, then execute it using "browser_execute_plan".
-
-        PHASE 1: PLAN (Read Code) - if no skill found
-        - DO NOT touch the browser yet.
-        - Use "code_search" or "code_list_files" to find the relevant React components.
-        - Read "mock-saas/src/App.tsx" to find the correct route.
-        - NOTE: AeroCore apps are under "/aerocore/*" (e.g. /aerocore/admin, /aerocore/dispatch).
-        - Read the page/component source code (e.g. "JiraPage.tsx" or "AdminPage.tsx") to find:
-          * Stable "data-testid" selectors.
-          * WARNING: If a selector is inside a loop (e.g. [data-testid=jira-create-issue-button] inside columns), IT IS NOT UNIQUE. browser_click will refuse ambiguous matches. Prefer browser_click_text or disambiguate via withinSelector/matchText/index.
-          * Validation logic (e.g. allowed values for priority).
-          
-        PHASE 2: EXECUTE (Run Plan)
-        - Call "browser_execute_plan" with the full sequence.
-        - Include a "wait" step at the end of your plan to verify the outcome automatically (e.g. wait for the text you just created).
-        - Example plan:
-          [
-            { "action": "navigate", "url": "http://localhost:3000/jira" },
-            { "action": "click", "selector": "[data-testid=jira-create-button]" },
-            { "action": "type", "selector": "[data-testid=jira-summary-input]", "value": "Bug Report" },
-            { "action": "select", "selector": "[data-testid=jira-status-select]", "value": "To Do" },
-            { "action": "click", "selector": "[data-testid=jira-submit-create]" },
-            { "action": "wait", "text": "Bug Report" }
-          ]
-
-        PHASE 3: LEARN (Save Memory)
-        - If the execution (and its built-in wait) succeeded, call "knowledge_save_skill" IMMEDIATELY.
-        - Then IMMEDIATELY send "final_response". Do not perform extra verifications.
-        
-        BROWSER AUTOMATION STRATEGY:
-        - You have no eyes. You must use "browser_observe" to see the page.
-        - For EXTERNAL WEBSITES (not localhost): Use the current browser state above. If you're already on a site (e.g. youtube.com), interact with it directly using browser_type, browser_click, browser_observe. Do NOT navigate away unless asked.
-        - Step 1: Check current browser state. If already on the target site, skip navigation.
-        - Step 2: Use "browser_observe" with scope="main" to see relevant page content.
-        - Step 3: Prefer "browser_click_text" when you can describe a link/button by visible text (more robust than guessing aria-label/href).
-        - Step 4: Use selectors returned by "browser_observe" (which are JSON-safe) for "browser_click", "browser_type", "browser_select". If browser_click says the selector is ambiguous, disambiguate via withinSelector/matchText/index or switch to browser_click_text.
-        - Step 5: Verify outcomes using "browser_wait_for_text", "browser_wait_for_text_in", or "browser_extract_main_text".
-
-        INFORMATION EXTRACTION (CRITICAL):
-        - If the user asks you to "tell me", "find", "what is", "show me", "get", "read", or asks a question about page content, you MUST:
-          1. Navigate to the page (if not already there)
-          2. Call "browser_observe" to see the page content
-          3. Read the "mainTextSnippet" from the observation result
-          4. Extract the requested information from the text
-          5. Return the answer in your final_response
-        - DO NOT stop after just navigating. The user wants INFORMATION, not just navigation.
-        - The "mainTextSnippet" in browser_observe output contains the visible text on the page - use it to answer questions.
-
-        Example: Information Extraction
-        User: "Go to wikipedia.org and tell me the featured article of the day"
-        Assistant: { "tool": "browser_navigate", "args": { "url": "https://www.wikipedia.org" } }
-        User: Tool Output: "Navigated to https://www.wikipedia.org"
-        Assistant: { "tool": "browser_observe", "args": { "scope": "main" } }
-        User: Tool Output: { "mainTextSnippet": "...Featured article: The Battle of...", ... }
-        Assistant: { "tool": "final_response", "args": { "message": "The featured article of the day on Wikipedia is 'The Battle of...'" } }
-
-        Example: Simple Navigation
-        User: "Go to Jira"
-        Assistant: { "tool": "browser_navigate", "args": { "url": "http://localhost:3000/jira" } }
-        User: Tool Output: "Navigated to..."
-        Assistant: { "tool": "browser_observe", "args": { "scope": "main" } }
-        User: Tool Output: { "interactiveElements": [...] }
-        Assistant: { "tool": "final_response", "args": { "message": "I have navigated to Jira." } }
-        `);
+Available tools:
+${tools.map((t2) => `- ${t2.name}: ${t2.description}`).join("\n")}
+`);
       const contextualUserMessage = new HumanMessage(`[${context}]
 
-User request: ${safeUserMessage}`);
+User request: ${safeUserMessage} `);
       this.conversationHistory.push(contextualUserMessage);
       this.trimConversationHistory();
       messages = [
@@ -43430,8 +43296,8 @@ User request: ${safeUserMessage}`);
       const timeoutMs = isSlowModel ? 12e4 : 6e4;
       const plan = await this.planCurrentGoal(userMessage, context);
       if (plan.length > 1) {
-        this.emitStep("thought", `Strategic Plan:
-${plan.map((p, idx) => `${idx + 1}. ${p}`).join("\n")}`, { phase: "planning", plan });
+        this.emitStep("thought", `Strategic Plan: 
+${plan.map((p, idx) => `${idx + 1}. ${p}`).join("\n")} `, { phase: "planning", plan });
       }
       for (let i = 0; i < 15; i++) {
         const runId = agentRunContext.getRunId() ?? void 0;
@@ -43487,7 +43353,7 @@ ${plan.map((p, idx) => `${idx + 1}. ${p}`).join("\n")}`, { phase: "planning", pl
         } catch (timeoutErr) {
           if (progressTimer) clearInterval(progressTimer);
           const durationMs = Date.now() - llmStartedAt;
-          this.emitStep("observation", `LLM timed out after ${Math.round(durationMs)}ms`, {
+          this.emitStep("observation", `LLM timed out after ${Math.round(durationMs)} ms`, {
             phase: "llm_end",
             ok: false,
             llmCallId,
@@ -43513,13 +43379,13 @@ ${plan.map((p, idx) => `${idx + 1}. ${p}`).join("\n")}`, { phase: "planning", pl
             });
           } catch {
           }
-          this.emitStep("observation", `Request timed out. Try a simpler request or switch to a faster model.`);
+          this.emitStep("observation", `Request timed out.Try a simpler request or switch to a faster model.`);
           return "The request timed out. Try breaking it into smaller steps or use a faster model.";
         }
         if (progressTimer) clearInterval(progressTimer);
         try {
           const durationMs = Date.now() - llmStartedAt;
-          this.emitStep("thought", `Model responded in ${Math.round(durationMs)}ms`, {
+          this.emitStep("thought", `Model responded in ${Math.round(durationMs)} ms`, {
             phase: "llm_end",
             ok: true,
             llmCallId,
@@ -43544,27 +43410,33 @@ ${plan.map((p, idx) => `${idx + 1}. ${p}`).join("\n")}`, { phase: "planning", pl
         } catch {
         }
         const content = response.content;
-        console.log(`[Agent Turn ${i}] Raw Response:`, this.redactSecrets(content));
-        const jsonStart = content.indexOf("{");
-        if (jsonStart > 10) {
-          const thought = content.slice(0, jsonStart).trim();
-          const cleanThought = thought.replace(/```json/g, "").replace(/```/g, "").trim();
-          if (cleanThought.length > 5) {
-            this.emitStep("thought", cleanThought);
-          }
-        }
+        console.log(`[Agent Turn ${i}] Raw Response: `, this.redactSecrets(content));
         const action = this.parseToolCall(content);
-        if (action && typeof action.tool === "number") {
+        if (action == null ? void 0 : action.thought) {
+          this.emitStep("thought", action.thought);
+        } else {
+          const jsonStart = content.indexOf("{");
+          if (jsonStart > 1) {
+            const thought = content.slice(0, jsonStart).trim();
+            const cleanThought = thought.replace(/```json/g, "").replace(/```/g, "").trim();
+            if (cleanThought.length > 5) {
+              this.emitStep("thought", cleanThought);
+            }
+          }
         }
         if (!action || typeof action.tool !== "string" || !action.args || typeof action.args !== "object") {
           parseFailures++;
-          this.emitStep("observation", `Model returned invalid JSON (attempt ${parseFailures}/3).`);
+          let specificError = "Invalid JSON format.";
+          if (!content.includes("{")) specificError = "No JSON object found in response.";
+          else if (content.includes("```") && !content.includes("```json")) specificError = "Markdown block found but it's not marked as ```json.";
+          this.emitStep("observation", `Model returned invalid JSON (attempt ${parseFailures}/3). ${specificError}`);
           console.warn("Failed to parse JSON response:", content);
           messages.push(new AIMessage(this.redactSecrets(String((response == null ? void 0 : response.content) ?? ""))));
           messages.push(
             new SystemMessage(
-              `Error: Output ONLY valid JSON. Format: {"tool":"tool_name","args":{...}}
-To finish: {"tool":"final_response","args":{"message":"your response"}}`
+              `Error: ${specificError} Output ONLY valid JSON. 
+              Format: {"thought":"your reasoning","tool":"tool_name","args":{...}}
+              To finish: {"thought":"summary","tool":"final_response","args":{"message":"your response"}}`
             )
           );
           if (lastVerified && parseFailures >= 2) {
@@ -43577,7 +43449,7 @@ To finish: {"tool":"final_response","args":{"message":"your response"}}`
           }
           continue;
         }
-        if (action.tool !== "final_response") {
+        if (action.tool !== "final_response" && !action.thought) {
           this.emitStep("thought", `Decided to call ${action.tool}`);
         }
         if (action.tool === "final_response") {
@@ -46294,11 +46166,103 @@ class WebAPIService {
         }
       }
     };
+    const weatherSchema = object({
+      latitude: number().describe("Latitude of the location"),
+      longitude: number().describe("Longitude of the location"),
+      city: string().optional().describe("City name for display purposes")
+    });
+    const weatherTool = {
+      name: "api_weather",
+      description: "Get current weather for a specific latitude and longitude via Open-Meteo API. Use lookup_city_coordinates first if you only have a city name.",
+      schema: weatherSchema,
+      execute: async ({ latitude, longitude, city }) => {
+        try {
+          const url = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,rain,showers,snowfall,weather_code,wind_speed_10m&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch`;
+          const response = await fetch(url);
+          if (!response.ok) return JSON.stringify({ error: `Weather API error: ${response.status}` });
+          const data = await response.json();
+          const current = data.current;
+          return JSON.stringify({
+            location: city || `${latitude}, ${longitude}`,
+            temperature: `${current.temperature_2m}°F`,
+            feels_like: `${current.apparent_temperature}°F`,
+            humidity: `${current.relative_humidity_2m}%`,
+            wind_speed: `${current.wind_speed_10m} mph`,
+            condition_code: current.weather_code,
+            units: data.current_units
+          }, null, 2);
+        } catch (e) {
+          return JSON.stringify({ error: `Failed to fetch weather: ${e.message}` });
+        }
+      }
+    };
+    const webSearchSchema = object({
+      query: string().describe("Search query")
+    });
+    const webSearchTool = {
+      name: "api_web_search",
+      description: "Search the web via DuckDuckGo Instant Answer API. Returns a summary, related topics, and links. Useful for quick facts or finding official websites.",
+      schema: webSearchSchema,
+      execute: async ({ query }) => {
+        var _a3;
+        try {
+          const url = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
+          const response = await fetch(url, {
+            headers: { "User-Agent": "EnterpriseBrowser/1.0" }
+          });
+          if (!response.ok) return JSON.stringify({ error: `Search API error: ${response.status}` });
+          const data = await response.json();
+          return JSON.stringify({
+            abstract: data.AbstractText,
+            source: data.AbstractSource,
+            url: data.AbstractURL,
+            related: (_a3 = data.RelatedTopics) == null ? void 0 : _a3.slice(0, 5).map((topic) => ({
+              text: topic.Text,
+              url: topic.FirstURL
+            }))
+          }, null, 2);
+        } catch (e) {
+          return JSON.stringify({ error: `Failed to search: ${e.message}` });
+        }
+      }
+    };
+    const cityCoordSchema = object({
+      city: string().describe('City name (e.g., "San Francisco", "Tokyo")')
+    });
+    const cityCoordTool = {
+      name: "lookup_city_coordinates",
+      description: "Get latitude and longitude for a city name. Use this before calling api_weather.",
+      schema: cityCoordSchema,
+      execute: async ({ city }) => {
+        try {
+          const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=en&format=json`;
+          const response = await fetch(url);
+          if (!response.ok) return JSON.stringify({ error: `Geocoding API error: ${response.status}` });
+          const data = await response.json();
+          if (!data.results || data.results.length === 0) {
+            return JSON.stringify({ error: `City '${city}' not found.` });
+          }
+          const result = data.results[0];
+          return JSON.stringify({
+            city: result.name,
+            country: result.country,
+            latitude: result.latitude,
+            longitude: result.longitude,
+            timezone: result.timezone
+          }, null, 2);
+        } catch (e) {
+          return JSON.stringify({ error: `Failed to lookup city: ${e.message}` });
+        }
+      }
+    };
     toolRegistry.register(githubSearchTool);
     toolRegistry.register(hnTopStoriesTool);
     toolRegistry.register(wikiTodayTool);
     toolRegistry.register(httpGetTool);
     toolRegistry.register(cryptoPriceTool);
+    toolRegistry.register(weatherTool);
+    toolRegistry.register(webSearchTool);
+    toolRegistry.register(cityCoordTool);
   }
 }
 new WebAPIService();

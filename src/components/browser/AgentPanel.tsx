@@ -1,7 +1,7 @@
 import ReactMarkdown from 'react-markdown';
 import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
-import { Send, X, ChevronDown, Brain, Zap, RotateCcw, MessageSquare, Play, Shield, Activity, Plus, History, MoreHorizontal, ChevronRight, Folder, FileText } from 'lucide-react';
+import { Send, X, ChevronDown, Brain, Zap, RotateCcw, MessageSquare, Play, Shield, Activity, Plus, History, MoreHorizontal, ChevronRight, Globe, Search, MousePointerClick } from 'lucide-react';
 import { useBrowserStore } from '@/lib/store';
 
 interface Message {
@@ -367,17 +367,17 @@ export function AgentPanel() {
                   <div key={i} className="flex items-center gap-2 group/item py-0.5">
                     <div className="shrink-0 opacity-40 group-hover/item:opacity-70 transition-opacity">
                       {isAction ? (
-                        <Folder size={12} className="text-blue-400" />
+                        <Globe size={11} className="text-blue-400" />
                       ) : (
-                        <FileText size={12} className="text-muted-foreground" />
+                        <Search size={11} className="text-muted-foreground" />
                       )}
                     </div>
                     <div className="flex-1 flex items-center justify-between overflow-hidden gap-2">
                       <span className="text-[11px] font-medium text-foreground/50 truncate group-hover/item:text-foreground/70 transition-colors">
                         {isAction ? (
-                          <>Analyzed <span className="text-foreground/30 font-normal">~/.../{msg.content.split('/').pop()}</span></>
+                          <>Navigating <span className="text-foreground/30 font-normal truncate">{msg.content.replace(/^Executing\s+/i, '')}</span></>
                         ) : (
-                          <>Read <span className="text-foreground/30 font-normal">~/.../{msg.content.split('/').pop()}</span></>
+                          <>Observed <span className="text-foreground/30 font-normal truncate">{msg.content.substring(0, 40)}{msg.content.length > 40 ? '...' : ''}</span></>
                         )}
                       </span>
                       <span className="text-[9px] text-muted-foreground/20 font-mono group-hover/item:text-muted-foreground/40 transition-colors shrink-0">
@@ -395,7 +395,7 @@ export function AgentPanel() {
 
                 if (isTaskSummary) {
                   return (
-                    <div key={i} className="rounded-xl border border-border/40 bg-secondary/10 p-4 space-y-4 shadow-sm backdrop-blur-sm">
+                    <div key={i} className="rounded-xl border border-border/40 bg-secondary/10 p-4 space-y-4 shadow-sm backdrop-blur-sm select-text">
                       <div className="space-y-1.5">
                         <h3 className="text-sm font-bold text-foreground leading-tight">
                           {msg.content.split('\n')[0].replace(/^#+\s*/, '')}
@@ -405,38 +405,34 @@ export function AgentPanel() {
                         </p>
                       </div>
 
-                      {/* Files Edited Section */}
+                      {/* Browser Actions Section */}
                       <div className="space-y-2">
-                        <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60 font-semibold">Files Edited</div>
+                        <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60 font-semibold">Activity</div>
                         <div className="space-y-1.5">
-                          {/* Mocking file list extraction or using manual ones for visual */}
-                          <div className="flex items-center gap-2 text-xs text-blue-400 hover:underline cursor-pointer">
-                            <FileText size={12} />
-                            AgentService.ts
+                          <div className="flex items-center gap-2 text-xs text-blue-400">
+                            <Globe size={12} />
+                            Gathering information from web
                           </div>
-                          <div className="flex items-center gap-2 text-xs text-blue-400 hover:underline cursor-pointer">
-                            <FileText size={12} />
-                            tasks_agent_evaluation.md
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground/70">
+                            <MousePointerClick size={12} />
+                            Processing user request
                           </div>
                         </div>
                       </div>
 
-                      {/* Progress Updates */}
+                      {/* Progress Updates - Minimalist for Browser */}
                       <div className="space-y-2">
                         <div className="flex items-center justify-between">
-                          <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60 font-semibold">Progress Updates</div>
-                          <div className="flex items-center gap-1 text-[10px] text-muted-foreground/40 hover:text-muted-foreground cursor-pointer transition-colors">
-                            Expand all <ChevronRight size={10} />
-                          </div>
+                          <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60 font-semibold">Steps</div>
                         </div>
                         <div className="space-y-2 relative pl-4 before:absolute before:left-1 before:top-2 before:bottom-2 before:w-px before:bg-border/30">
                           <div className="text-xs flex gap-3 text-foreground/80">
                             <span className="text-muted-foreground/30 font-mono text-[10px]">1</span>
-                            <span>Exploring src and electron directories...</span>
+                            <span>Navigated to secure site</span>
                           </div>
                           <div className="text-xs flex gap-3 text-foreground/80">
                             <span className="text-muted-foreground/30 font-mono text-[10px]">2</span>
-                            <span>Reading AgentService.ts to understand loop...</span>
+                            <span>Extracted relevant data points</span>
                           </div>
                         </div>
                       </div>

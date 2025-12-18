@@ -189,8 +189,8 @@ export class AgentService {
           if (ch === '}') depth--;
           if (depth === 0) {
             const potential = candidate.slice(0, i + 1);
-            // Check if it's a valid tool call (very loose check)
-            if (potential.includes('"tool"') || potential.includes("'tool'")) {
+            // Check if it's a valid tool call (including 'thought' or 'tool')
+            if (potential.includes('"tool"') || potential.includes("'tool'") || potential.includes('"thought"') || potential.includes("'thought'")) {
               return potential;
             }
           }
@@ -231,7 +231,7 @@ export class AgentService {
     return null;
   }
 
-  private parseToolCall(rawContent: string): { tool: string; args: unknown } | null {
+  private parseToolCall(rawContent: string): { tool: string; args: unknown; thought?: string } | null {
     const cleaned = rawContent.replace(/```json/g, '').replace(/```/g, '').trim();
     const candidate = this.extractJsonObject(cleaned) ?? (cleaned.startsWith('{') ? cleaned : null);
     if (!candidate) return null;
@@ -266,6 +266,9 @@ export class AgentService {
     // Very loose fallback: if it *looks* like a final_response, salvage a best-effort tool object.
     // Extended to handle any tool, not just final_response
     const toolMatch = cleaned.match(/"tool"\s*:\s*"([^"]+)"/);
+    const thoughtMatch = cleaned.match(/"thought"\s*:\s*"([^"]+)"/);
+    const thought = thoughtMatch ? thoughtMatch[1] : undefined;
+
     if (!toolMatch) return null;
     const tool = toolMatch[1];
 
@@ -280,11 +283,11 @@ export class AgentService {
       for (const pattern of messagePatterns) {
         const match = cleaned.match(pattern);
         if (match) {
-          return { tool, args: { message: match[1] } };
+          return { tool, args: { message: match[1] }, thought };
         }
       }
       // If we found tool=final_response but no message, return empty message
-      return { tool, args: { message: '' } };
+      return { tool, args: { message: '' }, thought };
     }
 
     // For other tools, try to extract args object
@@ -292,7 +295,7 @@ export class AgentService {
     if (argsMatch) {
       const argsStr = argsMatch[1];
       const args = tryParse(argsStr);
-      if (args) return { tool, args };
+      if (args) return { tool, args, thought };
     }
 
     return null;
@@ -531,185 +534,51 @@ You can answer questions about what's on the page, explain content, summarize in
       context = this.redactSecrets(context);
       const safeUserMessage = this.redactSecrets(userMessage);
 
-      // Build system prompt with tools (refresh each call in case tools changed)
-      this.systemPrompt = new SystemMessage(`You are a helpful enterprise assistant integrated into a browser. 
-        
-        You have access to the following tools:
-        ${tools.map((t: any) => `- ${t.name}: ${t.description} (Args: ${JSON.stringify(t.schema?.shape || {})})`).join('\n')}
+      this.systemPrompt = new SystemMessage(`You are a helpful enterprise assistant integrated into a browser.
+Your goal is to help users with their tasks by using tools effectively.
 
-        CRITICAL INSTRUCTIONS:
-        1. You are an agent that MUST use tools to interact with the world.
-        2. To call a tool, you MUST output a VALID JSON object in the following format:
-           {
-             "tool": "tool_name",
-             "args": { "arg_name": "value" }
-           }
-        3. Do not output any other text when calling a tool. Just the JSON.
-        4. If you have completed the task or need to ask the user something, output a JSON with tool "final_response":
-           {
-             "tool": "final_response",
-             "args": { "message": "Your text here" }
-           }
+        CRITICAL RULES:
+          1. RESPONSE FORMAT: You MUST respond ONLY with a single JSON object.
+   - DO NOT include text before / after JSON.
+   - DO NOT use markdown blocks like \`\`\`json.
+   - You MUST include a "thought" field explaining your reasoning.
 
-        API-FIRST STRATEGY (CRITICAL FOR SPEED):
-        For data retrieval, ALWAYS use APIs instead of browser automation:
-        - GitHub search/stars → use "api_github_search"
-        - Hacker News top stories → use "api_hackernews_top"
-        - Wikipedia featured article → use "api_wikipedia_featured"
-        - Cryptocurrency prices → use "api_crypto_price"
-        - Weather data (weather.com, accuweather, etc.) → use "execute_code" with Open-Meteo API
-        - Any other data → use "execute_code" to call a public API
-        
-        WEATHER TASKS - ALWAYS USE API, NOT BROWSER:
-        Weather.com has a terrible DOM for automation. ALWAYS use Open-Meteo API instead:
-        
-        Step 1: Get coordinates for each city
-        { "tool": "lookup_city_coordinates", "args": { "city": "New York" } }
-        
-        Step 2: Fetch weather using execute_code
-        { "tool": "execute_code", "args": { 
-            "code": "const res = await fetch('https://api.open-meteo.com/v1/forecast?latitude=40.71&longitude=-74.01&current=temperature_2m&temperature_unit=fahrenheit'); const data = await res.json(); return { city: 'New York', temperature: data.current.temperature_2m, unit: 'F' };",
-            "description": "Get New York weather"
-          }}
-        
-        For multiple cities, call lookup_city_coordinates and execute_code for EACH city, then combine results.
-        
-        APIs are 10-100x faster than browser automation. Only use browser if:
-        1. The task REQUIRES clicking buttons or filling forms
-        2. No API exists AND the user explicitly needs to SEE the page
-        
-        WHEN TO NAVIGATE BROWSER:
-        If user says "go to X" AND the task is primarily about SEEING/INTERACTING with the page, navigate.
-        If user says "go to X and tell me Y" where Y is DATA, use API first, then optionally navigate to show them.
-        
-        CRITICAL - NO HALLUCINATION RULE:
-        - NEVER claim you have done something you haven't actually done.
-        - If the user asks you to "go to Google and search", you MUST call browser_navigate BEFORE saying you did it.
-        - Do NOT say "I have navigated to X" unless you actually called browser_navigate and got a success response.
-        - If a task has multiple steps (e.g., "get price THEN search Google"), you must complete ALL steps with actual tool calls.
-        
-        Example: Multi-Step Task (Bitcoin price + Google search)
-        User: "Find the Bitcoin price, then go to Google and search for Bitcoin news"
-        Assistant: { "tool": "api_crypto_price", "args": { "coin": "bitcoin" } }
-        User: Tool Output: { "price_usd": 86077 }
-        Assistant: { "tool": "browser_navigate", "args": { "url": "https://www.google.com/search?q=Bitcoin+news+today" } }
-        User: Tool Output: "Navigated to https://www.google.com/search?q=Bitcoin+news+today"
-        Assistant: { "tool": "final_response", "args": { "message": "Bitcoin is currently $86,077. I've navigated to Google search results for 'Bitcoin news today'." } }
+2. JSON STRUCTURE:
+   {
+     "thought": "Your reasoning here.",
+     "tool": "tool_name",
+     "args": { "arg1": "value1" }
+   }
+   FOR FINAL RESPONSE:
+   {
+     "thought": "I have completed the task.",
+     "tool": "final_response",
+     "args": { "content": "Your final message to the user." }
+   }
 
-        Example: GitHub with Navigation
-        User: "Go to GitHub, search for langchain, click the first repo, tell me the stars"
-        Assistant: { "tool": "api_github_search", "args": { "query": "langchain", "sort": "stars", "limit": 1 } }
-        User: Tool Output: { "results": [{ "name": "langchain-ai/langchain", "stars": 122107, "url": "https://github.com/langchain-ai/langchain" }] }
-        Assistant: { "tool": "browser_navigate", "args": { "url": "https://github.com/langchain-ai/langchain" } }
-        User: Tool Output: "Navigated to https://github.com/langchain-ai/langchain"
-        Assistant: { "tool": "final_response", "args": { "message": "langchain-ai/langchain has 122,107 stars on GitHub." } }
+3. API-FIRST STRATEGY (MUCH FASTER):
+   - General Search: use "api_web_search"
+   - Hacker News: use "api_hackernews_top"
+   - GitHub: use "api_github_search"
+   - Wikipedia: use "api_wikipedia_featured"
+   - Weather: use "lookup_city_coordinates" then "api_weather"
+   - Crypto: use "api_crypto_price"
+   - Generic API: use "api_http_get"
+   - ONLY use browser tools (browser_navigate, etc.) if no API is available or the user needs to SEE the page.
 
-        Example: Pure Data Query (no navigation needed)
-        User: "How many stars does langchain have on GitHub?"
-        Assistant: { "tool": "api_github_search", "args": { "query": "langchain", "sort": "stars", "limit": 1 } }
-        User: Tool Output: { "results": [{ "name": "langchain-ai/langchain", "stars": 122107 }] }
-        Assistant: { "tool": "final_response", "args": { "message": "langchain-ai/langchain has 122,107 stars." } }
-        
-        PREFERRED WORKFLOW (SPEED & RELIABILITY):
-        1. API FIRST: Check if an api_* tool can answer the question directly.
-        2. OBSERVE: If browser is needed and page state is unknown, call 'browser_observe'.
-        3. PLAN: For multi-step tasks (especially Mock SaaS), ALWAYS output ONE full 'browser_execute_plan' (include a final wait step for verification). This is significantly faster and more reliable than individual tool calls.
-        4. EXECUTE: Submit the plan once. Avoid calling browser_click/browser_type in separate turns for multi-step tasks.
-        
-        FAIL FAST ON BROWSER ERRORS:
-        - If a selector times out ONCE, do NOT retry with the same selector.
-        - Switch strategies immediately: try a different selector, use browser_click_text, or use direct URL navigation.
-        - If browser_observe fails, use browser_extract_main_text or browser_find_text instead.
-        - Maximum 2 retries for any single action before switching approach.
+4. BROWSER AUTOMATION:
+   - Always "browser_observe" before clicking/typing to get fresh selectors.
+   - If selectors match > 1, use "index", "matchText", or "withinSelector".
+   - "browser_click_text" is safer than CSS selectors when the text is unique.
 
-        CONVERSATION CONTEXT:
-        - You have memory of the entire conversation. Use previous messages to understand context.
-        - If the user refers to "it", "this page", "here", etc., use the conversation history and current browser state to understand what they mean.
-        - ${context}
+5. NO HALLUCINATION: Never claim you did something (e.g., "I navigated to X") unless the tool execution actually succeeded.
 
-        JSON SAFETY:
-        - Tool JSON must be valid JSON. If you include a CSS selector string, it MUST NOT contain unescaped double quotes (").
-        - Prefer selectors returned by browser_observe like [data-testid=jira-create-button] that do not require quotes.
-        - In final_response.message, do not include unescaped double quotes ("). If you need quotes, use single quotes inside the message, e.g. 'fix alignment'.
-
-        VERIFICATION RULE (IMPORTANT):
-        - Verify ONCE. Do not verify multiple times.
-        - If you included a "wait" step in your execution plan and it passed, THAT IS YOUR VERIFICATION. You do not need to verify again.
-        - If you must verify manually, use "browser_wait_for_text".
-        - DO NOT guess container selectors (e.g. do not invent [data-testid=jira-issue-list]). Only use selectors you saw in "browser_observe" or the source code.
-        
-        WHITE-BOX MOCK SaaS MODE (mock-saas):
-        - When the task targets the local Mock SaaS (e.g. URLs like http://localhost:3000/* or apps like Jira/Confluence/Trello/AeroCore in this repo), you MUST operate in this order:
-
-        PHASE 0: RECALL (Check Memory)
-        - Call "knowledge_search_skill" with the user's request and current domain.
-        - If a skill is found, verify it briefly, then execute it using "browser_execute_plan".
-
-        PHASE 1: PLAN (Read Code) - if no skill found
-        - DO NOT touch the browser yet.
-        - Use "code_search" or "code_list_files" to find the relevant React components.
-        - Read "mock-saas/src/App.tsx" to find the correct route.
-        - NOTE: AeroCore apps are under "/aerocore/*" (e.g. /aerocore/admin, /aerocore/dispatch).
-        - Read the page/component source code (e.g. "JiraPage.tsx" or "AdminPage.tsx") to find:
-          * Stable "data-testid" selectors.
-          * WARNING: If a selector is inside a loop (e.g. [data-testid=jira-create-issue-button] inside columns), IT IS NOT UNIQUE. browser_click will refuse ambiguous matches. Prefer browser_click_text or disambiguate via withinSelector/matchText/index.
-          * Validation logic (e.g. allowed values for priority).
-          
-        PHASE 2: EXECUTE (Run Plan)
-        - Call "browser_execute_plan" with the full sequence.
-        - Include a "wait" step at the end of your plan to verify the outcome automatically (e.g. wait for the text you just created).
-        - Example plan:
-          [
-            { "action": "navigate", "url": "http://localhost:3000/jira" },
-            { "action": "click", "selector": "[data-testid=jira-create-button]" },
-            { "action": "type", "selector": "[data-testid=jira-summary-input]", "value": "Bug Report" },
-            { "action": "select", "selector": "[data-testid=jira-status-select]", "value": "To Do" },
-            { "action": "click", "selector": "[data-testid=jira-submit-create]" },
-            { "action": "wait", "text": "Bug Report" }
-          ]
-
-        PHASE 3: LEARN (Save Memory)
-        - If the execution (and its built-in wait) succeeded, call "knowledge_save_skill" IMMEDIATELY.
-        - Then IMMEDIATELY send "final_response". Do not perform extra verifications.
-        
-        BROWSER AUTOMATION STRATEGY:
-        - You have no eyes. You must use "browser_observe" to see the page.
-        - For EXTERNAL WEBSITES (not localhost): Use the current browser state above. If you're already on a site (e.g. youtube.com), interact with it directly using browser_type, browser_click, browser_observe. Do NOT navigate away unless asked.
-        - Step 1: Check current browser state. If already on the target site, skip navigation.
-        - Step 2: Use "browser_observe" with scope="main" to see relevant page content.
-        - Step 3: Prefer "browser_click_text" when you can describe a link/button by visible text (more robust than guessing aria-label/href).
-        - Step 4: Use selectors returned by "browser_observe" (which are JSON-safe) for "browser_click", "browser_type", "browser_select". If browser_click says the selector is ambiguous, disambiguate via withinSelector/matchText/index or switch to browser_click_text.
-        - Step 5: Verify outcomes using "browser_wait_for_text", "browser_wait_for_text_in", or "browser_extract_main_text".
-
-        INFORMATION EXTRACTION (CRITICAL):
-        - If the user asks you to "tell me", "find", "what is", "show me", "get", "read", or asks a question about page content, you MUST:
-          1. Navigate to the page (if not already there)
-          2. Call "browser_observe" to see the page content
-          3. Read the "mainTextSnippet" from the observation result
-          4. Extract the requested information from the text
-          5. Return the answer in your final_response
-        - DO NOT stop after just navigating. The user wants INFORMATION, not just navigation.
-        - The "mainTextSnippet" in browser_observe output contains the visible text on the page - use it to answer questions.
-
-        Example: Information Extraction
-        User: "Go to wikipedia.org and tell me the featured article of the day"
-        Assistant: { "tool": "browser_navigate", "args": { "url": "https://www.wikipedia.org" } }
-        User: Tool Output: "Navigated to https://www.wikipedia.org"
-        Assistant: { "tool": "browser_observe", "args": { "scope": "main" } }
-        User: Tool Output: { "mainTextSnippet": "...Featured article: The Battle of...", ... }
-        Assistant: { "tool": "final_response", "args": { "message": "The featured article of the day on Wikipedia is 'The Battle of...'" } }
-
-        Example: Simple Navigation
-        User: "Go to Jira"
-        Assistant: { "tool": "browser_navigate", "args": { "url": "http://localhost:3000/jira" } }
-        User: Tool Output: "Navigated to..."
-        Assistant: { "tool": "browser_observe", "args": { "scope": "main" } }
-        User: Tool Output: { "interactiveElements": [...] }
-        Assistant: { "tool": "final_response", "args": { "message": "I have navigated to Jira." } }
-        `);
+Available tools:
+${tools.map((t: any) => `- ${t.name}: ${t.description}`).join('\n')}
+`);
 
       // Add user message to conversation history with browser context
-      const contextualUserMessage = new HumanMessage(`[${context}]\n\nUser request: ${safeUserMessage}`);
+      const contextualUserMessage = new HumanMessage(`[${ context }]\n\nUser request: ${ safeUserMessage } `);
       this.conversationHistory.push(contextualUserMessage);
 
       // Trim history if it's getting too long
@@ -731,7 +600,7 @@ You can answer questions about what's on the page, explain content, summarize in
       // 1. Planning Step: Decompose complex goals
       const plan = await this.planCurrentGoal(userMessage, context);
       if (plan.length > 1) {
-        this.emitStep('thought', `Strategic Plan:\n${plan.map((p, idx) => `${idx + 1}. ${p}`).join('\n')}`, { phase: 'planning', plan });
+        this.emitStep('thought', `Strategic Plan: \n${ plan.map((p, idx) => `${idx + 1}. ${p}`).join('\n') } `, { phase: 'planning', plan });
       }
 
       // ReAct Loop (Max 15 turns)
@@ -739,7 +608,7 @@ You can answer questions about what's on the page, explain content, summarize in
         const runId = agentRunContext.getRunId() ?? undefined;
         const llmCallId = uuidv4();
         const llmStartedAt = Date.now();
-        this.emitStep('thought', `Calling model ${this.currentModelId} (turn ${i + 1})`, {
+        this.emitStep('thought', `Calling model ${ this.currentModelId } (turn ${ i + 1 })`, {
           phase: 'llm_start',
           llmCallId,
           turnIndex: i,
@@ -766,7 +635,7 @@ You can answer questions about what's on the page, explain content, summarize in
 
         // Add timeout for each LLM call
         const timeoutPromise = new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error(`LLM call timed out after ${timeoutMs / 1000} seconds`)), timeoutMs)
+          setTimeout(() => reject(new Error(`LLM call timed out after ${ timeoutMs / 1000 } seconds`)), timeoutMs)
         );
 
         let response: AIMessage;
@@ -777,7 +646,7 @@ You can answer questions about what's on the page, explain content, summarize in
             progressCount += 1;
             const elapsedMs = Date.now() - llmStartedAt;
             if (progressCount <= 6) {
-              this.emitStep('thought', `Still thinking... (${Math.round(elapsedMs / 1000)}s)`, {
+              this.emitStep('thought', `Still thinking... (${ Math.round(elapsedMs / 1000) }s)`, {
                 phase: 'llm_wait',
                 llmCallId,
                 turnIndex: i,
@@ -794,7 +663,7 @@ You can answer questions about what's on the page, explain content, summarize in
         } catch (timeoutErr: any) {
           if (progressTimer) clearInterval(progressTimer);
           const durationMs = Date.now() - llmStartedAt;
-          this.emitStep('observation', `LLM timed out after ${Math.round(durationMs)}ms`, {
+          this.emitStep('observation', `LLM timed out after ${ Math.round(durationMs) } ms`, {
             phase: 'llm_end',
             ok: false,
             llmCallId,
@@ -821,7 +690,7 @@ You can answer questions about what's on the page, explain content, summarize in
           } catch {
             // ignore telemetry failures
           }
-          this.emitStep('observation', `Request timed out. Try a simpler request or switch to a faster model.`);
+          this.emitStep('observation', `Request timed out.Try a simpler request or switch to a faster model.`);
           return "The request timed out. Try breaking it into smaller steps or use a faster model.";
         }
 
@@ -829,7 +698,7 @@ You can answer questions about what's on the page, explain content, summarize in
 
         try {
           const durationMs = Date.now() - llmStartedAt;
-          this.emitStep('thought', `Model responded in ${Math.round(durationMs)}ms`, {
+          this.emitStep('thought', `Model responded in ${ Math.round(durationMs) } ms`, {
             phase: 'llm_end',
             ok: true,
             llmCallId,
@@ -857,305 +726,309 @@ You can answer questions about what's on the page, explain content, summarize in
 
         const content = response.content as string;
 
-        console.log(`[Agent Turn ${i}] Raw Response:`, this.redactSecrets(content));
-
-        // Capture thought if present (text before the first JSON brace)
-        const jsonStart = content.indexOf('{');
-        if (jsonStart > 10) {
-          const thought = content.slice(0, jsonStart).trim();
-          // Filter out markdown blocks if the thought is just ```json
-          const cleanThought = thought.replace(/```json/g, '').replace(/```/g, '').trim();
-          if (cleanThought.length > 5) {
-            this.emitStep('thought', cleanThought);
-          }
-        }
+        console.log(`[Agent Turn ${ i }] Raw Response: `, this.redactSecrets(content));
 
         const action = this.parseToolCall(content);
 
-        // Fix for models that return integer tool IDs or other weird formats
-        if (action && typeof (action as any).tool === 'number') {
-          // Map common integer mistakes to likely tools if possible, or fail
-          // For now, let's just log it. 
-          // Better fix: Strict system prompt instruction
-        }
-
-        if (
-          !action ||
-          (typeof (action as any).tool !== 'string') ||
-          !(action as any).args ||
-          typeof (action as any).args !== 'object'
-        ) {
-          parseFailures++;
-          this.emitStep('observation', `Model returned invalid JSON (attempt ${parseFailures}/3).`);
-          console.warn("Failed to parse JSON response:", content);
-          messages.push(new AIMessage(this.redactSecrets(String((response as any)?.content ?? ''))));
-          messages.push(
-            new SystemMessage(
-              `Error: Output ONLY valid JSON. Format: {"tool":"tool_name","args":{...}}\n` +
-              `To finish: {"tool":"final_response","args":{"message":"your response"}}`
-            )
-          );
-          if (lastVerified && parseFailures >= 2) {
-            return `Done: ${lastVerified}`;
-          }
-          // Fail faster - 3 parse failures max
-          if (parseFailures >= 3) {
-            const failMsg = "I had trouble completing this task because I couldn't generate valid JSON commands. Try a simpler request or switch to a more reliable model (e.g., Llama 3.3 70B).";
-            await this.logFailureTrace(userMessage, messages, "Max parse failures reached (3)");
-            return failMsg;
-          }
-          continue;
-        }
-
-        // Emit thought for tool calls
-        if ((action as any).tool !== 'final_response') {
-          this.emitStep('thought', `Decided to call ${(action as any).tool}`);
-        }
-
-        // Handle Final Response
-        if ((action as any).tool === "final_response") {
-          const finalArgs = (action as any).args as { message?: unknown } | undefined;
-          const finalMessage = typeof finalArgs?.message === 'string' ? finalArgs.message : '';
-          if (!finalMessage) {
-            messages.push(response);
-            messages.push(
-              new SystemMessage(
-                'Error: final_response must include args.message as a string. Example: {"tool":"final_response","args":{"message":"..."}}'
-              )
-            );
-            continue;
-          }
-          if (usedBrowserTools) {
-            const lastMessages = messages.slice(-8);
-            const lastObs = lastMessages.filter(m => m._getType() === 'system' && m.content.toString().includes('Output:')).pop()?.content.toString() || '';
-            const isTerminalDenial = lastObs.includes('User denied execution') || lastObs.includes('Operation denied by policy');
-
-            const lastContent = lastMessages.map((m) => (m as any).content ?? '').join('\n');
-            const claimedSuccess =
-              /\b(created|created a|successfully|done|completed)\b/i.test(finalMessage);
-
-            const verificationFound =
-              /\bFound text:\b|\b\"found\":\s*[1-9]\d*\b/i.test(lastContent) ||
-              /\bSaved plan for\b/i.test(lastContent);
-
-            if (claimedSuccess && !verificationFound && !isTerminalDenial) {
-              messages.push(response);
-              messages.push(
-                new SystemMessage(
-                  'You must verify UI changes before claiming success. Use browser_wait_for_text or browser_find_text for the expected item title, then respond.'
-                )
-              );
-              continue;
-            }
-          }
-          // 2. Secondary Verification Step: Use LLM-as-a-judge to verify outcome
-          if (usedBrowserTools) {
-            const lastObs = messages.filter(m => m._getType() === 'system' && m.content.toString().includes('Output:')).pop()?.content.toString() || 'No observation';
-
-            // Skip verification retry if the failure was a user denial or policy block
-            const isTerminalDenial = lastObs.includes('User denied execution') || lastObs.includes('Operation denied by policy');
-
-            const verification = await this.verifyTaskSuccess(userMessage, lastObs);
-            if (!verification.success && !isTerminalDenial) {
-              this.emitStep('thought', `Verification failed: ${verification.reason}. Retrying...`);
-              messages.push(new SystemMessage(`Internal verification failed: ${verification.reason}. Please double check the browser state and ensure the task is fully complete according to requirements.`));
-              continue;
-            }
-            if (isTerminalDenial) {
-              this.emitStep('thought', `Tool was denied. Finishing task based on user decision.`);
-            } else {
-              this.emitStep('thought', `Verification successful: ${verification.reason}`);
-            }
-          }
-
-          // Save final response to conversation history
-          this.conversationHistory.push(new AIMessage(this.redactSecrets(content)));
-          return finalMessage;
-        }
-
-        // Handle Tool Call
-        const tool = tools.find((t: any) => t.name === (action as any).tool);
-        if (tool) {
-          console.log(`Executing tool: ${tool.name} with args:`, action.args);
-          const toolCallId = uuidv4();
-          const toolStartedAt = Date.now();
-          this.emitStep('action', `Executing ${tool.name}`, {
-            tool: tool.name,
-            args: action.args,
-            toolCallId,
-            phase: 'tool_start',
-          });
-
-          try {
-            // Execute tool
-            const result = await tool.invoke((action as any).args);
-            const toolDurationMs = Date.now() - toolStartedAt;
-            this.emitStep('observation', `Tool Output: ${result}`, {
-              tool: tool.name,
-              result,
-              toolCallId,
-              phase: 'tool_end',
-              durationMs: toolDurationMs,
-            });
-
-            if (tool.name.startsWith('browser_')) usedBrowserTools = true;
-            if (
-              tool.name === 'browser_wait_for_text' ||
-              tool.name === 'browser_wait_for_text_in'
-            ) {
-              if (typeof result === 'string' && result.startsWith('Found text')) {
-                lastVerified = result;
-              }
-            }
-
-            // FAST PATH: For simple successful operations, return immediately without another LLM call
-            // This dramatically improves perceived speed for common operations
-            const resultStr = String(result);
-            const toolName = (action as any).tool;
-
-            if (toolName === 'browser_execute_plan' && resultStr.startsWith('Plan completed successfully.')) {
-              const fastResponse = `Completed the requested steps and verified the outcome.`;
-              this.conversationHistory.push(
-                new AIMessage(
-                  JSON.stringify({ tool: 'final_response', args: { message: fastResponse } })
-                )
-              );
-              return fastResponse;
-            }
-
-            // NOTE: Removed fast path for browser_navigate.
-            // The agent needs to continue reasoning after navigation to handle
-            // information-seeking requests like "go to X and tell me Y".
-            // The model will call final_response when it's actually done.
-
-            if (toolName === 'browser_scroll' && !resultStr.toLowerCase().includes('error')) {
-              const fastResponse = `Scrolled the page.`;
-              this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: 'final_response', args: { message: fastResponse } })));
-              return fastResponse;
-            }
-
-            if (toolName === 'browser_go_back' && !resultStr.toLowerCase().includes('error')) {
-              const fastResponse = `Went back to the previous page.`;
-              this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: 'final_response', args: { message: fastResponse } })));
-              return fastResponse;
-            }
-
-            if (toolName === 'browser_go_forward' && !resultStr.toLowerCase().includes('error')) {
-              const fastResponse = `Went forward to the next page.`;
-              this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: 'final_response', args: { message: fastResponse } })));
-              return fastResponse;
-            }
-
-            if (toolName === 'browser_reload' && !resultStr.toLowerCase().includes('error')) {
-              const fastResponse = `Reloaded the page.`;
-              this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: 'final_response', args: { message: fastResponse } })));
-              return fastResponse;
-            }
-
-            if (toolName === 'browser_press_key' && !resultStr.toLowerCase().includes('error')) {
-              const key = (action as any).args?.key || 'the key';
-              const fastResponse = `Pressed ${key}.`;
-              this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: 'final_response', args: { message: fastResponse } })));
-              return fastResponse;
-            }
-
-            if (toolName === 'browser_clear' && !resultStr.toLowerCase().includes('error')) {
-              const fastResponse = `Cleared the input field.`;
-              this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: 'final_response', args: { message: fastResponse } })));
-              return fastResponse;
-            }
-
-            // Add interaction to both local messages and persistent history
-            const safeToolCall = this.redactSecrets(content);
-            const safeResult = this.redactSecrets(String(result ?? ''));
-            const aiMsg = new AIMessage(safeToolCall);
-            const toolOutputMsg = new SystemMessage(`Tool '${(action as any).tool}' Output:\n${safeResult}`);
-            messages.push(aiMsg);
-            messages.push(toolOutputMsg);
-            // Persist to conversation history for future calls
-            this.conversationHistory.push(aiMsg);
-            this.conversationHistory.push(toolOutputMsg);
-          } catch (err: any) {
-            console.error(`Tool execution failed: ${err}`);
-            const toolDurationMs = Date.now() - toolStartedAt;
-            this.emitStep('observation', `Tool Execution Error: ${err.message}`, {
-              tool: tool.name,
-              toolCallId,
-              phase: 'tool_end',
-              ok: false,
-              durationMs: toolDurationMs,
-              errorMessage: String(err?.message ?? err),
-            });
-            const aiMsg = new AIMessage(this.redactSecrets(content));
-            const errorMsg = new SystemMessage(`Tool Execution Error: ${err.message}`);
-            messages.push(aiMsg);
-            messages.push(errorMsg);
-            this.conversationHistory.push(aiMsg);
-            this.conversationHistory.push(errorMsg);
-          }
+        // Emit thought from JSON if present
+        if (action?.thought) {
+          this.emitStep('thought', action.thought);
         } else {
-          console.error(`Tool not found: ${(action as any).tool}`);
-          const aiMsg = new AIMessage(content);
-          const errorMsg = new SystemMessage(`Error: Tool '${(action as any).tool}' not found. Available tools: ${tools.map((t: any) => t.name).join(', ')}`);
-          messages.push(aiMsg);
-          messages.push(errorMsg);
-          this.conversationHistory.push(aiMsg);
-          this.conversationHistory.push(errorMsg);
+          // Fallback: Capture thought if present (text before the first JSON brace)
+          const jsonStart = content.indexOf('{');
+          if (jsonStart > 1) {
+            const thought = content.slice(0, jsonStart).trim();
+            // Filter out markdown blocks if the thought is just ```json
+const cleanThought = thought.replace(/```json/g, '').replace(/```/g, '').trim();
+if (cleanThought.length > 5) {
+  this.emitStep('thought', cleanThought);
+}
+          }
         }
+
+if (
+  !action ||
+  (typeof (action as any).tool !== 'string') ||
+  !(action as any).args ||
+  typeof (action as any).args !== 'object'
+) {
+  parseFailures++;
+
+  let specificError = "Invalid JSON format.";
+  if (!content.includes('{')) specificError = "No JSON object found in response.";
+  else if (content.includes('```') && !content.includes('```json')) specificError = "Markdown block found but it's not marked as ```json.";
+
+  this.emitStep('observation', `Model returned invalid JSON (attempt ${parseFailures}/3). ${specificError}`);
+  console.warn("Failed to parse JSON response:", content);
+  messages.push(new AIMessage(this.redactSecrets(String((response as any)?.content ?? ''))));
+  messages.push(
+    new SystemMessage(
+      `Error: ${specificError} Output ONLY valid JSON. 
+              Format: {"thought":"your reasoning","tool":"tool_name","args":{...}}
+              To finish: {"thought":"summary","tool":"final_response","args":{"message":"your response"}}`
+    )
+  );
+  if (lastVerified && parseFailures >= 2) {
+    return `Done: ${lastVerified}`;
+  }
+  // Fail faster - 3 parse failures max
+  if (parseFailures >= 3) {
+    const failMsg = "I had trouble completing this task because I couldn't generate valid JSON commands. Try a simpler request or switch to a more reliable model (e.g., Llama 3.3 70B).";
+    await this.logFailureTrace(userMessage, messages, "Max parse failures reached (3)");
+    return failMsg;
+  }
+  continue;
+}
+
+// Emit thought for tool calls (if not already emitted from JSON)
+if ((action as any).tool !== 'final_response' && !action.thought) {
+  this.emitStep('thought', `Decided to call ${(action as any).tool}`);
+}
+
+// Handle Final Response
+if ((action as any).tool === "final_response") {
+  const finalArgs = (action as any).args as { message?: unknown } | undefined;
+  const finalMessage = typeof finalArgs?.message === 'string' ? finalArgs.message : '';
+  if (!finalMessage) {
+    messages.push(response);
+    messages.push(
+      new SystemMessage(
+        'Error: final_response must include args.message as a string. Example: {"tool":"final_response","args":{"message":"..."}}'
+      )
+    );
+    continue;
+  }
+  if (usedBrowserTools) {
+    const lastMessages = messages.slice(-8);
+    const lastObs = lastMessages.filter(m => m._getType() === 'system' && m.content.toString().includes('Output:')).pop()?.content.toString() || '';
+    const isTerminalDenial = lastObs.includes('User denied execution') || lastObs.includes('Operation denied by policy');
+
+    const lastContent = lastMessages.map((m) => (m as any).content ?? '').join('\n');
+    const claimedSuccess =
+      /\b(created|created a|successfully|done|completed)\b/i.test(finalMessage);
+
+    const verificationFound =
+      /\bFound text:\b|\b\"found\":\s*[1-9]\d*\b/i.test(lastContent) ||
+      /\bSaved plan for\b/i.test(lastContent);
+
+    if (claimedSuccess && !verificationFound && !isTerminalDenial) {
+      messages.push(response);
+      messages.push(
+        new SystemMessage(
+          'You must verify UI changes before claiming success. Use browser_wait_for_text or browser_find_text for the expected item title, then respond.'
+        )
+      );
+      continue;
+    }
+  }
+  // 2. Secondary Verification Step: Use LLM-as-a-judge to verify outcome
+  if (usedBrowserTools) {
+    const lastObs = messages.filter(m => m._getType() === 'system' && m.content.toString().includes('Output:')).pop()?.content.toString() || 'No observation';
+
+    // Skip verification retry if the failure was a user denial or policy block
+    const isTerminalDenial = lastObs.includes('User denied execution') || lastObs.includes('Operation denied by policy');
+
+    const verification = await this.verifyTaskSuccess(userMessage, lastObs);
+    if (!verification.success && !isTerminalDenial) {
+      this.emitStep('thought', `Verification failed: ${verification.reason}. Retrying...`);
+      messages.push(new SystemMessage(`Internal verification failed: ${verification.reason}. Please double check the browser state and ensure the task is fully complete according to requirements.`));
+      continue;
+    }
+    if (isTerminalDenial) {
+      this.emitStep('thought', `Tool was denied. Finishing task based on user decision.`);
+    } else {
+      this.emitStep('thought', `Verification successful: ${verification.reason}`);
+    }
+  }
+
+  // Save final response to conversation history
+  this.conversationHistory.push(new AIMessage(this.redactSecrets(content)));
+  return finalMessage;
+}
+
+// Handle Tool Call
+const tool = tools.find((t: any) => t.name === (action as any).tool);
+if (tool) {
+  console.log(`Executing tool: ${tool.name} with args:`, action.args);
+  const toolCallId = uuidv4();
+  const toolStartedAt = Date.now();
+  this.emitStep('action', `Executing ${tool.name}`, {
+    tool: tool.name,
+    args: action.args,
+    toolCallId,
+    phase: 'tool_start',
+  });
+
+  try {
+    // Execute tool
+    const result = await tool.invoke((action as any).args);
+    const toolDurationMs = Date.now() - toolStartedAt;
+    this.emitStep('observation', `Tool Output: ${result}`, {
+      tool: tool.name,
+      result,
+      toolCallId,
+      phase: 'tool_end',
+      durationMs: toolDurationMs,
+    });
+
+    if (tool.name.startsWith('browser_')) usedBrowserTools = true;
+    if (
+      tool.name === 'browser_wait_for_text' ||
+      tool.name === 'browser_wait_for_text_in'
+    ) {
+      if (typeof result === 'string' && result.startsWith('Found text')) {
+        lastVerified = result;
+      }
+    }
+
+    // FAST PATH: For simple successful operations, return immediately without another LLM call
+    // This dramatically improves perceived speed for common operations
+    const resultStr = String(result);
+    const toolName = (action as any).tool;
+
+    if (toolName === 'browser_execute_plan' && resultStr.startsWith('Plan completed successfully.')) {
+      const fastResponse = `Completed the requested steps and verified the outcome.`;
+      this.conversationHistory.push(
+        new AIMessage(
+          JSON.stringify({ tool: 'final_response', args: { message: fastResponse } })
+        )
+      );
+      return fastResponse;
+    }
+
+    // NOTE: Removed fast path for browser_navigate.
+    // The agent needs to continue reasoning after navigation to handle
+    // information-seeking requests like "go to X and tell me Y".
+    // The model will call final_response when it's actually done.
+
+    if (toolName === 'browser_scroll' && !resultStr.toLowerCase().includes('error')) {
+      const fastResponse = `Scrolled the page.`;
+      this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: 'final_response', args: { message: fastResponse } })));
+      return fastResponse;
+    }
+
+    if (toolName === 'browser_go_back' && !resultStr.toLowerCase().includes('error')) {
+      const fastResponse = `Went back to the previous page.`;
+      this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: 'final_response', args: { message: fastResponse } })));
+      return fastResponse;
+    }
+
+    if (toolName === 'browser_go_forward' && !resultStr.toLowerCase().includes('error')) {
+      const fastResponse = `Went forward to the next page.`;
+      this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: 'final_response', args: { message: fastResponse } })));
+      return fastResponse;
+    }
+
+    if (toolName === 'browser_reload' && !resultStr.toLowerCase().includes('error')) {
+      const fastResponse = `Reloaded the page.`;
+      this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: 'final_response', args: { message: fastResponse } })));
+      return fastResponse;
+    }
+
+    if (toolName === 'browser_press_key' && !resultStr.toLowerCase().includes('error')) {
+      const key = (action as any).args?.key || 'the key';
+      const fastResponse = `Pressed ${key}.`;
+      this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: 'final_response', args: { message: fastResponse } })));
+      return fastResponse;
+    }
+
+    if (toolName === 'browser_clear' && !resultStr.toLowerCase().includes('error')) {
+      const fastResponse = `Cleared the input field.`;
+      this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: 'final_response', args: { message: fastResponse } })));
+      return fastResponse;
+    }
+
+    // Add interaction to both local messages and persistent history
+    const safeToolCall = this.redactSecrets(content);
+    const safeResult = this.redactSecrets(String(result ?? ''));
+    const aiMsg = new AIMessage(safeToolCall);
+    const toolOutputMsg = new SystemMessage(`Tool '${(action as any).tool}' Output:\n${safeResult}`);
+    messages.push(aiMsg);
+    messages.push(toolOutputMsg);
+    // Persist to conversation history for future calls
+    this.conversationHistory.push(aiMsg);
+    this.conversationHistory.push(toolOutputMsg);
+  } catch (err: any) {
+    console.error(`Tool execution failed: ${err}`);
+    const toolDurationMs = Date.now() - toolStartedAt;
+    this.emitStep('observation', `Tool Execution Error: ${err.message}`, {
+      tool: tool.name,
+      toolCallId,
+      phase: 'tool_end',
+      ok: false,
+      durationMs: toolDurationMs,
+      errorMessage: String(err?.message ?? err),
+    });
+    const aiMsg = new AIMessage(this.redactSecrets(content));
+    const errorMsg = new SystemMessage(`Tool Execution Error: ${err.message}`);
+    messages.push(aiMsg);
+    messages.push(errorMsg);
+    this.conversationHistory.push(aiMsg);
+    this.conversationHistory.push(errorMsg);
+  }
+} else {
+  console.error(`Tool not found: ${(action as any).tool}`);
+  const aiMsg = new AIMessage(content);
+  const errorMsg = new SystemMessage(`Error: Tool '${(action as any).tool}' not found. Available tools: ${tools.map((t: any) => t.name).join(', ')}`);
+  messages.push(aiMsg);
+  messages.push(errorMsg);
+  this.conversationHistory.push(aiMsg);
+  this.conversationHistory.push(errorMsg);
+}
       }
 
-      const maxStepsMsg = "I could not complete the task within the maximum number of steps. Try simplifying the request or check the browser is in the expected state.";
-      await this.logFailureTrace(userMessage, messages, "Max ReAct steps reached (15)");
-      return maxStepsMsg;
+const maxStepsMsg = "I could not complete the task within the maximum number of steps. Try simplifying the request or check the browser is in the expected state.";
+await this.logFailureTrace(userMessage, messages, "Max ReAct steps reached (15)");
+return maxStepsMsg;
 
     } catch (error: any) {
-      console.error('Error in AgentService chat:', error);
-      // Log failure trace for tuning
-      await this.logFailureTrace(userMessage, messages, String(error));
-      return `Sorry, I encountered an error: ${error.message || error}`;
-    }
+  console.error('Error in AgentService chat:', error);
+  // Log failure trace for tuning
+  await this.logFailureTrace(userMessage, messages, String(error));
+  return `Sorry, I encountered an error: ${error.message || error}`;
+}
   }
 
-  // Future: Implement streaming support
-  async * streamChat(message: string) {
-    const stream = await this.model.stream([
-      new SystemMessage("You are a helpful enterprise assistant integrated into a browser."),
-      new HumanMessage(message),
-    ]);
+// Future: Implement streaming support
+async * streamChat(message: string) {
+  const stream = await this.model.stream([
+    new SystemMessage("You are a helpful enterprise assistant integrated into a browser."),
+    new HumanMessage(message),
+  ]);
 
-    for await (const chunk of stream) {
-      yield chunk.content;
-    }
+  for await (const chunk of stream) {
+    yield chunk.content;
   }
+}
 
   private async logFailureTrace(userMessage: string, history: BaseMessage[], error: string) {
-    try {
-      const runId = agentRunContext.getRunId() || 'manual';
-      const logDir = path.join(process.cwd(), 'tuning_logs');
-      const logPath = path.join(logDir, `failure_${runId}_${Date.now()}.json`);
+  try {
+    const runId = agentRunContext.getRunId() || 'manual';
+    const logDir = path.join(process.cwd(), 'tuning_logs');
+    const logPath = path.join(logDir, `failure_${runId}_${Date.now()}.json`);
 
-      const trace = {
-        ts: new Date().toISOString(),
-        runId,
-        modelId: this.currentModelId,
-        userMessage,
-        error,
-        history: history.map(m => ({
-          role: m._getType(),
-          content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
-        })),
-      };
+    const trace = {
+      ts: new Date().toISOString(),
+      runId,
+      modelId: this.currentModelId,
+      userMessage,
+      error,
+      history: history.map(m => ({
+        role: m._getType(),
+        content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
+      })),
+    };
 
-      await fs.mkdir(logDir, { recursive: true });
-      await fs.writeFile(logPath, JSON.stringify(trace, null, 2));
-      console.log(`[AgentService] Failure trace logged to ${logPath}`);
-    } catch (e) {
-      console.error('[AgentService] Failed to log failure trace:', e);
-    }
+    await fs.mkdir(logDir, { recursive: true });
+    await fs.writeFile(logPath, JSON.stringify(trace, null, 2));
+    console.log(`[AgentService] Failure trace logged to ${logPath}`);
+  } catch (e) {
+    console.error('[AgentService] Failed to log failure trace:', e);
   }
+}
 
-  private async planCurrentGoal(userMessage: string, browserContext?: string): Promise<string[]> {
-    const plannerPrompt = new SystemMessage(`You are a strategic planner for a browser agent. 
+  private async planCurrentGoal(userMessage: string, browserContext ?: string): Promise < string[] > {
+  const plannerPrompt = new SystemMessage(`You are a strategic planner for a browser agent. 
     Your goal is to decompose the user's request into a list of logical sub-goals.
     
     Current Browser Context:
@@ -1166,24 +1039,24 @@ You can answer questions about what's on the page, explain content, summarize in
     Output a JSON array of strings, where each string is a clear sub-goal. 
     Example: ["Navigate to Jira", "Find the issue EB-1", "Extract description", "Navigate to Confluence", "Create a new page with the description"]`);
 
-    try {
-      const response = await this.model.invoke([plannerPrompt]);
-      const content = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
-      const jsonText = this.extractJsonObject(content) || (content.startsWith('[') ? content : null);
+  try {
+    const response = await this.model.invoke([plannerPrompt]);
+    const content = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
+    const jsonText = this.extractJsonObject(content) || (content.startsWith('[') ? content : null);
 
-      if (jsonText) {
-        const parsed = JSON.parse(jsonText);
-        if (Array.isArray(parsed)) return parsed;
-      }
-      return [userMessage];
-    } catch (e) {
-      console.error('[AgentService] Planning failed:', e);
-      return [userMessage];
+    if(jsonText) {
+      const parsed = JSON.parse(jsonText);
+      if (Array.isArray(parsed)) return parsed;
     }
+      return [userMessage];
+  } catch(e) {
+    console.error('[AgentService] Planning failed:', e);
+    return [userMessage];
   }
+}
 
-  private async verifyTaskSuccess(goal: string, lastObservation: string): Promise<{ success: boolean; reason: string }> {
-    const verifierPrompt = new SystemMessage(`You are a verification assistant. 
+  private async verifyTaskSuccess(goal: string, lastObservation: string): Promise < { success: boolean; reason: string } > {
+  const verifierPrompt = new SystemMessage(`You are a verification assistant. 
     Review if the goal has been successfully accomplished based on the last observation.
     
     Goal: ${goal}
@@ -1191,16 +1064,16 @@ You can answer questions about what's on the page, explain content, summarize in
     
     Output JSON: { "success": true/false, "reason": "why" }`);
 
-    try {
-      const response = await this.model.invoke([verifierPrompt]);
-      const content = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
-      const jsonText = this.extractJsonObject(content);
-      if (jsonText) return JSON.parse(jsonText);
-      return { success: true, reason: 'Assumed success' };
-    } catch {
-      return { success: true, reason: 'Verification failed to run' };
-    }
+  try {
+    const response = await this.model.invoke([verifierPrompt]);
+    const content = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
+    const jsonText = this.extractJsonObject(content);
+    if(jsonText) return JSON.parse(jsonText);
+    return { success: true, reason: 'Assumed success' };
+  } catch {
+    return { success: true, reason: 'Verification failed to run' };
   }
+}
 }
 
 export const agentService = new AgentService();
