@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { Send, X, ChevronDown, Brain, Zap, RotateCcw, MessageSquare, Play, Shield, Activity, Plus, History, MoreHorizontal, ChevronRight, Globe, Search, MousePointerClick } from 'lucide-react';
 import { useBrowserStore } from '@/lib/store';
+import { logToolCall, getCallsSince, getAllCalls, aggregateStats, toCSV, AggregatedToolStat } from '@/utils/toolStats';
 import { PlanVisualizer } from './PlanVisualizer';
 
 interface Message {
@@ -47,6 +48,8 @@ export function AgentPanel() {
   const [benchmarkResults, setBenchmarkResults] = useState<BenchmarkResult[]>([]);
   const [runningBenchmark, setRunningBenchmark] = useState(false);
   const [currentPlanStep, setCurrentPlanStep] = useState<number>(0);
+  const [toolStats, setToolStats] = useState<AggregatedToolStat[]>([]);
+  const [failureAlerts, setFailureAlerts] = useState<string[]>([]);
 
   const approvalRequest = approvalQueue.length > 0 ? approvalQueue[0] : null;
 
@@ -63,6 +66,43 @@ export function AgentPanel() {
       setRunningBenchmark(false);
     }
   };
+
+  const loadToolStats = async () => {
+    const since = Date.now() - 24 * 60 * 60 * 1000;
+    const records = await getCallsSince(since);
+    const aggregated = aggregateStats(records);
+    setToolStats(aggregated);
+    setFailureAlerts(aggregated.filter(s => s.count > 5 && s.failures / s.count > 0.3).map(s => s.tool));
+  };
+
+  const exportCSV = async () => {
+    const all = await getAllCalls();
+    const csv = toCSV(all);
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `tool_stats_${Date.now()}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportJSON = async () => {
+    const all = await getAllCalls();
+    const blob = new Blob([JSON.stringify(all, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `tool_stats_${Date.now()}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  useEffect(() => {
+    if (showBenchmarks) {
+      loadToolStats();
+    }
+  }, [showBenchmarks]);
 
   useEffect(() => {
     if (!window.agent) return;
@@ -99,7 +139,16 @@ export function AgentPanel() {
         // Increment plan step when an action is executed
         setCurrentPlanStep(prev => prev + 1);
       }
-      
+
+      // Log tool usage stats
+      if (step.metadata?.phase === 'tool_end') {
+        const toolName = step.metadata?.tool ?? 'unknown';
+        const duration = step.metadata?.durationMs ?? 0;
+        const ok = step.metadata?.ok !== false;
+        logToolCall(toolName, duration, ok);
+        if (showBenchmarks) loadToolStats();
+      }
+
       setMessages((prev) => [
         ...prev,
         {
@@ -275,6 +324,49 @@ export function AgentPanel() {
               className="flex-1 bg-secondary text-secondary-foreground py-2 rounded text-xs font-medium hover:opacity-90 disabled:opacity-50"
             >
               Run AeroCore Suite
+            </button>
+          </div>
+
+          {failureAlerts.length > 0 && (
+            <div className="mb-3 p-2 rounded bg-red-500/10 border border-red-500/20 text-red-500 text-[11px]">
+              High failure rate (&gt;30%) detected for: {failureAlerts.join(', ')}
+            </div>
+          )}
+
+          {toolStats.length > 0 && (
+            <div className="overflow-x-auto mb-4">
+              <table className="w-full text-[11px]">
+                <thead>
+                  <tr className="text-muted-foreground text-left">
+                    <th className="py-1 pr-2">Tool</th>
+                    <th className="py-1 pr-2 text-right">Calls</th>
+                    <th className="py-1 pr-2 text-right">Fail %</th>
+                    <th className="py-1 pr-2 text-right">Avg ms</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {toolStats.map(stat => {
+                    const failPct = stat.count ? Math.round((stat.failures / stat.count) * 100) : 0;
+                    return (
+                      <tr key={stat.tool} className="border-b border-border/10 last:border-b-0">
+                        <td className="py-1 pr-2">{stat.tool}</td>
+                        <td className="py-1 pr-2 text-right">{stat.count}</td>
+                        <td className={"py-1 pr-2 text-right " + (failPct > 30 ? 'text-red-500 font-semibold' : '')}>{failPct}%</td>
+                        <td className="py-1 pr-2 text-right">{stat.avgLatency}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          <div className="flex gap-2 mb-4">
+            <button onClick={exportCSV} className="flex-1 bg-secondary/50 text-secondary-foreground py-1 rounded text-[11px] font-medium hover:opacity-90">
+              Export CSV
+            </button>
+            <button onClick={exportJSON} className="flex-1 bg-secondary/50 text-secondary-foreground py-1 rounded text-[11px] font-medium hover:opacity-90">
+              Export JSON
             </button>
           </div>
 
