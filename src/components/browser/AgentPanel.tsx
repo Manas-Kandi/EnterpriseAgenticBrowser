@@ -1,7 +1,7 @@
 import ReactMarkdown from 'react-markdown';
 import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
-import { Send, X, ChevronDown, Brain, Zap, RotateCcw, MessageSquare, Play, Shield, Activity, Plus, History, MoreHorizontal, ChevronRight, Globe, Search, MousePointerClick } from 'lucide-react';
+import { Send, X, ChevronDown, Brain, Zap, RotateCcw, MessageSquare, Play, Shield, Activity, Plus, MoreHorizontal, ChevronRight, Globe, Search, MousePointerClick, BookOpen, Trash2 } from 'lucide-react';
 import { useBrowserStore } from '@/lib/store';
 import { logToolCall, getCallsSince, getAllCalls, aggregateStats, toCSV, AggregatedToolStat } from '@/utils/toolStats';
 import { PlanVisualizer } from './PlanVisualizer';
@@ -50,6 +50,10 @@ export function AgentPanel() {
   const [currentPlanStep, setCurrentPlanStep] = useState<number>(0);
   const [toolStats, setToolStats] = useState<AggregatedToolStat[]>([]);
   const [failureAlerts, setFailureAlerts] = useState<string[]>([]);
+  const [autoLearn, setAutoLearn] = useState(false);
+  const [showPlansModal, setShowPlansModal] = useState(false);
+  const [savedPlans, setSavedPlans] = useState<Array<{id: string; ts: number; plan: string[]}>>([]);
+  const [planSearch, setPlanSearch] = useState('');
 
   const approvalRequest = approvalQueue.length > 0 ? approvalQueue[0] : null;
 
@@ -96,6 +100,26 @@ export function AgentPanel() {
     link.download = `tool_stats_${Date.now()}.json`;
     link.click();
     URL.revokeObjectURL(url);
+  };
+
+  const loadSavedPlans = async () => {
+    if (!window.agent?.getSavedPlans) return;
+    try {
+      const plans = await window.agent.getSavedPlans();
+      setSavedPlans(plans);
+    } catch (e) {
+      console.error('Failed to load saved plans:', e);
+    }
+  };
+
+  const deletePlan = async (taskId: string) => {
+    if (!window.agent?.deletePlan) return;
+    try {
+      await window.agent.deletePlan(taskId);
+      setSavedPlans(prev => prev.filter(p => p.id !== taskId));
+    } catch (e) {
+      console.error('Failed to delete plan:', e);
+    }
   };
 
   useEffect(() => {
@@ -285,8 +309,26 @@ export function AgentPanel() {
           <button onClick={handleResetConversation} className="p-1.5 hover:bg-secondary rounded-md text-muted-foreground hover:text-foreground transition-colors" title="New Chat">
             <Plus size={14} />
           </button>
-          <button className="p-1.5 hover:bg-secondary rounded-md text-muted-foreground hover:text-foreground transition-colors" title="History">
-            <History size={14} />
+          <button 
+            onClick={() => { setShowPlansModal(true); loadSavedPlans(); }}
+            className="p-1.5 hover:bg-secondary rounded-md text-muted-foreground hover:text-foreground transition-colors" 
+            title="Saved Plans"
+          >
+            <BookOpen size={14} />
+          </button>
+          <button 
+            onClick={() => {
+              const newVal = !autoLearn;
+              setAutoLearn(newVal);
+              window.agent?.setAutoLearn?.(newVal);
+            }}
+            className={cn(
+              "p-1.5 rounded-md transition-colors",
+              autoLearn ? "bg-primary/20 text-primary" : "hover:bg-secondary text-muted-foreground hover:text-foreground"
+            )} 
+            title={autoLearn ? "Auto-learn ON" : "Auto-learn OFF"}
+          >
+            <Brain size={14} />
           </button>
           <button className="p-1.5 hover:bg-secondary rounded-md text-muted-foreground hover:text-foreground transition-colors" title="More">
             <MoreHorizontal size={14} />
@@ -413,6 +455,69 @@ export function AgentPanel() {
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Saved Plans Modal */}
+      {showPlansModal && (
+        <div className="absolute inset-0 z-50 bg-background/95 backdrop-blur-sm p-4 flex flex-col">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-bold flex items-center gap-2">
+              <BookOpen size={16} className="text-primary" />
+              Saved Plans
+            </h2>
+            <button onClick={() => setShowPlansModal(false)} className="p-1 hover:bg-secondary rounded">
+              <X size={16} />
+            </button>
+          </div>
+
+          <input
+            type="text"
+            placeholder="Search plans..."
+            value={planSearch}
+            onChange={(e) => setPlanSearch(e.target.value)}
+            className="w-full mb-4 px-3 py-2 text-xs bg-secondary/30 border border-border/50 rounded-lg focus:outline-none focus:ring-1 focus:ring-primary"
+          />
+
+          <div className="flex-1 overflow-y-auto space-y-2">
+            {savedPlans.length === 0 && (
+              <div className="text-center py-8 text-muted-foreground text-xs">
+                No saved plans yet. Enable Auto-learn to save successful trajectories.
+              </div>
+            )}
+            {savedPlans
+              .filter(p => !planSearch || p.id.toLowerCase().includes(planSearch.toLowerCase()) || p.plan.some(s => s.toLowerCase().includes(planSearch.toLowerCase())))
+              .map((plan) => (
+                <div key={plan.id} className="p-3 rounded border border-border/30 bg-secondary/10 text-xs">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="font-bold truncate flex-1">{plan.id}</div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-muted-foreground text-[10px]">
+                        {new Date(plan.ts).toLocaleDateString()}
+                      </span>
+                      <button 
+                        onClick={() => deletePlan(plan.id)}
+                        className="p-1 hover:bg-red-500/20 rounded text-muted-foreground hover:text-red-500 transition-colors"
+                        title="Delete plan"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                  </div>
+                  <div className="space-y-1 text-muted-foreground">
+                    {plan.plan.slice(0, 3).map((step, idx) => (
+                      <div key={idx} className="flex gap-2">
+                        <span className="text-primary/50">{idx + 1}.</span>
+                        <span className="truncate">{step}</span>
+                      </div>
+                    ))}
+                    {plan.plan.length > 3 && (
+                      <div className="text-muted-foreground/50 italic">+{plan.plan.length - 3} more steps</div>
+                    )}
+                  </div>
+                </div>
+              ))}
           </div>
         </div>
       )}
