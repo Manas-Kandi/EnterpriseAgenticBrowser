@@ -41511,14 +41511,18 @@ class AgentRunContext {
       store.observeOnly = observeOnly;
     }
   }
+  getPermissionMode() {
+    var _a3;
+    return ((_a3 = this.storage.getStore()) == null ? void 0 : _a3.permissionMode) ?? "permissions";
+  }
   getYoloMode() {
     var _a3;
-    return ((_a3 = this.storage.getStore()) == null ? void 0 : _a3.yoloMode) ?? false;
+    return ((_a3 = this.storage.getStore()) == null ? void 0 : _a3.permissionMode) === "yolo";
   }
-  setYoloMode(yoloMode) {
+  setPermissionMode(mode) {
     const store = this.storage.getStore();
     if (store) {
-      store.yoloMode = yoloMode;
+      store.permissionMode = mode;
     }
   }
 }
@@ -42175,7 +42179,8 @@ class ToolRegistry {
         return `Operation denied by policy: ${policyEvaluation.reason}`;
       }
       if (policyEvaluation.decision === PolicyDecision.NEEDS_APPROVAL && approvalHandler) {
-        if (agentRunContext.getYoloMode()) {
+        const permissionMode = agentRunContext.getPermissionMode();
+        if (permissionMode === "yolo") {
           try {
             auditService.log({
               actor: "system",
@@ -42185,7 +42190,7 @@ class ToolRegistry {
             }).catch(() => void 0);
           } catch {
           }
-        } else {
+        } else if (permissionMode === "permissions" || permissionMode === "manual") {
           try {
             await telemetryService.emit({
               eventId: v4$2(),
@@ -43072,9 +43077,6 @@ const _AgentService = class _AgentService {
   getAgentMode() {
     return this.agentMode;
   }
-  /**
-   * Set the permission mode (yolo/permissions) - only applies in 'do' mode
-   */
   setPermissionMode(mode) {
     this.permissionMode = mode;
     console.log(`[AgentService] Permission Mode: ${mode}`);
@@ -43088,9 +43090,9 @@ const _AgentService = class _AgentService {
   isYoloMode() {
     return this.agentMode === "do" && this.permissionMode === "yolo";
   }
-  /**
-   * Create a model instance from config
-   */
+  isManualMode() {
+    return this.permissionMode === "manual";
+  }
   createModel(modelId) {
     const apiKey = process.env.NVIDIA_API_KEY;
     if (!apiKey) {
@@ -46638,9 +46640,9 @@ app.whenReady().then(() => {
     }
     let response = "";
     try {
-      const yoloMode = agentService.isYoloMode();
+      const permissionMode = agentService.getPermissionMode();
       response = await agentRunContext.run(
-        { runId, requesterWebContentsId: event.sender.id, browserContext: { url, domain }, yoloMode },
+        { runId, requesterWebContentsId: event.sender.id, browserContext: { url, domain }, permissionMode },
         async () => {
           return await agentService.chat(message, browserContext);
         }

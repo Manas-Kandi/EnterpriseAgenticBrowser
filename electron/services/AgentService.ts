@@ -103,7 +103,7 @@ export const AVAILABLE_MODELS: ModelConfig[] = [
 ];
 
 export type AgentMode = 'chat' | 'read' | 'do';
-export type AgentPermissionMode = 'yolo' | 'permissions';
+export type AgentPermissionMode = 'yolo' | 'permissions' | 'manual';
 
 export class AgentService {
   private model: Runnable;
@@ -336,9 +336,6 @@ export class AgentService {
     return this.agentMode;
   }
 
-  /**
-   * Set the permission mode (yolo/permissions) - only applies in 'do' mode
-   */
   setPermissionMode(mode: AgentPermissionMode) {
     this.permissionMode = mode;
     console.log(`[AgentService] Permission Mode: ${mode}`);
@@ -355,9 +352,10 @@ export class AgentService {
     return this.agentMode === 'do' && this.permissionMode === 'yolo';
   }
 
-  /**
-   * Create a model instance from config
-   */
+  isManualMode(): boolean {
+    return this.permissionMode === 'manual';
+  }
+
   private createModel(modelId: string): Runnable {
     const apiKey = process.env.NVIDIA_API_KEY;
     if (!apiKey) {

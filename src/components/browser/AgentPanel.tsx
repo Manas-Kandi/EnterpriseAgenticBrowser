@@ -599,6 +599,26 @@ export function AgentPanel() {
                 <span>Do</span>
               </button>
             </div>
+
+            <div className="h-4 w-px bg-border/30 mx-1" />
+
+            <div className="flex items-center gap-1">
+               <button
+                onClick={() => handlePermissionModeChange(agentPermissionMode === 'yolo' ? 'permissions' : 'yolo')}
+                className={cn(
+                  "flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-medium rounded-lg transition-all",
+                  agentPermissionMode === 'yolo' 
+                    ? "text-red-500 bg-red-500/10" 
+                    : agentPermissionMode === 'manual'
+                      ? "text-amber-500 bg-amber-500/10"
+                      : "text-green-500 bg-green-500/10"
+                )}
+                title={`Current Policy: ${agentPermissionMode.toUpperCase()}`}
+              >
+                <Shield size={12} />
+                <span>{agentPermissionMode === 'yolo' ? 'YOLO' : agentPermissionMode === 'manual' ? 'Manual' : 'Safe'}</span>
+              </button>
+            </div>
           </div>
 
           <div className="flex items-center gap-2">

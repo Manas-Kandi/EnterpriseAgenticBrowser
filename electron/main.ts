@@ -373,9 +373,9 @@ app.whenReady().then(() => {
 
     let response = '';
     try {
-      const yoloMode = agentService.isYoloMode();
+      const permissionMode = agentService.getPermissionMode();
       response = await agentRunContext.run(
-        { runId, requesterWebContentsId: event.sender.id, browserContext: { url, domain }, yoloMode },
+        { runId, requesterWebContentsId: event.sender.id, browserContext: { url, domain }, permissionMode },
         async () => {
         return await agentService.chat(message, browserContext);
         }
@@ -435,7 +435,7 @@ app.whenReady().then(() => {
     return agentService.getAgentMode();
   });
 
-  ipcMain.handle('agent:set-permission-mode', async (_, mode: 'yolo' | 'permissions') => {
+  ipcMain.handle('agent:set-permission-mode', async (_, mode: 'yolo' | 'permissions' | 'manual') => {
     agentService.setPermissionMode(mode);
     return { success: true };
   });

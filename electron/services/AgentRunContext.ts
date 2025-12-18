@@ -8,7 +8,7 @@ type AgentRunStore = {
     domain?: string;
   };
   observeOnly?: boolean;
-  yoloMode?: boolean;
+  permissionMode?: 'yolo' | 'permissions' | 'manual';
 };
 
 export class AgentRunContext {
@@ -48,14 +48,18 @@ export class AgentRunContext {
     }
   }
 
-  getYoloMode(): boolean {
-    return this.storage.getStore()?.yoloMode ?? false;
+  getPermissionMode(): 'yolo' | 'permissions' | 'manual' {
+    return this.storage.getStore()?.permissionMode ?? 'permissions';
   }
 
-  setYoloMode(yoloMode: boolean): void {
+  getYoloMode(): boolean {
+    return this.storage.getStore()?.permissionMode === 'yolo';
+  }
+
+  setPermissionMode(mode: 'yolo' | 'permissions' | 'manual'): void {
     const store = this.storage.getStore();
     if (store) {
-      store.yoloMode = yoloMode;
+      store.permissionMode = mode;
     }
   }
 }
