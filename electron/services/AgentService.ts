@@ -7,9 +7,11 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 
 import { toolRegistry } from './ToolRegistry';
-import './TaskKnowledgeService';
+import { taskKnowledgeService } from './TaskKnowledgeService';
 import { agentRunContext } from './AgentRunContext';
 import { telemetryService } from './TelemetryService';
+import { safeParseTOON, TOON_SUMMARY_PROMPT_TEMPLATE } from '../lib/toon';
+import { safeValidateToonSummary, createToonSummary, ToonSummary } from '../lib/validateToonSummary';
 
 dotenv.config();
 
@@ -120,6 +122,13 @@ export class AgentService {
   // Each turn can have ~2-4 messages (user, AI, tool output, etc.)
   // 50 messages ≈ 12-25 turns of context
   private static readonly MAX_HISTORY_MESSAGES = 50;
+
+  // Adaptive summarization: compress oldest messages every N messages
+  private static readonly SUMMARY_EVERY = 30;
+  private static readonly SUMMARY_BLOCK_SIZE = 15;
+
+  // Store TOON summaries as SystemMessages with special name
+  private summaries: SystemMessage[] = [];
 
   /**
    * Redact common secrets from text before sending to LLM
@@ -433,6 +442,102 @@ export class AgentService {
     }
   }
 
+  /**
+   * Check if summarization is needed and trigger it
+   * Called after each turn to compress old messages
+   */
+  private async maybeSummarize() {
+    if (this.conversationHistory.length > AgentService.SUMMARY_EVERY) {
+      await this.summarizeBlock();
+    }
+  }
+
+  /**
+   * Summarize oldest N messages into a TOON format summary
+   * Uses a cheap/fast model to minimize latency
+   */
+  private async summarizeBlock() {
+    const blockSize = AgentService.SUMMARY_BLOCK_SIZE;
+    if (this.conversationHistory.length < blockSize) return;
+
+    // Slice oldest N messages
+    const toSummarize = this.conversationHistory.slice(0, blockSize);
+    
+    // Format messages for summarization
+    const messagesText = toSummarize.map(m => {
+      const role = m._getType();
+      const content = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
+      // Truncate very long messages
+      const truncated = content.length > 500 ? content.substring(0, 500) + '...' : content;
+      return `[${role}]: ${truncated}`;
+    }).join('\n\n');
+
+    // Create summarization prompt
+    const summaryPrompt = new SystemMessage(
+      TOON_SUMMARY_PROMPT_TEMPLATE + messagesText
+    );
+
+    try {
+      // Use a fast/cheap model for summarization
+      const summarizerModel = this.createModel('llama-3.1-70b');
+      const response = await summarizerModel.invoke([summaryPrompt]);
+      const rawSummary = typeof response.content === 'string' 
+        ? response.content 
+        : JSON.stringify(response.content);
+
+      // Try to parse as TOON and validate with Zod schema
+      const rawParsed = safeParseTOON<ToonSummary>(rawSummary, {
+        meta: { version: '1.0', timestamp: new Date().toISOString(), messagesCompressed: blockSize },
+        conversationSummary: rawSummary,
+      });
+      
+      // Validate against schema, create fallback if invalid
+      const parsed = safeValidateToonSummary(rawParsed) 
+        ?? createToonSummary(rawSummary, blockSize);
+
+      // Store as SystemMessage with special marker
+      const summaryMessage = new SystemMessage({
+        content: rawSummary,
+        name: 'summary',
+      } as any);
+
+      // Add to summaries array
+      this.summaries.push(summaryMessage);
+
+      // Remove summarized messages from history
+      this.conversationHistory = this.conversationHistory.slice(blockSize);
+
+      console.log(`[AgentService] Summarized ${blockSize} messages into TOON format. Remaining: ${this.conversationHistory.length}`);
+      console.log(`[AgentService] Summary preview: ${parsed.conversationSummary.substring(0, 100)}...`);
+
+    } catch (e) {
+      console.error('[AgentService] Summarization failed:', e);
+      // On failure, just trim without summarizing
+      this.conversationHistory = this.conversationHistory.slice(blockSize);
+    }
+  }
+
+  /**
+   * Build messages array with summaries injected for context
+   * Called when building the final prompt for the main model
+   */
+  private buildMessagesWithSummaries(systemPrompt: SystemMessage): BaseMessage[] {
+    const messages: BaseMessage[] = [systemPrompt];
+    
+    // Inject all TOON summaries as context
+    if (this.summaries.length > 0) {
+      const summaryContext = new SystemMessage(
+        `[Previous Conversation Summaries]\n${this.summaries.map(s => s.content).join('\n---\n')}`
+      );
+      messages.push(summaryContext);
+    }
+    
+    // Add current conversation history
+    messages.push(...this.conversationHistory);
+    
+    return messages;
+  }
+
   setStepHandler(handler: (step: AgentStep) => void) {
     this.onStep = handler;
   }
@@ -607,12 +712,43 @@ ${tools.map((t: any) => `- ${t.name}: ${t.description}`).join('\n')}
 
       // Trim history if it's getting too long
       this.trimConversationHistory();
+      
+      // Check if we need to summarize old messages
+      await this.maybeSummarize();
 
-      // Build messages array: system prompt + conversation history
-      messages = [
-        this.systemPrompt,
-        ...this.conversationHistory,
-      ];
+      // Build messages array: system prompt + summaries + conversation history
+      messages = this.buildMessagesWithSummaries(this.systemPrompt);
+
+      // WARM-START: Check if we have a matching skill to execute directly
+      const warmStartHit = await taskKnowledgeService.findNearest(userMessage, 0.8);
+      if (warmStartHit) {
+        this.emitStep('thought', `Found matching skill: "${warmStartHit.skill.name}" (similarity: ${warmStartHit.similarity.toFixed(2)}). Attempting warm-start execution.`);
+        
+        try {
+          // Execute the saved plan directly using browser_execute_plan
+          const executePlanTool = tools.find((t: any) => t.name === 'browser_execute_plan');
+          if (executePlanTool && warmStartHit.skill.steps.length > 0) {
+            const planResult = await executePlanTool.invoke({ steps: warmStartHit.skill.steps });
+            const resultStr = String(planResult);
+            
+            if (resultStr.includes('successfully') || resultStr.includes('completed')) {
+              // Success - record positive outcome
+              taskKnowledgeService.recordOutcome(warmStartHit.skill.id, true);
+              const fastResponse = `Completed using saved skill "${warmStartHit.skill.name}".`;
+              this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: 'final_response', args: { message: fastResponse } })));
+              return fastResponse;
+            } else {
+              // Execution failed - mark stale and fall back to normal flow
+              this.emitStep('thought', `Warm-start execution failed. Falling back to normal planning.`);
+              taskKnowledgeService.markStale(warmStartHit.skill.id);
+            }
+          }
+        } catch (warmStartErr: any) {
+          // Warm-start failed - mark skill as stale and continue with normal flow
+          this.emitStep('thought', `Warm-start error: ${warmStartErr.message}. Falling back to normal planning.`);
+          taskKnowledgeService.markStale(warmStartHit.skill.id);
+        }
+      }
 
       // Get current model config for timeout
       const currentConfig = AVAILABLE_MODELS.find(m => m.id === this.currentModelId);

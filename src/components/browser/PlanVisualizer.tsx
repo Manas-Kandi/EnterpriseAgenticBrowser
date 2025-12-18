@@ -1,15 +1,24 @@
 import { CheckCircle2, Circle, ChevronRight, ListTodo } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
+import { useAgentStore } from '@/lib/agentStore';
 
 interface PlanVisualizerProps {
-  plan: string[];
-  currentStepIndex?: number; // Optional, if we can infer it
+  plan?: string[];
+  currentStepIndex?: number;
   className?: string;
+  useStore?: boolean; // If true, read from zustand store instead of props
 }
 
-export function PlanVisualizer({ plan, currentStepIndex = 0, className }: PlanVisualizerProps) {
+export function PlanVisualizer({ plan: propPlan, currentStepIndex: propStepIndex, className, useStore = false }: PlanVisualizerProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
+  
+  // Read from store if useStore is true
+  const storePlan = useAgentStore((s) => s.activePlan);
+  const storeStepIndex = useAgentStore((s) => s.currentPlanStep);
+  
+  const plan = useStore ? storePlan : (propPlan ?? []);
+  const currentStepIndex = useStore ? storeStepIndex : (propStepIndex ?? 0);
 
   if (!plan || plan.length === 0) return null;
 

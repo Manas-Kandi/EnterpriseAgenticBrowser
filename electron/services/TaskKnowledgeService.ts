@@ -4,6 +4,9 @@ import { z } from 'zod';
 import { v4 as uuidv4 } from 'uuid';
 import { AgentTool, toolRegistry } from './ToolRegistry';
 import { agentRunContext } from './AgentRunContext';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 export type SkillFeedbackLabel = 'worked' | 'failed' | 'partial';
 
@@ -156,6 +159,97 @@ export class TaskKnowledgeService {
     let dot = 0;
     for (let i = 0; i < n; i++) dot += a[i] * b[i];
     return dot;
+  }
+
+  /**
+   * Compute embedding via OpenAI API (text-embedding-3-small)
+   * Falls back to local hash-based embedding if API fails
+   */
+  async computeApiEmbedding(text: string): Promise<number[]> {
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      console.warn('[TaskKnowledge] No OPENAI_API_KEY, using local embedding');
+      return this.computeEmbedding(text);
+    }
+
+    try {
+      const response = await fetch('https://api.openai.com/v1/embeddings', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: 'text-embedding-3-small',
+          input: text.substring(0, 8000), // Limit input length
+        }),
+      });
+
+      if (!response.ok) {
+        console.warn('[TaskKnowledge] Embedding API error:', response.status);
+        return this.computeEmbedding(text);
+      }
+
+      const data = await response.json() as { data: Array<{ embedding: number[] }> };
+      if (data.data?.[0]?.embedding) {
+        return data.data[0].embedding;
+      }
+    } catch (e) {
+      console.warn('[TaskKnowledge] Embedding API failed:', e);
+    }
+
+    return this.computeEmbedding(text);
+  }
+
+  /**
+   * Find nearest skill by embedding similarity
+   * @param query - User query text
+   * @param threshold - Minimum similarity threshold (0-1)
+   * @returns Skill and similarity score if above threshold, null otherwise
+   */
+  async findNearest(query: string, threshold: number = 0.8): Promise<{ skill: Skill; similarity: number } | null> {
+    if (this.skills.length === 0) return null;
+
+    // Compute query embedding
+    const queryEmbedding = await this.computeApiEmbedding(query);
+
+    let bestMatch: { skill: Skill; similarity: number } | null = null;
+
+    for (const skill of this.skills) {
+      // Skip skills with poor track record
+      const total = skill.stats.successes + skill.stats.failures;
+      if (total > 3 && skill.stats.failures > skill.stats.successes) {
+        continue;
+      }
+
+      const similarity = this.cosineSimilarity(skill.embedding, queryEmbedding);
+      
+      if (similarity >= threshold) {
+        if (!bestMatch || similarity > bestMatch.similarity) {
+          bestMatch = { skill, similarity };
+        }
+      }
+    }
+
+    if (bestMatch) {
+      console.log(`[TaskKnowledge] Found nearest skill: ${bestMatch.skill.name} (similarity: ${bestMatch.similarity.toFixed(3)})`);
+    }
+
+    return bestMatch;
+  }
+
+  /**
+   * Mark a skill as stale (failed during warm-start execution)
+   */
+  markStale(skillId: string) {
+    const skill = this.skills.find(s => s.id === skillId);
+    if (skill) {
+      skill.stats.failures++;
+      skill.stats.lastOutcomeAt = Date.now();
+      skill.stats.lastOutcomeSuccess = false;
+      this.save();
+      console.log(`[TaskKnowledge] Marked skill ${skill.name} as stale`);
+    }
   }
 
   private buildSkillText(skill: Skill): string {
