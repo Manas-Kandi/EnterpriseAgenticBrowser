@@ -1,7 +1,7 @@
 import ReactMarkdown from 'react-markdown';
 import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
-import { Send, X, ChevronDown, Brain, Zap, Shield, Activity, RotateCcw, Plus, MoreHorizontal, ChevronRight, Globe, Search, MousePointerClick, BookOpen, Trash2 } from 'lucide-react';
+import { Send, X, ChevronDown, Brain, Zap, Shield, Activity, RotateCcw, Plus, MoreHorizontal, ChevronRight, BookOpen, Trash2 } from 'lucide-react';
 import { useBrowserStore } from '@/lib/store';
 import { logToolCall, getCallsSince, getAllCalls, aggregateStats, toCSV, AggregatedToolStat } from '@/utils/toolStats';
 import { PlanVisualizer } from './PlanVisualizer';
@@ -532,213 +532,197 @@ export function AgentPanel() {
           </div>
         ) : (
           <div className="space-y-4">
-            {messages.map((msg, i) => {
-              if (msg.role === 'user') {
-                return (
-                  <div key={i} className="group relative">
-                    <div className="text-sm text-foreground/90 whitespace-pre-wrap leading-relaxed pr-6">
-                      {msg.content}
-                    </div>
-                    <button className="absolute right-0 top-0 opacity-0 group-hover:opacity-100 p-1 hover:bg-secondary rounded transition-opacity">
-                      <RotateCcw size={12} className="text-muted-foreground" />
-                    </button>
-                  </div>
-                );
-              }
+            {(() => {
+              // Group messages into conversations (user message + all following assistant messages until next user)
+              const conversations: Array<{ user: Message; steps: Message[]; response: Message | null }> = [];
+              let current: { user: Message; steps: Message[]; response: Message | null } | null = null;
 
-              // Handle Assistant Messages (Thoughts, Actions, Observations, Text)
-              if (msg.type === 'thought') {
-                // Check if this thought contains a structured plan
-                if (msg.metadata?.plan && Array.isArray(msg.metadata.plan)) {
-                  return (
-                    <details key={i} className="group/thought">
-                      <summary className="flex items-center gap-2 text-[11px] text-muted-foreground/40 hover:text-muted-foreground/70 cursor-pointer list-none select-none py-0.5 transition-colors">
-                        <ChevronRight size={12} className="group-open/thought:rotate-90 transition-transform opacity-50" />
-                        <span>Thought for {msg.metadata?.durationMs ? Math.round(msg.metadata.durationMs / 1000) : '<1'}s</span>
-                      </summary>
-                      <div className="pl-5 pt-1 space-y-3">
-                        <div className="text-[11px] text-muted-foreground/50 italic leading-relaxed border-l border-border/10 ml-[5px] mb-2 font-mono">
-                          {msg.content}
-                        </div>
-                        <PlanVisualizer 
-                          plan={msg.metadata.plan} 
-                          currentStepIndex={currentPlanStep}
-                        />
-                      </div>
-                    </details>
-                  );
+              messages.forEach((msg) => {
+                if (msg.role === 'user') {
+                  if (current) conversations.push(current);
+                  current = { user: msg, steps: [], response: null };
+                } else if (current) {
+                  if (!msg.type || msg.type === 'text') {
+                    current.response = msg;
+                  } else {
+                    current.steps.push(msg);
+                  }
                 }
-                
-                // Regular thought without plan
-                return (
-                  <details key={i} className="group/thought">
-                    <summary className="flex items-center gap-2 text-[11px] text-muted-foreground/40 hover:text-muted-foreground/70 cursor-pointer list-none select-none py-0.5 transition-colors">
-                      <ChevronRight size={12} className="group-open/thought:rotate-90 transition-transform opacity-50" />
-                      <span>Thought for {msg.metadata?.durationMs ? Math.round(msg.metadata.durationMs / 1000) : '<1'}s</span>
-                    </summary>
-                    <div className="pl-5 pt-1 text-[11px] text-muted-foreground/50 italic leading-relaxed border-l border-border/10 ml-[5px] mb-2 font-mono">
-                      {msg.content}
-                    </div>
-                  </details>
+              });
+              if (current) conversations.push(current);
+
+              return conversations.map((conv, convIdx) => {
+                // Count meaningful steps (exclude noise)
+                const meaningfulSteps = conv.steps.filter(s => 
+                  s.type === 'action' || 
+                  (s.type === 'thought' && !s.content.startsWith('Still thinking') && !s.content.startsWith('Calling model') && !s.content.startsWith('Model responded'))
                 );
-              }
-
-              if (msg.type === 'action' || msg.type === 'observation') {
-                const isAction = msg.type === 'action';
-                return (
-                  <div key={i} className="flex items-center gap-2 group/item py-0.5">
-                    <div className="shrink-0 opacity-40 group-hover/item:opacity-70 transition-opacity">
-                      {isAction ? (
-                        <Globe size={11} className="text-blue-400" />
-                      ) : (
-                        <Search size={11} className="text-muted-foreground" />
-                      )}
-                    </div>
-                    <div className="flex-1 flex items-center justify-between overflow-hidden gap-2">
-                      <span className="text-[11px] font-medium text-foreground/50 truncate group-hover/item:text-foreground/70 transition-colors">
-                        {isAction ? (
-                          <>Navigating <span className="text-foreground/30 font-normal truncate">{msg.content.replace(/^Executing\s+/i, '')}</span></>
-                        ) : (
-                          <>Observed <span className="text-foreground/30 font-normal truncate">{msg.content.substring(0, 40)}{msg.content.length > 40 ? '...' : ''}</span></>
-                        )}
-                      </span>
-                      <span className="text-[9px] text-muted-foreground/20 font-mono group-hover/item:text-muted-foreground/40 transition-colors shrink-0">
-                        {msg.metadata?.durationMs ? Math.round(msg.metadata.durationMs) + 'ms' : ''}
-                      </span>
-                    </div>
-                  </div>
-                );
-              }
-
-              // Default Text Message (Bot Response)
-              if (!msg.type || msg.type === 'text') {
-                // Special Case: High-level Task Card (usually first bot response or major update)
-                const isTaskSummary = msg.content.includes('#') || msg.content.length > 200;
-
-                if (isTaskSummary) {
-                  return (
-                    <div key={i} className="rounded-xl border border-border/40 bg-secondary/10 p-4 space-y-4 shadow-sm backdrop-blur-sm select-text">
-                      <div className="space-y-1.5">
-                        <h3 className="text-sm font-bold text-foreground leading-tight">
-                          {msg.content.split('\n')[0].replace(/^#+\s*/, '')}
-                        </h3>
-                        <p className="text-xs text-muted-foreground leading-relaxed">
-                          {msg.content.split('\n').slice(1).find(l => l.trim() && !l.startsWith('-'))?.substring(0, 150)}...
-                        </p>
-                      </div>
-
-                      {/* Browser Actions Section */}
-                      <div className="space-y-2">
-                        <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60 font-semibold">Activity</div>
-                        <div className="space-y-1.5">
-                          <div className="flex items-center gap-2 text-xs text-blue-400">
-                            <Globe size={12} />
-                            Gathering information from web
-                          </div>
-                          <div className="flex items-center gap-2 text-xs text-muted-foreground/70">
-                            <MousePointerClick size={12} />
-                            Processing user request
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Progress Updates - Minimalist for Browser */}
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between">
-                          <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60 font-semibold">Steps</div>
-                        </div>
-                        <div className="space-y-2 relative pl-4 before:absolute before:left-1 before:top-2 before:bottom-2 before:w-px before:bg-border/30">
-                          <div className="text-xs flex gap-3 text-foreground/80">
-                            <span className="text-muted-foreground/30 font-mono text-[10px]">1</span>
-                            <span>Navigated to secure site</span>
-                          </div>
-                          <div className="text-xs flex gap-3 text-foreground/80">
-                            <span className="text-muted-foreground/30 font-mono text-[10px]">2</span>
-                            <span>Extracted relevant data points</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                }
+                const stepCount = meaningfulSteps.length;
 
                 return (
-                  <div key={i} className="text-sm text-foreground/80 leading-relaxed message-markdown">
-                    <ReactMarkdown
-                      components={{
-                        p: ({ children }) => <p className="mb-3 last:mb-0">{children}</p>,
-                        h1: ({ children }) => <h1 className="text-sm font-bold mt-4 mb-2 first:mt-0 text-foreground">{children}</h1>,
-                        h2: ({ children }) => <h2 className="text-xs font-bold mt-3 mb-1.5 text-foreground/90 uppercase tracking-wide">{children}</h2>,
-                        h3: ({ children }) => <h3 className="text-xs font-semibold mt-2.5 mb-1 text-foreground/80">{children}</h3>,
-                        ul: ({ children }) => <ul className="list-disc pl-4 mb-3 space-y-1">{children}</ul>,
-                        ol: ({ children }) => <ol className="list-decimal pl-4 mb-3 space-y-1">{children}</ol>,
-                        code: ({ className, children }) => {
-                          const match = /language-(\w+)/.exec(className || '')
-                          return !match ? (
-                            <code className="bg-secondary/50 px-1 py-0.5 rounded text-[11px] font-mono border border-border/40 text-primary/80">{children}</code>
-                          ) : (
-                            <code className={cn("block bg-secondary/30 p-3 rounded-lg text-[11px] font-mono border border-border/20 my-3 overflow-x-auto", className)}>{children}</code>
-                          )
-                        },
-                        pre: ({ children }) => <div className="relative group">{children}</div>
-                      }}
-                    >
-                      {msg.content}
-                    </ReactMarkdown>
-                    {loading && i === messages.length - 1 && msg.role === 'assistant' && (
-                      <span className="inline-block w-1.5 h-3.5 bg-primary/80 align-middle ml-1 animate-pulse" />
+                  <div key={convIdx} className="space-y-3">
+                    {/* User message */}
+                    <div className="group relative">
+                      <div className="text-sm text-foreground/90 whitespace-pre-wrap leading-relaxed pr-6">
+                        {conv.user.content}
+                      </div>
+                      <button className="absolute right-0 top-0 opacity-0 group-hover:opacity-100 p-1 hover:bg-secondary rounded transition-opacity">
+                        <RotateCcw size={12} className="text-muted-foreground" />
+                      </button>
+                    </div>
+
+                    {/* Collapsible steps summary */}
+                    {stepCount > 0 && (
+                      <details className="group/steps">
+                        <summary className="flex items-center gap-1.5 text-[11px] text-muted-foreground/50 cursor-pointer list-none select-none hover:text-muted-foreground/70 transition-colors">
+                          <ChevronRight size={12} className="group-open/steps:rotate-90 transition-transform" />
+                          <span>{stepCount} step{stepCount !== 1 ? 's' : ''} completed</span>
+                        </summary>
+                        <div className="mt-2 pl-4 space-y-2 border-l border-border/20">
+                          {conv.steps.map((step, stepIdx) => {
+                            // Skip noise
+                            if (step.content.startsWith('Still thinking') || 
+                                step.content.startsWith('Calling model') || 
+                                step.content.startsWith('Model responded') ||
+                                step.content.startsWith('Tool Output:')) {
+                              return null;
+                            }
+
+                            if (step.type === 'thought') {
+                              // Check for plan
+                              if (step.metadata?.plan && Array.isArray(step.metadata.plan)) {
+                                return (
+                                  <div key={stepIdx} className="space-y-2">
+                                    <div className="flex items-start gap-2">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/30 mt-1.5 shrink-0" />
+                                      <p className="text-[11px] text-muted-foreground/60 leading-relaxed">
+                                        {step.content}
+                                      </p>
+                                    </div>
+                                    <div className="ml-3">
+                                      <PlanVisualizer plan={step.metadata.plan} currentStepIndex={currentPlanStep} />
+                                    </div>
+                                  </div>
+                                );
+                              }
+                              return (
+                                <div key={stepIdx} className="flex items-start gap-2">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/30 mt-1.5 shrink-0" />
+                                  <p className="text-[11px] text-muted-foreground/60 leading-relaxed">
+                                    {step.content}
+                                  </p>
+                                </div>
+                              );
+                            }
+
+                            if (step.type === 'action') {
+                              return (
+                                <div key={stepIdx} className="flex items-start gap-2">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-blue-400/50 mt-1.5 shrink-0" />
+                                  <span className="text-[11px] text-muted-foreground/60">
+                                    {step.content.replace(/^Executing\s+/i, '')}
+                                  </span>
+                                </div>
+                              );
+                            }
+
+                            if (step.type === 'observation' && !step.content.startsWith('Tool Output:')) {
+                              return (
+                                <div key={stepIdx} className="flex items-start gap-2">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-green-400/50 mt-1.5 shrink-0" />
+                                  <span className="text-[11px] text-muted-foreground/60">
+                                    {step.content.substring(0, 80)}{step.content.length > 80 ? '...' : ''}
+                                  </span>
+                                </div>
+                              );
+                            }
+
+                            return null;
+                          })}
+                        </div>
+                      </details>
+                    )}
+
+                    {/* Loading indicator when no response yet */}
+                    {!conv.response && loading && convIdx === conversations.length - 1 && (
+                      <div className="flex items-center gap-2 text-[11px] text-muted-foreground/40">
+                        <span className="w-1.5 h-1.5 rounded-full bg-primary/50 animate-pulse" />
+                        <span>Thinking...</span>
+                      </div>
+                    )}
+
+                    {/* Final response */}
+                    {conv.response && (
+                      <div className="text-sm text-foreground/80 leading-relaxed">
+                        <ReactMarkdown
+                          components={{
+                            p: ({ children }) => <p className="mb-3 last:mb-0">{children}</p>,
+                            h1: ({ children }) => <h1 className="text-sm font-bold mt-4 mb-2 first:mt-0 text-foreground">{children}</h1>,
+                            h2: ({ children }) => <h2 className="text-xs font-bold mt-3 mb-1.5 text-foreground/90">{children}</h2>,
+                            h3: ({ children }) => <h3 className="text-xs font-semibold mt-2.5 mb-1 text-foreground/80">{children}</h3>,
+                            ul: ({ children }) => <ul className="list-disc pl-4 mb-3 space-y-1">{children}</ul>,
+                            ol: ({ children }) => <ol className="list-decimal pl-4 mb-3 space-y-1">{children}</ol>,
+                            li: ({ children }) => <li className="text-sm">{children}</li>,
+                            strong: ({ children }) => <strong className="font-semibold text-foreground">{children}</strong>,
+                            code: ({ className, children }) => {
+                              const match = /language-(\w+)/.exec(className || '');
+                              return !match ? (
+                                <code className="bg-secondary/50 px-1 py-0.5 rounded text-[11px] font-mono">{children}</code>
+                              ) : (
+                                <code className={cn("block bg-secondary/30 p-3 rounded-lg text-[11px] font-mono my-3 overflow-x-auto", className)}>{children}</code>
+                              );
+                            },
+                          }}
+                        >
+                          {conv.response.content}
+                        </ReactMarkdown>
+                      </div>
                     )}
                   </div>
                 );
-              }
+              });
+            })()}
 
-              return null;
-            })}
-
-            {approvalRequest && (
-              <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 space-y-3 animate-in fade-in slide-in-from-bottom-2">
-                <div className="flex items-center gap-2 text-amber-500 font-semibold text-xs uppercase tracking-tight">
-                  <Shield size={14} />
-                  Action Required
-                </div>
-                <div className="text-sm font-medium text-foreground/90">
-                  Agent wants to run <code className="bg-amber-500/10 px-1.5 py-0.5 rounded text-xs select-all">{approvalRequest.toolName}</code>
-                </div>
-                <pre className="text-[10px] font-mono bg-background/50 p-2.5 rounded-lg border border-amber-500/10 overflow-x-auto text-muted-foreground max-h-40">
-                  {JSON.stringify(approvalRequest.args, null, 2)}
-                </pre>
-                <div className="flex gap-2 pt-1">
-                  <button
-                    onClick={() => handleApproval(false)}
-                    className="flex-1 px-3 py-2 bg-secondary/50 hover:bg-destructive/10 text-muted-foreground hover:text-destructive text-xs font-medium rounded-lg transition-all border border-border/50"
-                  >
-                    Reject
-                  </button>
-                  <button
-                    onClick={() => handleApproval(true)}
-                    className="flex-1 px-3 py-2 bg-primary text-primary-foreground hover:opacity-90 text-xs font-medium rounded-lg transition-all border border-primary"
-                  >
-                    Accept all
-                  </button>
-                </div>
-              </div>
-            )}
-
+            {/* Global loading when processing */}
             {loading && (
-              <div className="flex items-center gap-3 py-2">
-                <div className="relative">
-                  <Brain size={16} className="text-primary/40 animate-pulse" />
-                  <span className="absolute -top-1 -right-1 flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-40"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-primary/60"></span>
-                  </span>
-                </div>
-                <span className="text-[11px] font-medium text-muted-foreground/50 tracking-wide uppercase">Processing...</span>
+              <div className="flex items-center gap-2 text-[11px] text-muted-foreground/40">
+                <span className="w-1.5 h-1.5 rounded-full bg-primary/50 animate-pulse" />
+                <span>Processing...</span>
               </div>
             )}
           </div>
         )}
       </div>
+
+      {/* Approval Request - moved outside the message loop */}
+      {approvalRequest && (
+        <div className="mx-4 mb-4 rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 space-y-3">
+          <div className="flex items-center gap-2 text-amber-500 font-semibold text-xs uppercase tracking-tight">
+            <Shield size={14} />
+            Action Required
+          </div>
+          <div className="text-sm font-medium text-foreground/90">
+            Agent wants to run <code className="bg-amber-500/10 px-1.5 py-0.5 rounded text-xs">{approvalRequest.toolName}</code>
+          </div>
+          <pre className="text-[10px] font-mono bg-background/50 p-2.5 rounded-lg border border-amber-500/10 overflow-x-auto text-muted-foreground max-h-40">
+            {JSON.stringify(approvalRequest.args, null, 2)}
+          </pre>
+          <div className="flex gap-2 pt-1">
+            <button
+              onClick={() => handleApproval(false)}
+              className="flex-1 px-3 py-2 bg-secondary/50 hover:bg-destructive/10 text-muted-foreground hover:text-destructive text-xs font-medium rounded-lg transition-all border border-border/50"
+            >
+              Reject
+            </button>
+            <button
+              onClick={() => handleApproval(true)}
+              className="flex-1 px-3 py-2 bg-primary text-primary-foreground hover:opacity-90 text-xs font-medium rounded-lg transition-all"
+            >
+              Accept
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Footer / Input Area - Clean minimal design */}
       <div className="shrink-0 p-3 bg-background/60">
