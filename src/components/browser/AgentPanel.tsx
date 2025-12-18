@@ -1,7 +1,7 @@
 import ReactMarkdown from 'react-markdown';
 import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
-import { Send, X, ChevronDown, Brain, Zap, RotateCcw, MessageSquare, Play, Shield, Activity, Plus, MoreHorizontal, ChevronRight, Globe, Search, MousePointerClick, BookOpen, Trash2 } from 'lucide-react';
+import { Send, X, ChevronDown, Brain, Zap, Shield, Activity, RotateCcw, Plus, MoreHorizontal, ChevronRight, Globe, Search, MousePointerClick, BookOpen, Trash2 } from 'lucide-react';
 import { useBrowserStore } from '@/lib/store';
 import { logToolCall, getCallsSince, getAllCalls, aggregateStats, toCSV, AggregatedToolStat } from '@/utils/toolStats';
 import { PlanVisualizer } from './PlanVisualizer';
@@ -740,59 +740,59 @@ export function AgentPanel() {
         )}
       </div>
 
-      {/* Footer / Input Area */}
-      <div className="shrink-0 p-4 border-t border-border/50 space-y-4 bg-background/80 backdrop-blur-md">
-        <div className="relative group/input">
-          <div className="absolute left-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5 opacity-40 group-focus-within/input:opacity-80 transition-opacity">
-            <button className="p-1 hover:bg-secondary rounded text-muted-foreground">
-              <Plus size={14} />
-            </button>
-          </div>
+      {/* Footer / Input Area - Clean minimal design */}
+      <div className="shrink-0 p-3 bg-background/60">
+        <div className="bg-secondary/40 rounded-xl border border-border/30">
+          {/* Input row */}
           <form onSubmit={handleSubmit}>
             <input
-              className="w-full bg-secondary/30 border border-border/20 rounded-xl pl-10 pr-12 py-3 text-sm focus:outline-none focus:border-primary/20 focus:bg-secondary/50 transition-all placeholder:text-muted-foreground/30 shadow-inner"
+              className="w-full bg-transparent px-4 py-3 text-sm focus:outline-none placeholder:text-muted-foreground/40"
               placeholder="Ask anything (⌘L), @ to mention, / for workflows"
               value={input}
               onChange={e => setInput(e.target.value)}
               disabled={loading}
             />
-            <button
-              type="submit"
-              disabled={loading || !input.trim()}
-              className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-muted-foreground hover:text-primary disabled:opacity-0 transition-all scale-90 hover:scale-100"
-            >
-              <Send size={18} />
-            </button>
           </form>
-        </div>
 
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
+          {/* Controls row */}
+          <div className="flex items-center gap-1 px-2 pb-2 pt-0.5">
+            {/* Add button */}
+            <button className="p-1.5 text-muted-foreground/60 hover:text-foreground hover:bg-secondary/50 rounded-md transition-colors">
+              <Plus size={14} />
+            </button>
+
+            {/* Mode selector */}
+            <button
+              onClick={() => handleModeChange(agentMode === 'chat' ? 'do' : 'chat')}
+              className="flex items-center gap-1 px-2 py-1 text-xs text-muted-foreground/70 hover:text-foreground hover:bg-secondary/50 rounded-md transition-colors"
+            >
+              <ChevronDown size={12} className="rotate-180" />
+              <span>{agentMode === 'do' ? 'Do' : 'Fast'}</span>
+            </button>
+
+            {/* Model selector */}
             <div className="relative">
               <button
                 onClick={() => setShowModelSelector(!showModelSelector)}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-medium text-muted-foreground hover:text-foreground hover:bg-secondary/50 rounded-lg transition-all"
+                className="flex items-center gap-1 px-2 py-1 text-xs text-muted-foreground/70 hover:text-foreground hover:bg-secondary/50 rounded-md transition-colors"
               >
-                {models.find(m => m.id === currentModelId)?.supportsThinking ? (
-                  <Brain size={12} className="text-primary" />
-                ) : (
-                  <Zap size={12} className="text-amber-500" />
-                )}
-                <span>{models.find(m => m.id === currentModelId)?.name || 'Gemini 3 Flash'}</span>
-                <ChevronDown size={10} className={cn("mt-0.5", showModelSelector && "rotate-180")} />
+                <ChevronDown size={12} className="rotate-180" />
+                <span className="max-w-[120px] truncate">
+                  {models.find(m => m.id === currentModelId)?.name || 'Select Model'}
+                </span>
               </button>
               {showModelSelector && (
-                <div className="absolute bottom-full left-0 mb-2 w-48 bg-background border border-border/50 rounded-xl shadow-2xl overflow-hidden py-1 z-50 animate-in fade-in slide-in-from-bottom-2">
+                <div className="absolute bottom-full left-0 mb-1 w-52 bg-background/95 backdrop-blur-md border border-border/40 rounded-lg shadow-xl overflow-hidden py-1 z-50">
                   {models.map((model) => (
                     <button
                       key={model.id}
                       onClick={() => handleModelChange(model.id)}
                       className={cn(
-                        "w-full flex items-center gap-2 px-3 py-2 text-[11px] hover:bg-secondary/50 transition-colors text-left",
-                        model.id === currentModelId ? "text-primary bg-primary/5" : "text-muted-foreground"
+                        "w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-secondary/50 transition-colors text-left",
+                        model.id === currentModelId ? "text-foreground bg-secondary/30" : "text-muted-foreground"
                       )}
                     >
-                      {model.supportsThinking ? <Brain size={12} /> : <Zap size={12} />}
+                      {model.supportsThinking ? <Brain size={11} /> : <Zap size={11} />}
                       <span className="truncate">{model.name}</span>
                     </button>
                   ))}
@@ -800,58 +800,41 @@ export function AgentPanel() {
               )}
             </div>
 
-            <div className="h-4 w-px bg-border/30 mx-1" />
+            {/* Spacer */}
+            <div className="flex-1" />
 
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => handleModeChange('chat')}
-                className={cn(
-                  "flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-medium rounded-lg transition-all",
-                  agentMode === 'chat' ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground hover:bg-secondary/40"
-                )}
-              >
-                <MessageSquare size={12} />
-                <span>Chat</span>
-              </button>
-              <button
-                onClick={() => handleModeChange('do')}
-                className={cn(
-                  "flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-medium rounded-lg transition-all",
-                  agentMode === 'do' ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground hover:bg-secondary/40"
-                )}
-              >
-                <Play size={12} />
-                <span>Do</span>
-              </button>
-            </div>
-
-            <div className="h-4 w-px bg-border/30 mx-1" />
-
-            <div className="flex items-center gap-1">
-               <button
-                onClick={() => handlePermissionModeChange(agentPermissionMode === 'yolo' ? 'permissions' : 'yolo')}
-                className={cn(
-                  "flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-medium rounded-lg transition-all",
-                  agentPermissionMode === 'yolo' 
-                    ? "text-red-500 bg-red-500/10" 
-                    : agentPermissionMode === 'manual'
-                      ? "text-amber-500 bg-amber-500/10"
-                      : "text-green-500 bg-green-500/10"
-                )}
-                title={`Current Policy: ${agentPermissionMode.toUpperCase()}`}
-              >
-                <Shield size={12} />
-                <span>{agentPermissionMode === 'yolo' ? 'YOLO' : agentPermissionMode === 'manual' ? 'Manual' : 'Safe'}</span>
-              </button>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-secondary/50 rounded-lg transition-colors">
-              <Activity size={12} />
+            {/* Permission mode - compact */}
+            <button
+              onClick={() => handlePermissionModeChange(agentPermissionMode === 'yolo' ? 'permissions' : 'yolo')}
+              className={cn(
+                "p-1.5 rounded-md transition-colors",
+                agentPermissionMode === 'yolo' 
+                  ? "text-red-400/80 hover:bg-red-500/10" 
+                  : "text-muted-foreground/60 hover:text-foreground hover:bg-secondary/50"
+              )}
+              title={agentPermissionMode === 'yolo' ? 'YOLO Mode' : 'Safe Mode'}
+            >
+              <Shield size={14} />
             </button>
-            <button className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-secondary/50 rounded-lg transition-colors">
-              <RotateCcw size={12} />
+
+            {/* Send button - circular */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                if (input.trim() && !loading) {
+                  handleSubmit(e as any);
+                }
+              }}
+              disabled={loading || !input.trim()}
+              className={cn(
+                "p-1.5 rounded-full border transition-all",
+                input.trim() 
+                  ? "border-foreground/20 text-foreground hover:bg-foreground/10" 
+                  : "border-border/30 text-muted-foreground/30"
+              )}
+            >
+              <Send size={14} />
             </button>
           </div>
         </div>
