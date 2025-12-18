@@ -59,6 +59,11 @@ electron.contextBridge.exposeInMainWorld("agent", {
     const listener = (_, step) => callback(step);
     electron.ipcRenderer.on("agent:step", listener);
     return () => electron.ipcRenderer.off("agent:step", listener);
+  },
+  onToken: (callback) => {
+    const listener = (_, token) => callback(token);
+    electron.ipcRenderer.on("agent:token", listener);
+    return () => electron.ipcRenderer.off("agent:token", listener);
   }
 });
 electron.contextBridge.exposeInMainWorld("browser", {

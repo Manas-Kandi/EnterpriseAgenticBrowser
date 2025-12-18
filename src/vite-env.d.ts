@@ -22,6 +22,7 @@ interface Window {
     respondApproval: (requestId: string, approved: boolean) => void;
     sendFeedback: (skillId: string, outcome: boolean | 'worked' | 'failed' | 'partial', version?: number) => Promise<boolean>;
     onStep: (callback: (step: any) => void) => () => void;
+    onToken: (callback: (token: string) => void) => () => void;
     runBenchmarkSuite: (filter?: string) => Promise<Array<{ scenarioId: string; success: boolean; durationMs: number; steps: number; error?: string; runId: string; llmCalls: number }>>;
     exportBenchmarkTrajectories: (results: any[]) => Promise<{ success: boolean; path: string }>;
   }

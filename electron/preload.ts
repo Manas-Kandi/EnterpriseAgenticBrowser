@@ -66,6 +66,11 @@ contextBridge.exposeInMainWorld('agent', {
     ipcRenderer.on('agent:step', listener);
     return () => ipcRenderer.off('agent:step', listener);
   },
+  onToken: (callback: (token: string) => void) => {
+    const listener = (_: unknown, token: string) => callback(token);
+    ipcRenderer.on('agent:token', listener);
+    return () => ipcRenderer.off('agent:token', listener);
+  },
 })
 
 contextBridge.exposeInMainWorld('browser', {

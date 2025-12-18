@@ -139,10 +139,26 @@ export function AgentPanel() {
       ]);
     });
 
+    const offToken = window.agent.onToken?.((token: string) => {
+      setMessages((prev) => {
+        const lastMsg = prev[prev.length - 1];
+        // If last message is an assistant message being streamed (not a specialized step type yet or is text)
+        if (lastMsg && lastMsg.role === 'assistant' && (!lastMsg.type || lastMsg.type === 'text')) {
+          return [
+            ...prev.slice(0, -1),
+            { ...lastMsg, content: lastMsg.content + token }
+          ];
+        }
+        // Otherwise start a new message
+        return [...prev, { role: 'assistant', content: token, type: 'text' }];
+      });
+    });
+
     return () => {
       offApproval?.();
       offApprovalTimeout?.();
       offStep?.();
+      offToken?.();
     };
   }, []);
 
@@ -213,7 +229,22 @@ export function AgentPanel() {
 
     try {
       const response = await window.agent.chat(userMessage);
-      setMessages(prev => [...prev, { role: 'assistant', content: response }]);
+      setMessages(prev => {
+        // If in 'do' mode, the response is a new summary message
+        if (agentMode === 'do') {
+          return [...prev, { role: 'assistant', content: response }];
+        }
+        
+        // In 'chat'/'read' mode, we likely streamed the response
+        const lastMsg = prev[prev.length - 1];
+        if (lastMsg && lastMsg.role === 'assistant' && (!lastMsg.type || lastMsg.type === 'text')) {
+          // Update the streamed message with the authoritative final response
+          return [...prev.slice(0, -1), { ...lastMsg, content: response }];
+        }
+        
+        // Fallback if no stream happened
+        return [...prev, { role: 'assistant', content: response }];
+      });
     } catch (error) {
       console.error(error);
       setMessages(prev => [...prev, { role: 'assistant', content: "Sorry, I encountered an error connecting to the agent." }]);
@@ -463,6 +494,9 @@ export function AgentPanel() {
                     >
                       {msg.content}
                     </ReactMarkdown>
+                    {loading && i === messages.length - 1 && msg.role === 'assistant' && (
+                      <span className="inline-block w-1.5 h-3.5 bg-primary/80 align-middle ml-1 animate-pulse" />
+                    )}
                   </div>
                 );
               }

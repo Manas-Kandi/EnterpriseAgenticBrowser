@@ -360,6 +360,11 @@ app.whenReady().then(() => {
         }
     });
 
+    // Set up Token Handler for streaming
+    agentService.setTokenHandler((token) => {
+        event.sender.send('agent:token', token);
+    });
+
     // Get current browser context
     let browserContext = 'Current browser state: No active tab';
     try {

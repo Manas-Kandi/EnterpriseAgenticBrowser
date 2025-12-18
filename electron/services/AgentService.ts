@@ -112,6 +112,7 @@ export class AgentService {
   private agentMode: AgentMode = 'do';
   private permissionMode: AgentPermissionMode = 'permissions';
   private onStep?: (step: AgentStep) => void;
+  private onToken?: (token: string) => void;
   private conversationHistory: BaseMessage[] = [];
   private systemPrompt: SystemMessage;
 
@@ -436,8 +437,13 @@ export class AgentService {
     this.onStep = handler;
   }
 
+  setTokenHandler(handler: (token: string) => void) {
+    this.onToken = handler;
+  }
+
   clearStepHandler() {
     this.onStep = undefined;
+    this.onToken = undefined;
   }
 
   private emitStep(type: AgentStep['type'], content: string, metadata?: any) {
@@ -449,6 +455,12 @@ export class AgentService {
         runId,
       };
       this.onStep({ type, content, metadata: enrichedMetadata });
+    }
+  }
+
+  private emitToken(token: string) {
+    if (this.onToken) {
+      this.onToken(token);
     }
   }
 
@@ -476,8 +488,15 @@ export class AgentService {
     this.trimConversationHistory();
 
     try {
-      const response = await this.model.invoke([chatPrompt, ...this.conversationHistory]);
-      const content = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
+      let content = '';
+      const stream = await this.model.stream([chatPrompt, ...this.conversationHistory]);
+      
+      for await (const chunk of stream) {
+        const token = String(chunk.content);
+        content += token;
+        this.emitToken(token);
+      }
+
       this.conversationHistory.push(new AIMessage(content));
       this.trimConversationHistory();
       return content;
@@ -505,8 +524,15 @@ You can answer questions about what's on the page, explain content, summarize in
     this.trimConversationHistory();
 
     try {
-      const response = await this.model.invoke([readPrompt, ...this.conversationHistory]);
-      const content = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
+      let content = '';
+      const stream = await this.model.stream([readPrompt, ...this.conversationHistory]);
+      
+      for await (const chunk of stream) {
+        const token = String(chunk.content);
+        content += token;
+        this.emitToken(token);
+      }
+
       this.conversationHistory.push(new AIMessage(content));
       this.trimConversationHistory();
       return content;
@@ -654,8 +680,20 @@ ${tools.map((t: any) => `- ${t.name}: ${t.description}`).join('\n')}
             }
           }, 5000);
 
+          const streamPromise = (async () => {
+            let fullContent = '';
+            const stream = await this.model.stream(messages);
+            for await (const chunk of stream) {
+              const token = String(chunk.content);
+              fullContent += token;
+              // In doMode, we don't emit tokens to avoid showing raw JSON to the user
+              // this.emitToken(token); 
+            }
+            return new AIMessage(fullContent);
+          })();
+
           response = await Promise.race([
-            this.model.invoke(messages),
+            streamPromise,
             timeoutPromise
           ]) as AIMessage;
         } catch (timeoutErr: any) {

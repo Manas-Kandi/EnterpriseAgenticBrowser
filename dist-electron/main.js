@@ -42259,7 +42259,8 @@ class ToolRegistry {
         }
       }
     } else if (tool2.requiresApproval && approvalHandler) {
-      if (agentRunContext.getYoloMode()) {
+      const permissionMode = agentRunContext.getPermissionMode();
+      if (permissionMode === "yolo") {
         try {
           auditService.log({
             actor: "system",
@@ -42268,6 +42269,72 @@ class ToolRegistry {
             status: "success"
           }).catch(() => void 0);
         } catch {
+        }
+      } else if (permissionMode === "permissions" || permissionMode === "manual") {
+        try {
+          await telemetryService.emit({
+            eventId: v4$2(),
+            runId,
+            ts: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "approval_request",
+            name: tool2.name,
+            data: { toolCallId, argsHash }
+          });
+        } catch {
+        }
+        try {
+          auditService.log({
+            actor: "system",
+            action: "approval_request",
+            details: { runId, toolName: tool2.name, toolCallId, argsHash },
+            status: "pending"
+          }).catch(() => void 0);
+        } catch {
+        }
+        const approved = await approvalHandler(tool2.name, arg);
+        try {
+          await telemetryService.emit({
+            eventId: v4$2(),
+            runId,
+            ts: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "approval_decision",
+            name: tool2.name,
+            data: { toolCallId, argsHash, approved }
+          });
+        } catch {
+        }
+        try {
+          auditService.log({
+            actor: "system",
+            action: "approval_decision",
+            details: { runId, toolName: tool2.name, toolCallId, argsHash, approved },
+            status: approved ? "success" : "failure"
+          }).catch(() => void 0);
+        } catch {
+        }
+        if (!approved) {
+          const durationMs = Date.now() - startedAt;
+          try {
+            await telemetryService.emit({
+              eventId: v4$2(),
+              runId,
+              ts: (/* @__PURE__ */ new Date()).toISOString(),
+              type: "tool_call_end",
+              name: tool2.name,
+              data: { toolCallId, argsHash, durationMs, error: "User denied" }
+            });
+          } catch {
+          }
+          try {
+            auditService.log({
+              actor: "user",
+              action: "tool_call_denied",
+              details: { runId, toolName: tool2.name, toolCallId },
+              status: "failure"
+            }).catch(() => void 0);
+          } catch {
+          }
+          return "User denied execution of this tool.";
         }
       } else {
         try {
@@ -42900,6 +42967,7 @@ const _AgentService = class _AgentService {
     __publicField(this, "agentMode", "do");
     __publicField(this, "permissionMode", "permissions");
     __publicField(this, "onStep");
+    __publicField(this, "onToken");
     __publicField(this, "conversationHistory", []);
     __publicField(this, "systemPrompt");
     this.model = this.createModel("llama-3.1-70b");
@@ -43162,8 +43230,12 @@ const _AgentService = class _AgentService {
   setStepHandler(handler) {
     this.onStep = handler;
   }
+  setTokenHandler(handler) {
+    this.onToken = handler;
+  }
   clearStepHandler() {
     this.onStep = void 0;
+    this.onToken = void 0;
   }
   emitStep(type, content, metadata) {
     if (this.onStep) {
@@ -43174,6 +43246,11 @@ const _AgentService = class _AgentService {
         runId
       };
       this.onStep({ type, content, metadata: enrichedMetadata });
+    }
+  }
+  emitToken(token) {
+    if (this.onToken) {
+      this.onToken(token);
     }
   }
   async chat(userMessage, browserContext) {
@@ -43194,8 +43271,13 @@ const _AgentService = class _AgentService {
     this.conversationHistory.push(new HumanMessage(safeUserMessage));
     this.trimConversationHistory();
     try {
-      const response = await this.model.invoke([chatPrompt, ...this.conversationHistory]);
-      const content = typeof response.content === "string" ? response.content : JSON.stringify(response.content);
+      let content = "";
+      const stream = await this.model.stream([chatPrompt, ...this.conversationHistory]);
+      for await (const chunk of stream) {
+        const token = String(chunk.content);
+        content += token;
+        this.emitToken(token);
+      }
       this.conversationHistory.push(new AIMessage(content));
       this.trimConversationHistory();
       return content;
@@ -43219,8 +43301,13 @@ You can answer questions about what's on the page, explain content, summarize in
     this.conversationHistory.push(new HumanMessage(safeUserMessage));
     this.trimConversationHistory();
     try {
-      const response = await this.model.invoke([readPrompt, ...this.conversationHistory]);
-      const content = typeof response.content === "string" ? response.content : JSON.stringify(response.content);
+      let content = "";
+      const stream = await this.model.stream([readPrompt, ...this.conversationHistory]);
+      for await (const chunk of stream) {
+        const token = String(chunk.content);
+        content += token;
+        this.emitToken(token);
+      }
       this.conversationHistory.push(new AIMessage(content));
       this.trimConversationHistory();
       return content;
@@ -43348,8 +43435,17 @@ ${plan.map((p, idx) => `${idx + 1}. ${p}`).join("\n")} `, { phase: "planning", p
               });
             }
           }, 5e3);
+          const streamPromise = (async () => {
+            let fullContent = "";
+            const stream = await this.model.stream(messages);
+            for await (const chunk of stream) {
+              const token = String(chunk.content);
+              fullContent += token;
+            }
+            return new AIMessage(fullContent);
+          })();
           response = await Promise.race([
-            this.model.invoke(messages),
+            streamPromise,
             timeoutPromise
           ]);
         } catch (timeoutErr) {
@@ -46629,6 +46725,9 @@ app.whenReady().then(() => {
         }).catch(() => void 0);
       } catch {
       }
+    });
+    agentService.setTokenHandler((token) => {
+      event.sender.send("agent:token", token);
     });
     let browserContext = "Current browser state: No active tab";
     try {
