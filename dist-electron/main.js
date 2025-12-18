@@ -43320,7 +43320,7 @@ You can answer questions about what's on the page, explain content, summarize in
    * Do mode: Full agentic capabilities with tools
    */
   async doMode(userMessage, browserContext) {
-    var _a3, _b, _c;
+    var _a3, _b, _c, _d;
     const tools = toolRegistry.toLangChainTools();
     let usedBrowserTools = false;
     let parseFailures = 0;
@@ -43636,6 +43636,16 @@ ${plan.map((p, idx) => `${idx + 1}. ${p}`).join("\n")} `, { phase: "planning", p
               );
               return fastResponse;
             }
+            if (toolName === "browser_navigate" && !resultStr.toLowerCase().includes("error")) {
+              const lowerMsg = userMessage.toLowerCase();
+              const isSimpleNavigation = (lowerMsg.startsWith("open ") || lowerMsg.startsWith("go to ") || lowerMsg.startsWith("navigate to ") || lowerMsg.startsWith("visit ")) && !lowerMsg.includes(" and ") && !lowerMsg.includes(" then ") && !lowerMsg.includes("tell me") && !lowerMsg.includes("find ") && !lowerMsg.includes("search ") && !lowerMsg.includes("click ") && !lowerMsg.includes("what is") && !lowerMsg.includes("show me");
+              if (isSimpleNavigation) {
+                const url = ((_c = action.args) == null ? void 0 : _c.url) || "the page";
+                const fastResponse = `Navigated to ${url}`;
+                this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: "final_response", args: { message: fastResponse } })));
+                return fastResponse;
+              }
+            }
             if (toolName === "browser_scroll" && !resultStr.toLowerCase().includes("error")) {
               const fastResponse = `Scrolled the page.`;
               this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: "final_response", args: { message: fastResponse } })));
@@ -43657,7 +43667,7 @@ ${plan.map((p, idx) => `${idx + 1}. ${p}`).join("\n")} `, { phase: "planning", p
               return fastResponse;
             }
             if (toolName === "browser_press_key" && !resultStr.toLowerCase().includes("error")) {
-              const key = ((_c = action.args) == null ? void 0 : _c.key) || "the key";
+              const key = ((_d = action.args) == null ? void 0 : _d.key) || "the key";
               const fastResponse = `Pressed ${key}.`;
               this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: "final_response", args: { message: fastResponse } })));
               return fastResponse;

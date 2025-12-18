@@ -932,10 +932,30 @@ if (tool) {
       return fastResponse;
     }
 
-    // NOTE: Removed fast path for browser_navigate.
-    // The agent needs to continue reasoning after navigation to handle
-    // information-seeking requests like "go to X and tell me Y".
-    // The model will call final_response when it's actually done.
+    // Smart fast path for browser_navigate:
+    // - If the user request is simple navigation (just "open X", "go to X", "navigate to X")
+    //   without follow-up actions like "and tell me", "and find", "and click", return immediately.
+    // - Otherwise, let the model continue reasoning for compound requests.
+    if (toolName === 'browser_navigate' && !resultStr.toLowerCase().includes('error')) {
+      const lowerMsg = userMessage.toLowerCase();
+      const isSimpleNavigation = (
+        (lowerMsg.startsWith('open ') || lowerMsg.startsWith('go to ') || lowerMsg.startsWith('navigate to ') || lowerMsg.startsWith('visit ')) &&
+        !lowerMsg.includes(' and ') &&
+        !lowerMsg.includes(' then ') &&
+        !lowerMsg.includes('tell me') &&
+        !lowerMsg.includes('find ') &&
+        !lowerMsg.includes('search ') &&
+        !lowerMsg.includes('click ') &&
+        !lowerMsg.includes('what is') &&
+        !lowerMsg.includes('show me')
+      );
+      if (isSimpleNavigation) {
+        const url = (action as any).args?.url || 'the page';
+        const fastResponse = `Navigated to ${url}`;
+        this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: 'final_response', args: { message: fastResponse } })));
+        return fastResponse;
+      }
+    }
 
     if (toolName === 'browser_scroll' && !resultStr.toLowerCase().includes('error')) {
       const fastResponse = `Scrolled the page.`;
