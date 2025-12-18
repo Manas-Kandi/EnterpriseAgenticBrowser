@@ -560,16 +560,22 @@ export function AgentPanel() {
                 const stepCount = meaningfulSteps.length;
 
                 return (
-                  <div key={convIdx} className="space-y-3">
-                    {/* User message */}
-                    <div className="group relative">
-                      <div className="text-sm text-foreground/90 whitespace-pre-wrap leading-relaxed pr-6">
-                        {conv.user.content}
+                  <div key={convIdx}>
+                    {/* Separator between conversations */}
+                    {convIdx > 0 && (
+                      <div className="border-t border-border/20 my-6" />
+                    )}
+                    
+                    <div className="space-y-3">
+                      {/* User message - prominent, full white */}
+                      <div className="group relative">
+                        <div className="text-sm font-semibold text-foreground whitespace-pre-wrap leading-relaxed pr-6">
+                          {conv.user.content}
+                        </div>
+                        <button className="absolute right-0 top-0 opacity-0 group-hover:opacity-100 p-1 hover:bg-secondary rounded transition-opacity">
+                          <RotateCcw size={12} className="text-muted-foreground" />
+                        </button>
                       </div>
-                      <button className="absolute right-0 top-0 opacity-0 group-hover:opacity-100 p-1 hover:bg-secondary rounded transition-opacity">
-                        <RotateCcw size={12} className="text-muted-foreground" />
-                      </button>
-                    </div>
 
                     {/* Collapsible steps summary */}
                     {stepCount > 0 && (
@@ -678,6 +684,7 @@ export function AgentPanel() {
                         </ReactMarkdown>
                       </div>
                     )}
+                    </div>
                   </div>
                 );
               });
