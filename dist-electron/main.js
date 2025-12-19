@@ -44840,7 +44840,7 @@ Your goal is to help users with their tasks by using tools effectively.
    {
      "thought": "I have completed the task.",
      "tool": "final_response",
-     "args": { "content": "Your final message to the user." }
+     "args": { "message": "Your final message to the user." }
    }
 
 3. API-FIRST STRATEGY (MUCH FASTER):
@@ -45094,7 +45094,7 @@ ${plan.map((p, idx) => `${idx + 1}. ${p}`).join("\n")} `, { phase: "planning", p
         }
         if (action.tool === "final_response") {
           const finalArgs = action.args;
-          const finalMessage = typeof (finalArgs == null ? void 0 : finalArgs.message) === "string" ? finalArgs.message : "";
+          const finalMessage = typeof (finalArgs == null ? void 0 : finalArgs.message) === "string" ? finalArgs.message : typeof (finalArgs == null ? void 0 : finalArgs.content) === "string" ? finalArgs.content : "";
           if (!finalMessage) {
             messages.push(response);
             messages.push(

@@ -682,7 +682,7 @@ Your goal is to help users with their tasks by using tools effectively.
    {
      "thought": "I have completed the task.",
      "tool": "final_response",
-     "args": { "content": "Your final message to the user." }
+     "args": { "message": "Your final message to the user." }
    }
 
 3. API-FIRST STRATEGY (MUCH FASTER):
@@ -993,8 +993,13 @@ if ((action as any).tool !== 'final_response' && !action.thought) {
 
 // Handle Final Response
 if ((action as any).tool === "final_response") {
-  const finalArgs = (action as any).args as { message?: unknown } | undefined;
-  const finalMessage = typeof finalArgs?.message === 'string' ? finalArgs.message : '';
+  const finalArgs = (action as any).args as { message?: unknown; content?: unknown } | undefined;
+  const finalMessage =
+    typeof finalArgs?.message === 'string'
+      ? finalArgs.message
+      : typeof finalArgs?.content === 'string'
+        ? finalArgs.content
+        : '';
   if (!finalMessage) {
     messages.push(response);
     messages.push(
