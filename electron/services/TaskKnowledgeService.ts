@@ -1,5 +1,4 @@
 import fs from 'node:fs';
-import fsPromises from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
 import { v4 as uuidv4 } from 'uuid';
@@ -288,7 +287,7 @@ export class TaskKnowledgeService {
 
   private async save() {
     try {
-      await fs.writeFile(this.storageFile, JSON.stringify(this.skills, null, 2));
+      await fs.promises.writeFile(this.storageFile, JSON.stringify(this.skills, null, 2));
     } catch (err) {
       console.error('Failed to save skill library:', err);
     }

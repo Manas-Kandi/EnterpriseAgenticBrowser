@@ -922,9 +922,17 @@ ${tools.map((t: any) => `- ${t.name}: ${t.description}`).join('\n')}
           // ignore telemetry failures
         }
 
-        const content = response.content as string;
+        const rawContent = response.content as string;
+        
+        // CLEANUP: Remove <think>...</think> tags which confuse the parser
+        // and sometimes leak into the response from reasoning models
+        const content = rawContent.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
 
         console.log(`[Agent Turn ${ i }] Raw Response: `, this.redactSecrets(content));
+        // Log original if we modified it
+        if (content.length !== rawContent.length) {
+          console.log(`[Agent Turn ${ i }] (Original with <think> tags redacted)`);
+        }
 
         const action = this.parseToolCall(content);
 

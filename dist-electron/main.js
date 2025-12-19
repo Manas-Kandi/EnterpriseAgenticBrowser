@@ -43156,7 +43156,7 @@ class TaskKnowledgeService {
   }
   async save() {
     try {
-      await fs$2.writeFile(this.storageFile, JSON.stringify(this.skills, null, 2));
+      await fs$2.promises.writeFile(this.storageFile, JSON.stringify(this.skills, null, 2));
     } catch (err) {
       console.error("Failed to save skill library:", err);
     }
@@ -45045,8 +45045,12 @@ ${plan.map((p, idx) => `${idx + 1}. ${p}`).join("\n")} `, { phase: "planning", p
           });
         } catch {
         }
-        const content = response.content;
+        const rawContent = response.content;
+        const content = rawContent.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
         console.log(`[Agent Turn ${i}] Raw Response: `, this.redactSecrets(content));
+        if (content.length !== rawContent.length) {
+          console.log(`[Agent Turn ${i}] (Original with <think> tags redacted)`);
+        }
         const action = this.parseToolCall(content);
         if (action == null ? void 0 : action.thought) {
           this.emitStep("thought", action.thought);
