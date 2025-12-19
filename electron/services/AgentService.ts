@@ -700,7 +700,14 @@ Your goal is to help users with their tasks by using tools effectively.
    - If selectors match > 1, use "index", "matchText", or "withinSelector".
    - "browser_click_text" is safer than CSS selectors when the text is unique.
 
-5. NO HALLUCINATION: Never claim you did something (e.g., "I navigated to X") unless the tool execution actually succeeded.
+5. MOCK SAAS (localhost:3000) SELECTORS:
+   - AeroCore Admin: Create user button = [data-testid="admin-create-user-btn"]
+   - Admin form fields: [data-testid="admin-input-name"], [data-testid="admin-input-email"], [data-testid="admin-select-role"]
+   - Admin submit: [data-testid="admin-submit-user"]
+   - Jira: Create = [data-testid="jira-create-button"], Summary = [data-testid="jira-summary-input"], Submit = [data-testid="jira-submit-create"]
+   - Dispatch: Create incident = [data-testid="dispatch-create-btn"], Broadcast = [data-testid="dispatch-broadcast-btn"]
+
+6. NO HALLUCINATION: Never claim you did something (e.g., "I navigated to X") unless the tool execution actually succeeded.
 
 Available tools:
 ${tools.map((t: any) => `- ${t.name}: ${t.description}`).join('\n')}
@@ -771,10 +778,10 @@ ${tools.map((t: any) => `- ${t.name}: ${t.description}`).join('\n')}
 
       // Get current model config for timeout
       const currentConfig = AVAILABLE_MODELS.find(m => m.id === this.currentModelId);
-      // 120s for thinking models AND large models like Qwen 235B
-      // 60s for fast models
+      // 90s for thinking models AND large models like Qwen 235B
+      // 45s for fast models (reduced to fail faster when API is slow)
       const isSlowModel = currentConfig?.supportsThinking || currentConfig?.id === 'qwen3-235b';
-      const timeoutMs = isSlowModel ? 120000 : 60000;
+      const timeoutMs = isSlowModel ? 90000 : 45000;
 
       // 1. Planning Step: Decompose complex goals
       const plan = await this.planCurrentGoal(userMessage, context);

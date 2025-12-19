@@ -1,4 +1,5 @@
-import fs from 'node:fs/promises';
+import fs from 'node:fs';
+import fsPromises from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
 import { v4 as uuidv4 } from 'uuid';
@@ -61,32 +62,36 @@ export class TaskKnowledgeService {
     this.registerTools();
   }
 
-  private async load() {
+  private load() {
     try {
-      const data = await fs.readFile(this.storageFile, 'utf8');
+      const data = fs.readFileSync(this.storageFile, 'utf8');
       this.skills = JSON.parse(data);
     } catch {
       // Try legacy file
       try {
         const legacyPath = path.resolve(process.cwd(), 'task_knowledge.json');
-        const legacyData = await fs.readFile(legacyPath, 'utf8');
-        const plans = JSON.parse(legacyData);
-        // Migrate legacy plans
-        this.skills = plans.map((p: any) => {
-          const createdAt = Date.now();
-          return {
-          id: uuidv4(),
-          name: p.goal.toLowerCase().replace(/\s+/g, '_').slice(0, 50),
-          description: p.goal,
-          domain: 'unknown',
-          steps: p.steps,
-          currentVersion: 1,
-          stats: { successes: 0, failures: 0, lastUsed: createdAt },
-          versions: [{ version: 1, steps: p.steps, createdAt }],
-          tags: p.trigger_keywords || [],
-          } as Skill;
-        });
-        await this.save();
+        if (fs.existsSync(legacyPath)) {
+          const legacyData = fs.readFileSync(legacyPath, 'utf8');
+          const plans = JSON.parse(legacyData);
+          // Migrate legacy plans
+          this.skills = plans.map((p: any) => {
+            const createdAt = Date.now();
+            return {
+              id: uuidv4(),
+              name: p.goal.toLowerCase().replace(/\s+/g, '_').slice(0, 50),
+              description: p.goal,
+              domain: 'unknown',
+              steps: p.steps,
+              currentVersion: 1,
+              stats: { successes: 0, failures: 0, lastUsed: createdAt },
+              versions: [{ version: 1, steps: p.steps, createdAt }],
+              tags: p.trigger_keywords || [],
+            } as Skill;
+          });
+          this.save();
+        } else {
+          this.skills = [];
+        }
       } catch {
         this.skills = [];
       }
@@ -109,21 +114,25 @@ export class TaskKnowledgeService {
 
       if (!Array.isArray((s as any).feedback)) (s as any).feedback = [];
       if (!Array.isArray((s as any).embedding) || (s as any).embedding.length === 0) {
-        (s as any).embedding = this.computeEmbedding(this.buildSkillText(s));
+        // If no API key, compute synchronously
+        if (!process.env.OPENAI_API_KEY) {
+          (s as any).embedding = this.computeEmbedding(this.buildSkillText(s));
+        } else {
+          // Async update in background
+          this.computeApiEmbedding(this.buildSkillText(s)).then(emb => {
+            (s as any).embedding = emb;
+            this.save();
+          });
+        }
       }
-    }
-
-    try {
-      await this.save();
-    } catch {
-      // ignore
     }
   }
 
   private normalizeText(text: string): string {
     return String(text ?? '')
       .toLowerCase()
-      .replace(/[^a-z0-9_\-\s/.:]+/g, ' ')
+      .replace(/_/g, ' ') // Split underscores
+      .replace(/[^a-z0-9\-\s/.:]+/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
   }
@@ -212,6 +221,7 @@ export class TaskKnowledgeService {
 
     // Compute query embedding
     const queryEmbedding = await this.computeApiEmbedding(query);
+    const queryTokens = this.tokenize(query);
 
     let bestMatch: { skill: Skill; similarity: number } | null = null;
 
@@ -222,7 +232,22 @@ export class TaskKnowledgeService {
         continue;
       }
 
-      const similarity = this.cosineSimilarity(skill.embedding, queryEmbedding);
+      let similarity = this.cosineSimilarity(skill.embedding, queryEmbedding);
+      
+      // Boost similarity if we have strong keyword overlap (helps with local embeddings)
+      if (queryTokens.length > 0) {
+        const skillText = this.normalizeText(skill.name + ' ' + skill.description + ' ' + (skill.tags || []).join(' '));
+        const skillTokens = new Set(skillText.split(' '));
+        const overlap = queryTokens.filter(t => skillTokens.has(t)).length;
+        const overlapRatio = overlap / queryTokens.length;
+        
+        // If > 75% of query words are in the skill, boost confidence
+        if (overlapRatio > 0.75) {
+          similarity = Math.max(similarity, 0.85); 
+        } else if (overlapRatio > 0.5) {
+          similarity = Math.max(similarity, 0.75);
+        }
+      }
       
       if (similarity >= threshold) {
         if (!bestMatch || similarity > bestMatch.similarity) {

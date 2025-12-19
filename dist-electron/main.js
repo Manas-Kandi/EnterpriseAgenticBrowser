@@ -14,6 +14,7 @@ import crypto$3 from "crypto";
 import fs$1 from "node:fs/promises";
 import { AsyncLocalStorage } from "node:async_hooks";
 import Database from "better-sqlite3";
+import fs$2 from "node:fs";
 import os$1 from "node:os";
 import * as vm from "vm";
 const byteToHex$1 = [];
@@ -42967,31 +42968,35 @@ class TaskKnowledgeService {
     this.load();
     this.registerTools();
   }
-  async load() {
+  load() {
     var _a3;
     try {
-      const data = await fs$1.readFile(this.storageFile, "utf8");
+      const data = fs$2.readFileSync(this.storageFile, "utf8");
       this.skills = JSON.parse(data);
     } catch {
       try {
         const legacyPath = path$2.resolve(process.cwd(), "task_knowledge.json");
-        const legacyData = await fs$1.readFile(legacyPath, "utf8");
-        const plans = JSON.parse(legacyData);
-        this.skills = plans.map((p) => {
-          const createdAt = Date.now();
-          return {
-            id: v4$1(),
-            name: p.goal.toLowerCase().replace(/\s+/g, "_").slice(0, 50),
-            description: p.goal,
-            domain: "unknown",
-            steps: p.steps,
-            currentVersion: 1,
-            stats: { successes: 0, failures: 0, lastUsed: createdAt },
-            versions: [{ version: 1, steps: p.steps, createdAt }],
-            tags: p.trigger_keywords || []
-          };
-        });
-        await this.save();
+        if (fs$2.existsSync(legacyPath)) {
+          const legacyData = fs$2.readFileSync(legacyPath, "utf8");
+          const plans = JSON.parse(legacyData);
+          this.skills = plans.map((p) => {
+            const createdAt = Date.now();
+            return {
+              id: v4$1(),
+              name: p.goal.toLowerCase().replace(/\s+/g, "_").slice(0, 50),
+              description: p.goal,
+              domain: "unknown",
+              steps: p.steps,
+              currentVersion: 1,
+              stats: { successes: 0, failures: 0, lastUsed: createdAt },
+              versions: [{ version: 1, steps: p.steps, createdAt }],
+              tags: p.trigger_keywords || []
+            };
+          });
+          this.save();
+        } else {
+          this.skills = [];
+        }
       } catch {
         this.skills = [];
       }
@@ -43012,16 +43017,19 @@ class TaskKnowledgeService {
       if (!Array.isArray(s.tags)) s.tags = [];
       if (!Array.isArray(s.feedback)) s.feedback = [];
       if (!Array.isArray(s.embedding) || s.embedding.length === 0) {
-        s.embedding = this.computeEmbedding(this.buildSkillText(s));
+        if (!process.env.OPENAI_API_KEY) {
+          s.embedding = this.computeEmbedding(this.buildSkillText(s));
+        } else {
+          this.computeApiEmbedding(this.buildSkillText(s)).then((emb) => {
+            s.embedding = emb;
+            this.save();
+          });
+        }
       }
-    }
-    try {
-      await this.save();
-    } catch {
     }
   }
   normalizeText(text) {
-    return String(text ?? "").toLowerCase().replace(/[^a-z0-9_\-\s/.:]+/g, " ").replace(/\s+/g, " ").trim();
+    return String(text ?? "").toLowerCase().replace(/_/g, " ").replace(/[^a-z0-9\-\s/.:]+/g, " ").replace(/\s+/g, " ").trim();
   }
   tokenize(text) {
     const normalized = this.normalizeText(text);
@@ -43099,13 +43107,25 @@ class TaskKnowledgeService {
   async findNearest(query, threshold = 0.8) {
     if (this.skills.length === 0) return null;
     const queryEmbedding = await this.computeApiEmbedding(query);
+    const queryTokens = this.tokenize(query);
     let bestMatch = null;
     for (const skill of this.skills) {
       const total = skill.stats.successes + skill.stats.failures;
       if (total > 3 && skill.stats.failures > skill.stats.successes) {
         continue;
       }
-      const similarity = this.cosineSimilarity(skill.embedding, queryEmbedding);
+      let similarity = this.cosineSimilarity(skill.embedding, queryEmbedding);
+      if (queryTokens.length > 0) {
+        const skillText = this.normalizeText(skill.name + " " + skill.description + " " + (skill.tags || []).join(" "));
+        const skillTokens = new Set(skillText.split(" "));
+        const overlap = queryTokens.filter((t2) => skillTokens.has(t2)).length;
+        const overlapRatio = overlap / queryTokens.length;
+        if (overlapRatio > 0.75) {
+          similarity = Math.max(similarity, 0.85);
+        } else if (overlapRatio > 0.5) {
+          similarity = Math.max(similarity, 0.75);
+        }
+      }
       if (similarity >= threshold) {
         if (!bestMatch || similarity > bestMatch.similarity) {
           bestMatch = { skill, similarity };
@@ -43136,7 +43156,7 @@ class TaskKnowledgeService {
   }
   async save() {
     try {
-      await fs$1.writeFile(this.storageFile, JSON.stringify(this.skills, null, 2));
+      await fs$2.writeFile(this.storageFile, JSON.stringify(this.skills, null, 2));
     } catch (err) {
       console.error("Failed to save skill library:", err);
     }
@@ -44838,7 +44858,14 @@ Your goal is to help users with their tasks by using tools effectively.
    - If selectors match > 1, use "index", "matchText", or "withinSelector".
    - "browser_click_text" is safer than CSS selectors when the text is unique.
 
-5. NO HALLUCINATION: Never claim you did something (e.g., "I navigated to X") unless the tool execution actually succeeded.
+5. MOCK SAAS (localhost:3000) SELECTORS:
+   - AeroCore Admin: Create user button = [data-testid="admin-create-user-btn"]
+   - Admin form fields: [data-testid="admin-input-name"], [data-testid="admin-input-email"], [data-testid="admin-select-role"]
+   - Admin submit: [data-testid="admin-submit-user"]
+   - Jira: Create = [data-testid="jira-create-button"], Summary = [data-testid="jira-summary-input"], Submit = [data-testid="jira-submit-create"]
+   - Dispatch: Create incident = [data-testid="dispatch-create-btn"], Broadcast = [data-testid="dispatch-broadcast-btn"]
+
+6. NO HALLUCINATION: Never claim you did something (e.g., "I navigated to X") unless the tool execution actually succeeded.
 
 Available tools:
 ${tools.map((t2) => `- ${t2.name}: ${t2.description}`).join("\n")}
@@ -44893,7 +44920,7 @@ User request: ${safeUserMessage} `);
       }
       const currentConfig = AVAILABLE_MODELS.find((m) => m.id === this.currentModelId);
       const isSlowModel = (currentConfig == null ? void 0 : currentConfig.supportsThinking) || (currentConfig == null ? void 0 : currentConfig.id) === "qwen3-235b";
-      const timeoutMs = isSlowModel ? 12e4 : 6e4;
+      const timeoutMs = isSlowModel ? 9e4 : 45e3;
       const plan = await this.planCurrentGoal(userMessage, context);
       if (plan.length > 1) {
         this.emitStep("thought", `Strategic Plan: 
