@@ -691,6 +691,7 @@ Final response schema:
 <strategy>
 API-FIRST (MUCH FASTER):
 - Prefer API tools (api_web_search/api_http_get/etc.) when they can accomplish the task.
+- For GitHub repository summaries, prefer api_github_get_repo and api_github_get_readme when available.
 - Use browser tools only if no API is available or the user needs to SEE/INTERACT with the page.
 </strategy>
 
@@ -1342,10 +1343,10 @@ async * streamChat(message: string) {
     const response = await this.model.invoke([verifierPrompt]);
     const content = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
     const jsonText = this.extractJsonObject(content);
-    if(jsonText) return JSON.parse(jsonText);
-    return { success: true, reason: 'Assumed success' };
-  } catch {
-    return { success: true, reason: 'Verification failed to run' };
+    if (jsonText) return JSON.parse(jsonText);
+    return { success: false, reason: 'Verifier did not return valid JSON' };
+  } catch (e: any) {
+    return { success: false, reason: `Verifier error: ${String(e?.message ?? e)}` };
   }
 }
 }

@@ -74,6 +74,116 @@ export class WebAPIService {
       },
     };
 
+    const githubGetRepoSchema = z.object({
+      owner: z.string().describe('Repository owner/organization (e.g., "vercel")'),
+      repo: z.string().describe('Repository name (e.g., "next.js")'),
+    });
+
+    const githubGetRepoTool: AgentTool<typeof githubGetRepoSchema> = {
+      name: 'api_github_get_repo',
+      description: 'Get GitHub repository metadata via API (description, stars, forks, topics, language, homepage, updated time). Use this for summarizing a specific repo.',
+      schema: githubGetRepoSchema,
+      execute: async ({ owner, repo }) => {
+        try {
+          const url = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
+          const response = await fetch(url, {
+            headers: {
+              'Accept': 'application/vnd.github.v3+json',
+              'User-Agent': 'EnterpriseBrowser/1.0',
+            },
+          });
+
+          if (!response.ok) {
+            if (response.status === 403) {
+              return JSON.stringify({ error: 'Rate limited. Try browser_navigate to https://github.com/' + owner + '/' + repo + ' instead.' });
+            }
+            return JSON.stringify({ error: `GitHub API error: ${response.status} ${response.statusText}` });
+          }
+
+          const data = await response.json();
+          const result = {
+            full_name: data.full_name,
+            url: data.html_url,
+            description: data.description || '',
+            homepage: data.homepage || '',
+            topics: Array.isArray(data.topics) ? data.topics : [],
+            language: data.language || '',
+            stars: data.stargazers_count,
+            forks: data.forks_count,
+            open_issues: data.open_issues_count,
+            archived: Boolean(data.archived),
+            updated_at: data.updated_at,
+            created_at: data.created_at,
+            license: data.license?.spdx_id || '',
+          };
+          return JSON.stringify(result, null, 2);
+        } catch (e: any) {
+          return JSON.stringify({ error: `Failed to fetch repo: ${e.message}` });
+        }
+      },
+    };
+
+    const githubGetReadmeSchema = z.object({
+      owner: z.string().describe('Repository owner/organization (e.g., "vercel")'),
+      repo: z.string().describe('Repository name (e.g., "next.js")'),
+      ref: z.string().optional().describe('Optional git ref/branch/tag (e.g., "main")'),
+      maxChars: z.number().optional().describe('Maximum characters of README to return (default: 6000)'),
+    });
+
+    const githubGetReadmeTool: AgentTool<typeof githubGetReadmeSchema> = {
+      name: 'api_github_get_readme',
+      description: 'Fetch a GitHub repository README via API and return its text (truncated). Use this to summarize what a project does without relying on browser scraping.',
+      schema: githubGetReadmeSchema,
+      execute: async ({ owner, repo, ref, maxChars = 6000 }) => {
+        try {
+          const qs = ref ? `?ref=${encodeURIComponent(ref)}` : '';
+          const url = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/readme${qs}`;
+          const response = await fetch(url, {
+            headers: {
+              'Accept': 'application/vnd.github.v3+json',
+              'User-Agent': 'EnterpriseBrowser/1.0',
+            },
+          });
+
+          if (!response.ok) {
+            if (response.status === 404) {
+              return JSON.stringify({ error: 'README not found for this repository.' });
+            }
+            if (response.status === 403) {
+              return JSON.stringify({ error: 'Rate limited. Try browser_navigate to https://github.com/' + owner + '/' + repo + ' instead.' });
+            }
+            return JSON.stringify({ error: `GitHub API error: ${response.status} ${response.statusText}` });
+          }
+
+          const data = await response.json();
+          const contentBase64 = typeof data?.content === 'string' ? data.content : '';
+          const encoding = typeof data?.encoding === 'string' ? data.encoding : '';
+
+          if (!contentBase64 || encoding !== 'base64') {
+            return JSON.stringify({ error: 'Unexpected README response format from GitHub API.' });
+          }
+
+          const text = Buffer.from(contentBase64, 'base64').toString('utf8');
+          const truncated = text.slice(0, Math.max(0, Math.min(maxChars, 20000)));
+          return JSON.stringify(
+            {
+              owner,
+              repo,
+              name: data?.name || 'README',
+              path: data?.path || '',
+              html_url: data?.html_url || '',
+              text: truncated,
+              truncated: truncated.length < text.length,
+            },
+            null,
+            2
+          );
+        } catch (e: any) {
+          return JSON.stringify({ error: `Failed to fetch README: ${e.message}` });
+        }
+      },
+    };
+
     // Hacker News API
     const hnTopStoriesSchema = z.object({
       limit: z.number().optional().describe('Number of stories to return (default: 5, max: 30)'),
@@ -359,6 +469,8 @@ export class WebAPIService {
 
     // Register all tools
     toolRegistry.register(githubSearchTool);
+    toolRegistry.register(githubGetRepoTool);
+    toolRegistry.register(githubGetReadmeTool);
     toolRegistry.register(hnTopStoriesTool);
     toolRegistry.register(wikiTodayTool);
     toolRegistry.register(httpGetTool);
