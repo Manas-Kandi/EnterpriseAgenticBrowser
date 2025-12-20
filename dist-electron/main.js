@@ -44821,55 +44821,67 @@ You can answer questions about what's on the page, explain content, summarize in
       let context = browserContext || "Current browser state: No context provided";
       context = this.redactSecrets(context);
       const safeUserMessage = this.redactSecrets(userMessage);
-      this.systemPrompt = new SystemMessage(`You are a helpful enterprise assistant integrated into a browser.
-Your goal is to help users with their tasks by using tools effectively.
+      this.systemPrompt = new SystemMessage(`<role>
+You are a helpful enterprise assistant integrated into a browser.
+Your goal is to help users complete tasks by using tools effectively and safely.
+</role>
 
-        CRITICAL RULES:
-          1. RESPONSE FORMAT: You MUST respond ONLY with a single JSON object.
-   - DO NOT include text before / after JSON.
-   - DO NOT use markdown blocks like \`\`\`json.
-   - You MUST include a "thought" field explaining your reasoning.
+<tool_calling>
+You MUST respond ONLY with a single JSON object.
+- DO NOT include any text before or after the JSON.
+- DO NOT wrap the JSON in markdown fences.
 
-2. JSON STRUCTURE:
-   {
-     "thought": "Your reasoning here.",
-     "tool": "tool_name",
-     "args": { "arg1": "value1" }
-   }
-   FOR FINAL RESPONSE:
-   {
-     "thought": "I have completed the task.",
-     "tool": "final_response",
-     "args": { "message": "Your final message to the user." }
-   }
+JSON schema (ALWAYS follow exactly):
+{
+  "thought": "brief reasoning for the next step",
+  "tool": "tool_name",
+  "args": { ... }
+}
 
-3. API-FIRST STRATEGY (MUCH FASTER):
-   - General Search: use "api_web_search"
-   - Hacker News: use "api_hackernews_top"
-   - GitHub: use "api_github_search"
-   - Wikipedia: use "api_wikipedia_featured"
-   - Weather: use "lookup_city_coordinates" then "api_weather"
-   - Crypto: use "api_crypto_price"
-   - Generic API: use "api_http_get"
-   - ONLY use browser tools (browser_navigate, etc.) if no API is available or the user needs to SEE the page.
+Final response schema:
+{
+  "thought": "brief completion summary",
+  "tool": "final_response",
+  "args": { "message": "your message to the user" }
+}
+</tool_calling>
 
-4. BROWSER AUTOMATION:
-   - Always "browser_observe" before clicking/typing to get fresh selectors.
-   - If selectors match > 1, use "index", "matchText", or "withinSelector".
-   - "browser_click_text" is safer than CSS selectors when the text is unique.
+<strategy>
+API-FIRST (MUCH FASTER):
+- Prefer API tools (api_web_search/api_http_get/etc.) when they can accomplish the task.
+- Use browser tools only if no API is available or the user needs to SEE/INTERACT with the page.
+</strategy>
 
-5. MOCK SAAS (localhost:3000) SELECTORS:
-   - AeroCore Admin: Create user button = [data-testid="admin-create-user-btn"]
-   - Admin form fields: [data-testid="admin-input-name"], [data-testid="admin-input-email"], [data-testid="admin-select-role"]
-   - Admin submit: [data-testid="admin-submit-user"]
-   - Jira: Create = [data-testid="jira-create-button"], Summary = [data-testid="jira-summary-input"], Submit = [data-testid="jira-submit-create"]
-   - Dispatch: Create incident = [data-testid="dispatch-create-btn"], Broadcast = [data-testid="dispatch-broadcast-btn"]
+<browser_primitives>
+- Always call browser_observe before clicking/typing/selecting to get fresh selectors.
+- If a selector matches multiple elements, disambiguate using index, matchText, or withinSelector.
+- Prefer browser_click_text when the visible text is unique.
+- After any meaningful state change (navigation, submit, save), re-observe or wait for a confirming signal (text/selector).
+</browser_primitives>
 
-6. NO HALLUCINATION: Never claim you did something (e.g., "I navigated to X") unless the tool execution actually succeeded.
+<verification>
+You must not claim an action happened unless a tool execution succeeded.
+Verification means one of:
+- The latest browser_observe output shows the expected content/state.
+- browser_wait_for_text succeeds for a confirming piece of UI text.
+- A tool result explicitly confirms success.
 
+If verification is missing, take the next step to verify (observe or wait) instead of guessing.
+</verification>
+
+<mock_saas_selectors>
+When on localhost:3000, prefer stable data-testid selectors:
+- AeroCore Admin: Create user button = [data-testid="admin-create-user-btn"]
+- Admin form fields: [data-testid="admin-input-name"], [data-testid="admin-input-email"], [data-testid="admin-select-role"]
+- Admin submit: [data-testid="admin-submit-user"]
+- Jira: Create = [data-testid="jira-create-button"], Summary = [data-testid="jira-summary-input"], Submit = [data-testid="jira-submit-create"]
+- Dispatch: Create incident = [data-testid="dispatch-create-btn"], Broadcast = [data-testid="dispatch-broadcast-btn"]
+</mock_saas_selectors>
+
+<tools>
 Available tools:
 ${tools.map((t2) => `- ${t2.name}: ${t2.description}`).join("\n")}
-`);
+</tools>`);
       const contextualUserMessage = new HumanMessage(`[${context}]
 
 User request: ${safeUserMessage} `);
@@ -45065,6 +45077,12 @@ ${plan.map((p, idx) => `${idx + 1}. ${p}`).join("\n")} `, { phase: "planning", p
           }
         }
         if (!action || typeof action.tool !== "string" || !action.args || typeof action.args !== "object") {
+          if (!action && !content.includes("{") && content.trim().length > 0) {
+            const finalMessage = content.trim();
+            const finalJson = JSON.stringify({ thought: "Responding directly.", tool: "final_response", args: { message: finalMessage } });
+            this.conversationHistory.push(new AIMessage(finalJson));
+            return finalMessage;
+          }
           parseFailures++;
           let specificError = "Invalid JSON format.";
           if (!content.includes("{")) specificError = "No JSON object found in response.";
@@ -45074,9 +45092,9 @@ ${plan.map((p, idx) => `${idx + 1}. ${p}`).join("\n")} `, { phase: "planning", p
           messages.push(new AIMessage(this.redactSecrets(String((response == null ? void 0 : response.content) ?? ""))));
           messages.push(
             new SystemMessage(
-              `Error: ${specificError} Output ONLY valid JSON. 
-              Format: {"thought":"your reasoning","tool":"tool_name","args":{...}}
-              To finish: {"thought":"summary","tool":"final_response","args":{"message":"your response"}}`
+              `Error: ${specificError} Output ONLY valid JSON.
+Format: {"thought":"brief reasoning","tool":"tool_name","args":{...}}
+To finish: {"thought":"brief completion summary","tool":"final_response","args":{"message":"your response"}}`
             )
           );
           if (lastVerified && parseFailures >= 2) {
