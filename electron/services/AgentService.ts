@@ -1034,7 +1034,10 @@ if ((action as any).tool === "final_response") {
   if (usedBrowserTools) {
     const lastMessages = messages.slice(-8);
     const lastObs = lastMessages.filter(m => m._getType() === 'system' && m.content.toString().includes('Output:')).pop()?.content.toString() || '';
-    const isTerminalDenial = lastObs.includes('User denied execution') || lastObs.includes('Operation denied by policy');
+    const isTerminalDenial =
+      lastObs.includes('User denied execution') ||
+      lastObs.includes('Approval timed out') ||
+      lastObs.includes('Operation denied by policy');
 
     const lastContent = lastMessages.map((m) => (m as any).content ?? '').join('\n');
     const claimedSuccess =
@@ -1059,7 +1062,10 @@ if ((action as any).tool === "final_response") {
     const lastObs = messages.filter(m => m._getType() === 'system' && m.content.toString().includes('Output:')).pop()?.content.toString() || 'No observation';
 
     // Skip verification retry if the failure was a user denial or policy block
-    const isTerminalDenial = lastObs.includes('User denied execution') || lastObs.includes('Operation denied by policy');
+    const isTerminalDenial =
+      lastObs.includes('User denied execution') ||
+      lastObs.includes('Approval timed out') ||
+      lastObs.includes('Operation denied by policy');
 
     const verification = await this.verifyTaskSuccess(userMessage, lastObs);
     if (!verification.success && !isTerminalDenial) {
@@ -1119,6 +1125,22 @@ if (tool) {
     const resultStr = String(result);
     const toolName = (action as any).tool;
 
+    const lowerMsg = userMessage.toLowerCase();
+    const isOneShotActionRequest =
+      !lowerMsg.includes(' and ') &&
+      !lowerMsg.includes(' then ') &&
+      !lowerMsg.includes('tell me') &&
+      !lowerMsg.includes('explain') &&
+      !lowerMsg.includes('summarize') &&
+      !lowerMsg.includes('analyze') &&
+      !lowerMsg.includes('find ') &&
+      !lowerMsg.includes('search ') &&
+      !lowerMsg.includes('open ') &&
+      !lowerMsg.includes('click ') &&
+      !lowerMsg.includes('show me') &&
+      !lowerMsg.includes('what is') &&
+      !lowerMsg.includes('look for');
+
     if (toolName === 'browser_execute_plan' && resultStr.startsWith('Plan completed successfully.')) {
       const fastResponse = `Completed the requested steps and verified the outcome.`;
       this.conversationHistory.push(
@@ -1134,7 +1156,6 @@ if (tool) {
     //   without follow-up actions like "and tell me", "and find", "and click", return immediately.
     // - Otherwise, let the model continue reasoning for compound requests.
     if (toolName === 'browser_navigate' && !resultStr.toLowerCase().includes('error')) {
-      const lowerMsg = userMessage.toLowerCase();
       const isSimpleNavigation = (
         (lowerMsg.startsWith('open ') || lowerMsg.startsWith('go to ') || lowerMsg.startsWith('navigate to ') || lowerMsg.startsWith('visit ')) &&
         !lowerMsg.includes(' and ') &&
@@ -1154,38 +1175,38 @@ if (tool) {
       }
     }
 
-    if (toolName === 'browser_scroll' && !resultStr.toLowerCase().includes('error')) {
+    if (toolName === 'browser_scroll' && !resultStr.toLowerCase().includes('error') && isOneShotActionRequest) {
       const fastResponse = `Scrolled the page.`;
       this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: 'final_response', args: { message: fastResponse } })));
       return fastResponse;
     }
 
-    if (toolName === 'browser_go_back' && !resultStr.toLowerCase().includes('error')) {
+    if (toolName === 'browser_go_back' && !resultStr.toLowerCase().includes('error') && isOneShotActionRequest) {
       const fastResponse = `Went back to the previous page.`;
       this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: 'final_response', args: { message: fastResponse } })));
       return fastResponse;
     }
 
-    if (toolName === 'browser_go_forward' && !resultStr.toLowerCase().includes('error')) {
+    if (toolName === 'browser_go_forward' && !resultStr.toLowerCase().includes('error') && isOneShotActionRequest) {
       const fastResponse = `Went forward to the next page.`;
       this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: 'final_response', args: { message: fastResponse } })));
       return fastResponse;
     }
 
-    if (toolName === 'browser_reload' && !resultStr.toLowerCase().includes('error')) {
+    if (toolName === 'browser_reload' && !resultStr.toLowerCase().includes('error') && isOneShotActionRequest) {
       const fastResponse = `Reloaded the page.`;
       this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: 'final_response', args: { message: fastResponse } })));
       return fastResponse;
     }
 
-    if (toolName === 'browser_press_key' && !resultStr.toLowerCase().includes('error')) {
+    if (toolName === 'browser_press_key' && !resultStr.toLowerCase().includes('error') && isOneShotActionRequest) {
       const key = (action as any).args?.key || 'the key';
       const fastResponse = `Pressed ${key}.`;
       this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: 'final_response', args: { message: fastResponse } })));
       return fastResponse;
     }
 
-    if (toolName === 'browser_clear' && !resultStr.toLowerCase().includes('error')) {
+    if (toolName === 'browser_clear' && !resultStr.toLowerCase().includes('error') && isOneShotActionRequest) {
       const fastResponse = `Cleared the input field.`;
       this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: 'final_response', args: { message: fastResponse } })));
       return fastResponse;

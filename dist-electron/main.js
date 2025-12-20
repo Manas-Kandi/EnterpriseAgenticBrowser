@@ -42692,7 +42692,9 @@ class ToolRegistry {
             }).catch(() => void 0);
           } catch {
           }
-          const approved = await approvalHandler(tool2.name, arg);
+          const approvalResult = await approvalHandler(tool2.name, arg);
+          const approved = typeof approvalResult === "boolean" ? approvalResult : Boolean(approvalResult == null ? void 0 : approvalResult.approved);
+          const approvalReason = typeof approvalResult === "boolean" ? approved ? void 0 : "denied" : approvalResult == null ? void 0 : approvalResult.reason;
           try {
             await telemetryService.emit({
               eventId: v4$1(),
@@ -42700,7 +42702,7 @@ class ToolRegistry {
               ts: (/* @__PURE__ */ new Date()).toISOString(),
               type: "approval_decision",
               name: tool2.name,
-              data: { toolCallId, argsHash, approved }
+              data: { toolCallId, argsHash, approved, reason: approvalReason }
             });
           } catch {
           }
@@ -42708,13 +42710,14 @@ class ToolRegistry {
             auditService.log({
               actor: "system",
               action: "approval_decision",
-              details: { runId, toolName: tool2.name, toolCallId, argsHash, approved },
+              details: { runId, toolName: tool2.name, toolCallId, argsHash, approved, reason: approvalReason },
               status: approved ? "success" : "failure"
             }).catch(() => void 0);
           } catch {
           }
           if (!approved) {
             const durationMs = Date.now() - startedAt;
+            const isTimeout = approvalReason === "timeout";
             try {
               await telemetryService.emit({
                 eventId: v4$1(),
@@ -42722,20 +42725,20 @@ class ToolRegistry {
                 ts: (/* @__PURE__ */ new Date()).toISOString(),
                 type: "tool_call_end",
                 name: tool2.name,
-                data: { toolCallId, argsHash, durationMs, error: "User denied" }
+                data: { toolCallId, argsHash, durationMs, error: isTimeout ? "Approval timed out" : "User denied" }
               });
             } catch {
             }
             try {
               auditService.log({
-                actor: "user",
-                action: "tool_call_denied",
+                actor: isTimeout ? "system" : "user",
+                action: isTimeout ? "approval_timeout" : "tool_call_denied",
                 details: { runId, toolName: tool2.name, toolCallId },
                 status: "failure"
               }).catch(() => void 0);
             } catch {
             }
-            return "User denied execution of this tool.";
+            return isTimeout ? "Approval timed out for this tool." : "User denied execution of this tool.";
           }
         }
       }
@@ -42772,7 +42775,9 @@ class ToolRegistry {
           }).catch(() => void 0);
         } catch {
         }
-        const approved = await approvalHandler(tool2.name, arg);
+        const approvalResult = await approvalHandler(tool2.name, arg);
+        const approved = typeof approvalResult === "boolean" ? approvalResult : Boolean(approvalResult == null ? void 0 : approvalResult.approved);
+        const approvalReason = typeof approvalResult === "boolean" ? approved ? void 0 : "denied" : approvalResult == null ? void 0 : approvalResult.reason;
         try {
           await telemetryService.emit({
             eventId: v4$1(),
@@ -42780,7 +42785,7 @@ class ToolRegistry {
             ts: (/* @__PURE__ */ new Date()).toISOString(),
             type: "approval_decision",
             name: tool2.name,
-            data: { toolCallId, argsHash, approved }
+            data: { toolCallId, argsHash, approved, reason: approvalReason }
           });
         } catch {
         }
@@ -42788,13 +42793,14 @@ class ToolRegistry {
           auditService.log({
             actor: "system",
             action: "approval_decision",
-            details: { runId, toolName: tool2.name, toolCallId, argsHash, approved },
+            details: { runId, toolName: tool2.name, toolCallId, argsHash, approved, reason: approvalReason },
             status: approved ? "success" : "failure"
           }).catch(() => void 0);
         } catch {
         }
         if (!approved) {
           const durationMs = Date.now() - startedAt;
+          const isTimeout = approvalReason === "timeout";
           try {
             await telemetryService.emit({
               eventId: v4$1(),
@@ -42802,20 +42808,20 @@ class ToolRegistry {
               ts: (/* @__PURE__ */ new Date()).toISOString(),
               type: "tool_call_end",
               name: tool2.name,
-              data: { toolCallId, argsHash, durationMs, error: "User denied" }
+              data: { toolCallId, argsHash, durationMs, error: isTimeout ? "Approval timed out" : "User denied" }
             });
           } catch {
           }
           try {
             auditService.log({
-              actor: "user",
-              action: "tool_call_denied",
+              actor: isTimeout ? "system" : "user",
+              action: isTimeout ? "approval_timeout" : "tool_call_denied",
               details: { runId, toolName: tool2.name, toolCallId },
               status: "failure"
             }).catch(() => void 0);
           } catch {
           }
-          return "User denied execution of this tool.";
+          return isTimeout ? "Approval timed out for this tool." : "User denied execution of this tool.";
         }
       } else {
         try {
@@ -42838,7 +42844,9 @@ class ToolRegistry {
           }).catch(() => void 0);
         } catch {
         }
-        const approved = await approvalHandler(tool2.name, arg);
+        const approvalResult = await approvalHandler(tool2.name, arg);
+        const approved = typeof approvalResult === "boolean" ? approvalResult : Boolean(approvalResult == null ? void 0 : approvalResult.approved);
+        const approvalReason = typeof approvalResult === "boolean" ? approved ? void 0 : "denied" : approvalResult == null ? void 0 : approvalResult.reason;
         try {
           await telemetryService.emit({
             eventId: v4$1(),
@@ -42846,7 +42854,7 @@ class ToolRegistry {
             ts: (/* @__PURE__ */ new Date()).toISOString(),
             type: "approval_decision",
             name: tool2.name,
-            data: { toolCallId, argsHash, approved }
+            data: { toolCallId, argsHash, approved, reason: approvalReason }
           });
         } catch {
         }
@@ -42854,13 +42862,14 @@ class ToolRegistry {
           auditService.log({
             actor: "system",
             action: "approval_decision",
-            details: { runId, toolName: tool2.name, toolCallId, argsHash, approved },
+            details: { runId, toolName: tool2.name, toolCallId, argsHash, approved, reason: approvalReason },
             status: approved ? "success" : "failure"
           }).catch(() => void 0);
         } catch {
         }
         if (!approved) {
           const durationMs = Date.now() - startedAt;
+          const isTimeout = approvalReason === "timeout";
           try {
             await telemetryService.emit({
               eventId: v4$1(),
@@ -42868,20 +42877,20 @@ class ToolRegistry {
               ts: (/* @__PURE__ */ new Date()).toISOString(),
               type: "tool_call_end",
               name: tool2.name,
-              data: { toolCallId, argsHash, durationMs, error: "User denied" }
+              data: { toolCallId, argsHash, durationMs, error: isTimeout ? "Approval timed out" : "User denied" }
             });
           } catch {
           }
           try {
             auditService.log({
-              actor: "user",
-              action: "tool_call_denied",
+              actor: isTimeout ? "system" : "user",
+              action: isTimeout ? "approval_timeout" : "tool_call_denied",
               details: { runId, toolName: tool2.name, toolCallId },
               status: "failure"
             }).catch(() => void 0);
           } catch {
           }
-          return "User denied execution of this tool.";
+          return isTimeout ? "Approval timed out for this tool." : "User denied execution of this tool.";
         }
       }
     }
@@ -45125,7 +45134,7 @@ To finish: {"thought":"brief completion summary","tool":"final_response","args":
           if (usedBrowserTools) {
             const lastMessages = messages.slice(-8);
             const lastObs = ((_a3 = lastMessages.filter((m) => m._getType() === "system" && m.content.toString().includes("Output:")).pop()) == null ? void 0 : _a3.content.toString()) || "";
-            const isTerminalDenial = lastObs.includes("User denied execution") || lastObs.includes("Operation denied by policy");
+            const isTerminalDenial = lastObs.includes("User denied execution") || lastObs.includes("Approval timed out") || lastObs.includes("Operation denied by policy");
             const lastContent = lastMessages.map((m) => m.content ?? "").join("\n");
             const claimedSuccess = /\b(created|created a|successfully|done|completed)\b/i.test(finalMessage);
             const verificationFound = /\bFound text:\b|\b\"found\":\s*[1-9]\d*\b/i.test(lastContent) || /\bSaved plan for\b/i.test(lastContent);
@@ -45141,7 +45150,7 @@ To finish: {"thought":"brief completion summary","tool":"final_response","args":
           }
           if (usedBrowserTools) {
             const lastObs = ((_b = messages.filter((m) => m._getType() === "system" && m.content.toString().includes("Output:")).pop()) == null ? void 0 : _b.content.toString()) || "No observation";
-            const isTerminalDenial = lastObs.includes("User denied execution") || lastObs.includes("Operation denied by policy");
+            const isTerminalDenial = lastObs.includes("User denied execution") || lastObs.includes("Approval timed out") || lastObs.includes("Operation denied by policy");
             const verification = await this.verifyTaskSuccess(userMessage, lastObs);
             if (!verification.success && !isTerminalDenial) {
               this.emitStep("thought", `Verification failed: ${verification.reason}. Retrying...`);
@@ -45186,6 +45195,8 @@ To finish: {"thought":"brief completion summary","tool":"final_response","args":
             }
             const resultStr = String(result);
             const toolName = action.tool;
+            const lowerMsg = userMessage.toLowerCase();
+            const isOneShotActionRequest = !lowerMsg.includes(" and ") && !lowerMsg.includes(" then ") && !lowerMsg.includes("tell me") && !lowerMsg.includes("explain") && !lowerMsg.includes("summarize") && !lowerMsg.includes("analyze") && !lowerMsg.includes("find ") && !lowerMsg.includes("search ") && !lowerMsg.includes("open ") && !lowerMsg.includes("click ") && !lowerMsg.includes("show me") && !lowerMsg.includes("what is") && !lowerMsg.includes("look for");
             if (toolName === "browser_execute_plan" && resultStr.startsWith("Plan completed successfully.")) {
               const fastResponse = `Completed the requested steps and verified the outcome.`;
               this.conversationHistory.push(
@@ -45196,7 +45207,6 @@ To finish: {"thought":"brief completion summary","tool":"final_response","args":
               return fastResponse;
             }
             if (toolName === "browser_navigate" && !resultStr.toLowerCase().includes("error")) {
-              const lowerMsg = userMessage.toLowerCase();
               const isSimpleNavigation = (lowerMsg.startsWith("open ") || lowerMsg.startsWith("go to ") || lowerMsg.startsWith("navigate to ") || lowerMsg.startsWith("visit ")) && !lowerMsg.includes(" and ") && !lowerMsg.includes(" then ") && !lowerMsg.includes("tell me") && !lowerMsg.includes("find ") && !lowerMsg.includes("search ") && !lowerMsg.includes("click ") && !lowerMsg.includes("what is") && !lowerMsg.includes("show me");
               if (isSimpleNavigation) {
                 const url = ((_c = action.args) == null ? void 0 : _c.url) || "the page";
@@ -45205,33 +45215,33 @@ To finish: {"thought":"brief completion summary","tool":"final_response","args":
                 return fastResponse;
               }
             }
-            if (toolName === "browser_scroll" && !resultStr.toLowerCase().includes("error")) {
+            if (toolName === "browser_scroll" && !resultStr.toLowerCase().includes("error") && isOneShotActionRequest) {
               const fastResponse = `Scrolled the page.`;
               this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: "final_response", args: { message: fastResponse } })));
               return fastResponse;
             }
-            if (toolName === "browser_go_back" && !resultStr.toLowerCase().includes("error")) {
+            if (toolName === "browser_go_back" && !resultStr.toLowerCase().includes("error") && isOneShotActionRequest) {
               const fastResponse = `Went back to the previous page.`;
               this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: "final_response", args: { message: fastResponse } })));
               return fastResponse;
             }
-            if (toolName === "browser_go_forward" && !resultStr.toLowerCase().includes("error")) {
+            if (toolName === "browser_go_forward" && !resultStr.toLowerCase().includes("error") && isOneShotActionRequest) {
               const fastResponse = `Went forward to the next page.`;
               this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: "final_response", args: { message: fastResponse } })));
               return fastResponse;
             }
-            if (toolName === "browser_reload" && !resultStr.toLowerCase().includes("error")) {
+            if (toolName === "browser_reload" && !resultStr.toLowerCase().includes("error") && isOneShotActionRequest) {
               const fastResponse = `Reloaded the page.`;
               this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: "final_response", args: { message: fastResponse } })));
               return fastResponse;
             }
-            if (toolName === "browser_press_key" && !resultStr.toLowerCase().includes("error")) {
+            if (toolName === "browser_press_key" && !resultStr.toLowerCase().includes("error") && isOneShotActionRequest) {
               const key = ((_d = action.args) == null ? void 0 : _d.key) || "the key";
               const fastResponse = `Pressed ${key}.`;
               this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: "final_response", args: { message: fastResponse } })));
               return fastResponse;
             }
-            if (toolName === "browser_clear" && !resultStr.toLowerCase().includes("error")) {
+            if (toolName === "browser_clear" && !resultStr.toLowerCase().includes("error") && isOneShotActionRequest) {
               const fastResponse = `Cleared the input field.`;
               this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: "final_response", args: { message: fastResponse } })));
               return fastResponse;
@@ -48166,7 +48176,7 @@ app.whenReady().then(() => {
     if (((_a3 = event.sender) == null ? void 0 : _a3.id) !== pending.requesterWebContentsId) return;
     clearTimeout(pending.timeout);
     pendingApprovals.delete(requestId);
-    pending.resolve(approved);
+    pending.resolve(approved ? true : { approved: false, reason: "denied" });
   });
   toolRegistry.setApprovalHandler(async (toolName, args) => {
     const runId = agentRunContext.getRunId();
@@ -48187,7 +48197,7 @@ app.whenReady().then(() => {
           }
         } catch {
         }
-        resolve(false);
+        resolve({ approved: false, reason: "timeout" });
       }, APPROVAL_TIMEOUT_MS);
       pendingApprovals.set(requestId, {
         requestId,

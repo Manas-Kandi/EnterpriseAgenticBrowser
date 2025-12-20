@@ -53,7 +53,7 @@ type PendingApproval = {
   requesterWebContentsId: number;
   createdAt: number;
   timeout: NodeJS.Timeout;
-  resolve: (approved: boolean) => void;
+  resolve: (result: boolean | { approved: boolean; reason?: 'timeout' | 'denied' }) => void;
 };
 
 const pendingApprovals = new Map<string, PendingApproval>();
@@ -121,7 +121,7 @@ app.whenReady().then(() => {
 
     clearTimeout(pending.timeout);
     pendingApprovals.delete(requestId);
-    pending.resolve(approved);
+    pending.resolve(approved ? true : { approved: false, reason: 'denied' });
   });
 
   toolRegistry.setApprovalHandler(async (toolName, args) => {
@@ -136,7 +136,7 @@ app.whenReady().then(() => {
     const createdAt = Date.now();
     wc.send('agent:request-approval', { requestId, toolName, args, runId, timeoutMs: APPROVAL_TIMEOUT_MS });
 
-    return await new Promise<boolean>((resolve) => {
+    return await new Promise<boolean | { approved: boolean; reason?: 'timeout' | 'denied' }>((resolve) => {
       const timeout = setTimeout(() => {
         pendingApprovals.delete(requestId);
         try {
@@ -147,7 +147,7 @@ app.whenReady().then(() => {
         } catch {
           // ignore
         }
-        resolve(false);
+        resolve({ approved: false, reason: 'timeout' });
       }, APPROVAL_TIMEOUT_MS);
 
       pendingApprovals.set(requestId, {
