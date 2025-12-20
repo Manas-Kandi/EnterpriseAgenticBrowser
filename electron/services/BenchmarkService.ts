@@ -1,5 +1,6 @@
 import { agentService } from './AgentService';
 import { browserAutomationService } from '../integrations/BrowserAutomationService';
+import { PlanMemory } from './PlanMemory';
 import { BENCHMARK_SUITE, BenchmarkScenario } from '../benchmarks/suite';
 import { v4 as uuidv4 } from 'uuid';
 import fs from 'node:fs/promises';
@@ -29,6 +30,12 @@ export class BenchmarkService {
   private trajectory: TrajectoryEntry[] = [];
   private llmCalls = 0;
   private retries = 0;
+  private planMemory = new PlanMemory();
+  private autoLearnEnabled = false;
+
+  setAutoLearn(enabled: boolean) {
+    this.autoLearnEnabled = enabled;
+  }
 
   async runSuite(filter?: string, enableActionsPolicy?: boolean): Promise<BenchmarkResult[]> {
     const scenarios = filter 
@@ -77,6 +84,15 @@ export class BenchmarkService {
       // 3. Verify Outcome
       const success = await this.verifyOutcome(scenario);
 
+      // Auto-save successful trajectories as plans
+      if (success && this.autoLearnEnabled) {
+        const planSteps = this.extractPlanSteps(this.trajectory);
+        if (planSteps.length > 0) {
+          await this.planMemory.savePlan(scenario.id, planSteps);
+          console.log(`[Benchmark] Auto-saved plan for ${scenario.id}`);
+        }
+      }
+
       return {
         scenarioId: scenario.id,
         success,
@@ -103,6 +119,17 @@ export class BenchmarkService {
     } finally {
       agentService.clearStepHandler();
     }
+  }
+
+  private extractPlanSteps(trajectory: TrajectoryEntry[]): string[] {
+    // Extract action descriptions as plan steps
+    return trajectory
+      .filter(e => e.type === 'action' && e.metadata?.tool)
+      .map(e => {
+        const tool = e.metadata.tool;
+        const content = e.content || '';
+        return `${tool}: ${content.replace(/^Executing\s+/i, '').substring(0, 100)}`;
+      });
   }
 
   private extractNormalizedPlan(trajectory: TrajectoryEntry[]): any[] {

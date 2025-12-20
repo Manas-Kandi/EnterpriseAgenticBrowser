@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
 export type AgentMode = 'chat' | 'read' | 'do';
-export type AgentPermissionMode = 'yolo' | 'permissions';
+export type AgentPermissionMode = 'yolo' | 'permissions' | 'manual';
 
 export interface BrowserTab {
   id: string;

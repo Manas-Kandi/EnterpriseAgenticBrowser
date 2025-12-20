@@ -50,5 +50,50 @@ npm run dev
 ```
 This runs the Electron main process and the React renderer in development mode with hot reloading.
 
+## Agent Context Management
+
+The browser includes an intelligent context management system that optimizes long-running agent conversations.
+
+### TOON Summaries
+Conversations are automatically compressed using the **TOON format** (Tree-Oriented Object Notation) to reduce token usage while preserving context:
+
+- **Adaptive Summarization**: After 30 messages, the oldest 15 are compressed into a structured summary
+- **Token Reduction**: Achieves 15-25% reduction in token footprint
+- **Schema Validation**: Summaries are validated with Zod to ensure consistency
+
+### Warm-Start Execution
+The agent learns from successful task executions and can replay them instantly:
+
+- **Skill Library**: Successful plans are saved with embeddings for similarity search
+- **Fast Lookup**: Similar tasks (≥80% similarity) skip the planning phase entirely
+- **Graceful Fallback**: Failed warm-starts automatically fall back to normal planning
+
+### Feature Flags
+Control these features via the `agentFeatureFlags` store:
+
+```typescript
+import { useAgentFeatureFlags } from '@/lib/agentFeatureFlags';
+
+const { useTOONSummary, useWarmStart, debugTOON } = useAgentFeatureFlags();
+```
+
+For detailed schema documentation, see [docs/toon-summary.md](docs/toon-summary.md).
+
+## Testing
+
+```bash
+# Run all tests
+pnpm test
+
+# Unit tests only
+pnpm test:unit
+
+# E2E tests (requires app running)
+pnpm test:e2e
+
+# With coverage
+pnpm test:coverage
+```
+
 ## License
 Proprietary - Internal Enterprise Use Only

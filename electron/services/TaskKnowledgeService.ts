@@ -1,9 +1,12 @@
-import fs from 'node:fs/promises';
+import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 import { v4 as uuidv4 } from 'uuid';
 import { AgentTool, toolRegistry } from './ToolRegistry';
 import { agentRunContext } from './AgentRunContext';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 export type SkillFeedbackLabel = 'worked' | 'failed' | 'partial';
 
@@ -58,32 +61,36 @@ export class TaskKnowledgeService {
     this.registerTools();
   }
 
-  private async load() {
+  private load() {
     try {
-      const data = await fs.readFile(this.storageFile, 'utf8');
+      const data = fs.readFileSync(this.storageFile, 'utf8');
       this.skills = JSON.parse(data);
     } catch {
       // Try legacy file
       try {
         const legacyPath = path.resolve(process.cwd(), 'task_knowledge.json');
-        const legacyData = await fs.readFile(legacyPath, 'utf8');
-        const plans = JSON.parse(legacyData);
-        // Migrate legacy plans
-        this.skills = plans.map((p: any) => {
-          const createdAt = Date.now();
-          return {
-          id: uuidv4(),
-          name: p.goal.toLowerCase().replace(/\s+/g, '_').slice(0, 50),
-          description: p.goal,
-          domain: 'unknown',
-          steps: p.steps,
-          currentVersion: 1,
-          stats: { successes: 0, failures: 0, lastUsed: createdAt },
-          versions: [{ version: 1, steps: p.steps, createdAt }],
-          tags: p.trigger_keywords || [],
-          } as Skill;
-        });
-        await this.save();
+        if (fs.existsSync(legacyPath)) {
+          const legacyData = fs.readFileSync(legacyPath, 'utf8');
+          const plans = JSON.parse(legacyData);
+          // Migrate legacy plans
+          this.skills = plans.map((p: any) => {
+            const createdAt = Date.now();
+            return {
+              id: uuidv4(),
+              name: p.goal.toLowerCase().replace(/\s+/g, '_').slice(0, 50),
+              description: p.goal,
+              domain: 'unknown',
+              steps: p.steps,
+              currentVersion: 1,
+              stats: { successes: 0, failures: 0, lastUsed: createdAt },
+              versions: [{ version: 1, steps: p.steps, createdAt }],
+              tags: p.trigger_keywords || [],
+            } as Skill;
+          });
+          this.save();
+        } else {
+          this.skills = [];
+        }
       } catch {
         this.skills = [];
       }
@@ -106,21 +113,25 @@ export class TaskKnowledgeService {
 
       if (!Array.isArray((s as any).feedback)) (s as any).feedback = [];
       if (!Array.isArray((s as any).embedding) || (s as any).embedding.length === 0) {
-        (s as any).embedding = this.computeEmbedding(this.buildSkillText(s));
+        // If no API key, compute synchronously
+        if (!process.env.OPENAI_API_KEY) {
+          (s as any).embedding = this.computeEmbedding(this.buildSkillText(s));
+        } else {
+          // Async update in background
+          this.computeApiEmbedding(this.buildSkillText(s)).then(emb => {
+            (s as any).embedding = emb;
+            this.save();
+          });
+        }
       }
-    }
-
-    try {
-      await this.save();
-    } catch {
-      // ignore
     }
   }
 
   private normalizeText(text: string): string {
     return String(text ?? '')
       .toLowerCase()
-      .replace(/[^a-z0-9_\-\s/.:]+/g, ' ')
+      .replace(/_/g, ' ') // Split underscores
+      .replace(/[^a-z0-9\-\s/.:]+/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
   }
@@ -158,6 +169,113 @@ export class TaskKnowledgeService {
     return dot;
   }
 
+  /**
+   * Compute embedding via OpenAI API (text-embedding-3-small)
+   * Falls back to local hash-based embedding if API fails
+   */
+  async computeApiEmbedding(text: string): Promise<number[]> {
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      console.warn('[TaskKnowledge] No OPENAI_API_KEY, using local embedding');
+      return this.computeEmbedding(text);
+    }
+
+    try {
+      const response = await fetch('https://api.openai.com/v1/embeddings', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: 'text-embedding-3-small',
+          input: text.substring(0, 8000), // Limit input length
+        }),
+      });
+
+      if (!response.ok) {
+        console.warn('[TaskKnowledge] Embedding API error:', response.status);
+        return this.computeEmbedding(text);
+      }
+
+      const data = await response.json() as { data: Array<{ embedding: number[] }> };
+      if (data.data?.[0]?.embedding) {
+        return data.data[0].embedding;
+      }
+    } catch (e) {
+      console.warn('[TaskKnowledge] Embedding API failed:', e);
+    }
+
+    return this.computeEmbedding(text);
+  }
+
+  /**
+   * Find nearest skill by embedding similarity
+   * @param query - User query text
+   * @param threshold - Minimum similarity threshold (0-1)
+   * @returns Skill and similarity score if above threshold, null otherwise
+   */
+  async findNearest(query: string, threshold: number = 0.8): Promise<{ skill: Skill; similarity: number } | null> {
+    if (this.skills.length === 0) return null;
+
+    // Compute query embedding
+    const queryEmbedding = await this.computeApiEmbedding(query);
+    const queryTokens = this.tokenize(query);
+
+    let bestMatch: { skill: Skill; similarity: number } | null = null;
+
+    for (const skill of this.skills) {
+      // Skip skills with poor track record
+      const total = skill.stats.successes + skill.stats.failures;
+      if (total > 3 && skill.stats.failures > skill.stats.successes) {
+        continue;
+      }
+
+      let similarity = this.cosineSimilarity(skill.embedding, queryEmbedding);
+      
+      // Boost similarity if we have strong keyword overlap (helps with local embeddings)
+      if (queryTokens.length > 0) {
+        const skillText = this.normalizeText(skill.name + ' ' + skill.description + ' ' + (skill.tags || []).join(' '));
+        const skillTokens = new Set(skillText.split(' '));
+        const overlap = queryTokens.filter(t => skillTokens.has(t)).length;
+        const overlapRatio = overlap / queryTokens.length;
+        
+        // If > 75% of query words are in the skill, boost confidence
+        if (overlapRatio > 0.75) {
+          similarity = Math.max(similarity, 0.85); 
+        } else if (overlapRatio > 0.5) {
+          similarity = Math.max(similarity, 0.75);
+        }
+      }
+      
+      if (similarity >= threshold) {
+        if (!bestMatch || similarity > bestMatch.similarity) {
+          bestMatch = { skill, similarity };
+        }
+      }
+    }
+
+    if (bestMatch) {
+      console.log(`[TaskKnowledge] Found nearest skill: ${bestMatch.skill.name} (similarity: ${bestMatch.similarity.toFixed(3)})`);
+    }
+
+    return bestMatch;
+  }
+
+  /**
+   * Mark a skill as stale (failed during warm-start execution)
+   */
+  markStale(skillId: string) {
+    const skill = this.skills.find(s => s.id === skillId);
+    if (skill) {
+      skill.stats.failures++;
+      skill.stats.lastOutcomeAt = Date.now();
+      skill.stats.lastOutcomeSuccess = false;
+      this.save();
+      console.log(`[TaskKnowledge] Marked skill ${skill.name} as stale`);
+    }
+  }
+
   private buildSkillText(skill: Skill): string {
     const stepBits = (skill.steps || [])
       .map((s) => [s.action, s.url, s.selector, s.value, s.text].filter(Boolean).join(' '))
@@ -169,7 +287,7 @@ export class TaskKnowledgeService {
 
   private async save() {
     try {
-      await fs.writeFile(this.storageFile, JSON.stringify(this.skills, null, 2));
+      await fs.promises.writeFile(this.storageFile, JSON.stringify(this.skills, null, 2));
     } catch (err) {
       console.error('Failed to save skill library:', err);
     }

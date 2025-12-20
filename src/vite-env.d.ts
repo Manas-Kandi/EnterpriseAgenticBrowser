@@ -22,6 +22,11 @@ interface Window {
     respondApproval: (requestId: string, approved: boolean) => void;
     sendFeedback: (skillId: string, outcome: boolean | 'worked' | 'failed' | 'partial', version?: number) => Promise<boolean>;
     onStep: (callback: (step: any) => void) => () => void;
+    onToken: (callback: (token: string) => void) => () => void;
+    getSavedPlans: () => Promise<Array<{ id: string; ts: number; plan: string[] }>>;
+    savePlanFor: (taskId: string, plan: string[]) => Promise<{ success: boolean }>;
+    deletePlan: (taskId: string) => Promise<{ success: boolean }>;
+    setAutoLearn: (enabled: boolean) => Promise<{ success: boolean; enabled: boolean }>;
     runBenchmarkSuite: (filter?: string) => Promise<Array<{ scenarioId: string; success: boolean; durationMs: number; steps: number; error?: string; runId: string; llmCalls: number }>>;
     exportBenchmarkTrajectories: (results: any[]) => Promise<{ success: boolean; path: string }>;
   }

@@ -7,9 +7,11 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 
 import { toolRegistry } from './ToolRegistry';
-import './TaskKnowledgeService';
+import { taskKnowledgeService } from './TaskKnowledgeService';
 import { agentRunContext } from './AgentRunContext';
 import { telemetryService } from './TelemetryService';
+import { safeParseTOON, TOON_SUMMARY_PROMPT_TEMPLATE } from '../lib/toon';
+import { safeValidateToonSummary, createToonSummary, ToonSummary } from '../lib/validateToonSummary';
 
 dotenv.config();
 
@@ -103,7 +105,7 @@ export const AVAILABLE_MODELS: ModelConfig[] = [
 ];
 
 export type AgentMode = 'chat' | 'read' | 'do';
-export type AgentPermissionMode = 'yolo' | 'permissions';
+export type AgentPermissionMode = 'yolo' | 'permissions' | 'manual';
 
 export class AgentService {
   private model: Runnable;
@@ -112,6 +114,7 @@ export class AgentService {
   private agentMode: AgentMode = 'do';
   private permissionMode: AgentPermissionMode = 'permissions';
   private onStep?: (step: AgentStep) => void;
+  private onToken?: (token: string) => void;
   private conversationHistory: BaseMessage[] = [];
   private systemPrompt: SystemMessage;
 
@@ -119,6 +122,13 @@ export class AgentService {
   // Each turn can have ~2-4 messages (user, AI, tool output, etc.)
   // 50 messages ≈ 12-25 turns of context
   private static readonly MAX_HISTORY_MESSAGES = 50;
+
+  // Adaptive summarization: compress oldest messages every N messages
+  private static readonly SUMMARY_EVERY = 30;
+  private static readonly SUMMARY_BLOCK_SIZE = 15;
+
+  // Store TOON summaries as SystemMessages with special name
+  private summaries: SystemMessage[] = [];
 
   /**
    * Redact common secrets from text before sending to LLM
@@ -336,9 +346,6 @@ export class AgentService {
     return this.agentMode;
   }
 
-  /**
-   * Set the permission mode (yolo/permissions) - only applies in 'do' mode
-   */
   setPermissionMode(mode: AgentPermissionMode) {
     this.permissionMode = mode;
     console.log(`[AgentService] Permission Mode: ${mode}`);
@@ -355,9 +362,10 @@ export class AgentService {
     return this.agentMode === 'do' && this.permissionMode === 'yolo';
   }
 
-  /**
-   * Create a model instance from config
-   */
+  isManualMode(): boolean {
+    return this.permissionMode === 'manual';
+  }
+
   private createModel(modelId: string): Runnable {
     const apiKey = process.env.NVIDIA_API_KEY;
     if (!apiKey) {
@@ -434,12 +442,113 @@ export class AgentService {
     }
   }
 
+  /**
+   * Check if summarization is needed and trigger it
+   * Called after each turn to compress old messages
+   */
+  private async maybeSummarize() {
+    if (this.conversationHistory.length > AgentService.SUMMARY_EVERY) {
+      await this.summarizeBlock();
+    }
+  }
+
+  /**
+   * Summarize oldest N messages into a TOON format summary
+   * Uses a cheap/fast model to minimize latency
+   */
+  private async summarizeBlock() {
+    const blockSize = AgentService.SUMMARY_BLOCK_SIZE;
+    if (this.conversationHistory.length < blockSize) return;
+
+    // Slice oldest N messages
+    const toSummarize = this.conversationHistory.slice(0, blockSize);
+    
+    // Format messages for summarization
+    const messagesText = toSummarize.map(m => {
+      const role = m._getType();
+      const content = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
+      // Truncate very long messages
+      const truncated = content.length > 500 ? content.substring(0, 500) + '...' : content;
+      return `[${role}]: ${truncated}`;
+    }).join('\n\n');
+
+    // Create summarization prompt
+    const summaryPrompt = new SystemMessage(
+      TOON_SUMMARY_PROMPT_TEMPLATE + messagesText
+    );
+
+    try {
+      // Use a fast/cheap model for summarization
+      const summarizerModel = this.createModel('llama-3.1-70b');
+      const response = await summarizerModel.invoke([summaryPrompt]);
+      const rawSummary = typeof response.content === 'string' 
+        ? response.content 
+        : JSON.stringify(response.content);
+
+      // Try to parse as TOON and validate with Zod schema
+      const rawParsed = safeParseTOON<ToonSummary>(rawSummary, {
+        meta: { version: '1.0', timestamp: new Date().toISOString(), messagesCompressed: blockSize },
+        conversationSummary: rawSummary,
+      });
+      
+      // Validate against schema, create fallback if invalid
+      const parsed = safeValidateToonSummary(rawParsed) 
+        ?? createToonSummary(rawSummary, blockSize);
+
+      // Store as SystemMessage with special marker
+      const summaryMessage = new SystemMessage({
+        content: rawSummary,
+        name: 'summary',
+      } as any);
+
+      // Add to summaries array
+      this.summaries.push(summaryMessage);
+
+      // Remove summarized messages from history
+      this.conversationHistory = this.conversationHistory.slice(blockSize);
+
+      console.log(`[AgentService] Summarized ${blockSize} messages into TOON format. Remaining: ${this.conversationHistory.length}`);
+      console.log(`[AgentService] Summary preview: ${parsed.conversationSummary.substring(0, 100)}...`);
+
+    } catch (e) {
+      console.error('[AgentService] Summarization failed:', e);
+      // On failure, just trim without summarizing
+      this.conversationHistory = this.conversationHistory.slice(blockSize);
+    }
+  }
+
+  /**
+   * Build messages array with summaries injected for context
+   * Called when building the final prompt for the main model
+   */
+  private buildMessagesWithSummaries(systemPrompt: SystemMessage): BaseMessage[] {
+    const messages: BaseMessage[] = [systemPrompt];
+    
+    // Inject all TOON summaries as context
+    if (this.summaries.length > 0) {
+      const summaryContext = new SystemMessage(
+        `[Previous Conversation Summaries]\n${this.summaries.map(s => s.content).join('\n---\n')}`
+      );
+      messages.push(summaryContext);
+    }
+    
+    // Add current conversation history
+    messages.push(...this.conversationHistory);
+    
+    return messages;
+  }
+
   setStepHandler(handler: (step: AgentStep) => void) {
     this.onStep = handler;
   }
 
+  setTokenHandler(handler: (token: string) => void) {
+    this.onToken = handler;
+  }
+
   clearStepHandler() {
     this.onStep = undefined;
+    this.onToken = undefined;
   }
 
   private emitStep(type: AgentStep['type'], content: string, metadata?: any) {
@@ -451,6 +560,12 @@ export class AgentService {
         runId,
       };
       this.onStep({ type, content, metadata: enrichedMetadata });
+    }
+  }
+
+  private emitToken(token: string) {
+    if (this.onToken) {
+      this.onToken(token);
     }
   }
 
@@ -478,8 +593,15 @@ export class AgentService {
     this.trimConversationHistory();
 
     try {
-      const response = await this.model.invoke([chatPrompt, ...this.conversationHistory]);
-      const content = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
+      let content = '';
+      const stream = await this.model.stream([chatPrompt, ...this.conversationHistory]);
+      
+      for await (const chunk of stream) {
+        const token = String(chunk.content);
+        content += token;
+        this.emitToken(token);
+      }
+
       this.conversationHistory.push(new AIMessage(content));
       this.trimConversationHistory();
       return content;
@@ -507,8 +629,15 @@ You can answer questions about what's on the page, explain content, summarize in
     this.trimConversationHistory();
 
     try {
-      const response = await this.model.invoke([readPrompt, ...this.conversationHistory]);
-      const content = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
+      let content = '';
+      const stream = await this.model.stream([readPrompt, ...this.conversationHistory]);
+      
+      for await (const chunk of stream) {
+        const token = String(chunk.content);
+        content += token;
+        this.emitToken(token);
+      }
+
       this.conversationHistory.push(new AIMessage(content));
       this.trimConversationHistory();
       return content;
@@ -534,48 +663,68 @@ You can answer questions about what's on the page, explain content, summarize in
       context = this.redactSecrets(context);
       const safeUserMessage = this.redactSecrets(userMessage);
 
-      this.systemPrompt = new SystemMessage(`You are a helpful enterprise assistant integrated into a browser.
-Your goal is to help users with their tasks by using tools effectively.
+      this.systemPrompt = new SystemMessage(`<role>
+You are a helpful enterprise assistant integrated into a browser.
+Your goal is to help users complete tasks by using tools effectively and safely.
+</role>
 
-        CRITICAL RULES:
-          1. RESPONSE FORMAT: You MUST respond ONLY with a single JSON object.
-   - DO NOT include text before / after JSON.
-   - DO NOT use markdown blocks like \`\`\`json.
-   - You MUST include a "thought" field explaining your reasoning.
+<tool_calling>
+You MUST respond ONLY with a single JSON object.
+- DO NOT include any text before or after the JSON.
+- DO NOT wrap the JSON in markdown fences.
 
-2. JSON STRUCTURE:
-   {
-     "thought": "Your reasoning here.",
-     "tool": "tool_name",
-     "args": { "arg1": "value1" }
-   }
-   FOR FINAL RESPONSE:
-   {
-     "thought": "I have completed the task.",
-     "tool": "final_response",
-     "args": { "content": "Your final message to the user." }
-   }
+JSON schema (ALWAYS follow exactly):
+{
+  "thought": "brief reasoning for the next step",
+  "tool": "tool_name",
+  "args": { ... }
+}
 
-3. API-FIRST STRATEGY (MUCH FASTER):
-   - General Search: use "api_web_search"
-   - Hacker News: use "api_hackernews_top"
-   - GitHub: use "api_github_search"
-   - Wikipedia: use "api_wikipedia_featured"
-   - Weather: use "lookup_city_coordinates" then "api_weather"
-   - Crypto: use "api_crypto_price"
-   - Generic API: use "api_http_get"
-   - ONLY use browser tools (browser_navigate, etc.) if no API is available or the user needs to SEE the page.
+Final response schema:
+{
+  "thought": "brief completion summary",
+  "tool": "final_response",
+  "args": { "message": "your message to the user" }
+}
+</tool_calling>
 
-4. BROWSER AUTOMATION:
-   - Always "browser_observe" before clicking/typing to get fresh selectors.
-   - If selectors match > 1, use "index", "matchText", or "withinSelector".
-   - "browser_click_text" is safer than CSS selectors when the text is unique.
+<strategy>
+API-FIRST (MUCH FASTER):
+- Prefer API tools (api_web_search/api_http_get/etc.) when they can accomplish the task.
+- For GitHub repository summaries, prefer api_github_get_repo and api_github_get_readme when available.
+- Use browser tools only if no API is available or the user needs to SEE/INTERACT with the page.
+</strategy>
 
-5. NO HALLUCINATION: Never claim you did something (e.g., "I navigated to X") unless the tool execution actually succeeded.
+<browser_primitives>
+- Always call browser_observe before clicking/typing/selecting to get fresh selectors.
+- If a selector matches multiple elements, disambiguate using index, matchText, or withinSelector.
+- Prefer browser_click_text when the visible text is unique.
+- After any meaningful state change (navigation, submit, save), re-observe or wait for a confirming signal (text/selector).
+</browser_primitives>
 
+<verification>
+You must not claim an action happened unless a tool execution succeeded.
+Verification means one of:
+- The latest browser_observe output shows the expected content/state.
+- browser_wait_for_text succeeds for a confirming piece of UI text.
+- A tool result explicitly confirms success.
+
+If verification is missing, take the next step to verify (observe or wait) instead of guessing.
+</verification>
+
+<mock_saas_selectors>
+When on localhost:3000, prefer stable data-testid selectors:
+- AeroCore Admin: Create user button = [data-testid="admin-create-user-btn"]
+- Admin form fields: [data-testid="admin-input-name"], [data-testid="admin-input-email"], [data-testid="admin-select-role"]
+- Admin submit: [data-testid="admin-submit-user"]
+- Jira: Create = [data-testid="jira-create-button"], Summary = [data-testid="jira-summary-input"], Submit = [data-testid="jira-submit-create"]
+- Dispatch: Create incident = [data-testid="dispatch-create-btn"], Broadcast = [data-testid="dispatch-broadcast-btn"]
+</mock_saas_selectors>
+
+<tools>
 Available tools:
 ${tools.map((t: any) => `- ${t.name}: ${t.description}`).join('\n')}
-`);
+</tools>`);
 
       // Add user message to conversation history with browser context
       const contextualUserMessage = new HumanMessage(`[${ context }]\n\nUser request: ${ safeUserMessage } `);
@@ -583,19 +732,69 @@ ${tools.map((t: any) => `- ${t.name}: ${t.description}`).join('\n')}
 
       // Trim history if it's getting too long
       this.trimConversationHistory();
+      
+      // Check if we need to summarize old messages
+      await this.maybeSummarize();
 
-      // Build messages array: system prompt + conversation history
-      messages = [
-        this.systemPrompt,
-        ...this.conversationHistory,
-      ];
+      // Build messages array: system prompt + summaries + conversation history
+      messages = this.buildMessagesWithSummaries(this.systemPrompt);
+
+      // WARM-START: Check if we have a matching skill to execute directly
+      const warmStartHit = await taskKnowledgeService.findNearest(userMessage, 0.8);
+      if (warmStartHit) {
+        this.emitStep('thought', `Found matching skill: "${warmStartHit.skill.name}" (similarity: ${warmStartHit.similarity.toFixed(2)}). Attempting warm-start execution.`);
+        
+        try {
+          const steps = warmStartHit.skill.steps;
+          
+          // For simple single-step navigation, use browser_navigate directly (faster)
+          if (steps.length === 1 && steps[0].action === 'navigate' && steps[0].url) {
+            const navigateTool = tools.find((t: any) => t.name === 'browser_navigate');
+            if (navigateTool) {
+              const navResult = await navigateTool.invoke({ url: steps[0].url });
+              const navResultStr = String(navResult);
+              
+              if (!navResultStr.toLowerCase().includes('error')) {
+                taskKnowledgeService.recordOutcome(warmStartHit.skill.id, true);
+                const fastResponse = `Navigated to ${steps[0].url}`;
+                this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: 'final_response', args: { message: fastResponse } })));
+                return fastResponse;
+              } else {
+                this.emitStep('thought', `Warm-start navigation failed: ${navResultStr}. Falling back.`);
+                taskKnowledgeService.markStale(warmStartHit.skill.id);
+              }
+            }
+          } else if (steps.length > 0) {
+            // For multi-step plans, use browser_execute_plan
+            const executePlanTool = tools.find((t: any) => t.name === 'browser_execute_plan');
+            if (executePlanTool) {
+              const planResult = await executePlanTool.invoke({ steps });
+              const resultStr = String(planResult);
+              
+              // Check for success indicators
+              if (resultStr.includes('successfully') || resultStr.includes('completed') || resultStr.includes('Plan completed')) {
+                taskKnowledgeService.recordOutcome(warmStartHit.skill.id, true);
+                const fastResponse = `Completed using saved skill "${warmStartHit.skill.name}".`;
+                this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: 'final_response', args: { message: fastResponse } })));
+                return fastResponse;
+              } else {
+                this.emitStep('thought', `Warm-start execution result: ${resultStr.substring(0, 100)}. Falling back.`);
+                taskKnowledgeService.markStale(warmStartHit.skill.id);
+              }
+            }
+          }
+        } catch (warmStartErr: any) {
+          this.emitStep('thought', `Warm-start error: ${warmStartErr.message}. Falling back to normal planning.`);
+          taskKnowledgeService.markStale(warmStartHit.skill.id);
+        }
+      }
 
       // Get current model config for timeout
       const currentConfig = AVAILABLE_MODELS.find(m => m.id === this.currentModelId);
-      // 120s for thinking models AND large models like Qwen 235B
-      // 60s for fast models
+      // 90s for thinking models AND large models like Qwen 235B
+      // 45s for fast models (reduced to fail faster when API is slow)
       const isSlowModel = currentConfig?.supportsThinking || currentConfig?.id === 'qwen3-235b';
-      const timeoutMs = isSlowModel ? 120000 : 60000;
+      const timeoutMs = isSlowModel ? 90000 : 45000;
 
       // 1. Planning Step: Decompose complex goals
       const plan = await this.planCurrentGoal(userMessage, context);
@@ -656,8 +855,20 @@ ${tools.map((t: any) => `- ${t.name}: ${t.description}`).join('\n')}
             }
           }, 5000);
 
+          const streamPromise = (async () => {
+            let fullContent = '';
+            const stream = await this.model.stream(messages);
+            for await (const chunk of stream) {
+              const token = String(chunk.content);
+              fullContent += token;
+              // In doMode, we don't emit tokens to avoid showing raw JSON to the user
+              // this.emitToken(token); 
+            }
+            return new AIMessage(fullContent);
+          })();
+
           response = await Promise.race([
-            this.model.invoke(messages),
+            streamPromise,
             timeoutPromise
           ]) as AIMessage;
         } catch (timeoutErr: any) {
@@ -724,9 +935,17 @@ ${tools.map((t: any) => `- ${t.name}: ${t.description}`).join('\n')}
           // ignore telemetry failures
         }
 
-        const content = response.content as string;
+        const rawContent = response.content as string;
+        
+        // CLEANUP: Remove <think>...</think> tags which confuse the parser
+        // and sometimes leak into the response from reasoning models
+        const content = rawContent.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
 
         console.log(`[Agent Turn ${ i }] Raw Response: `, this.redactSecrets(content));
+        // Log original if we modified it
+        if (content.length !== rawContent.length) {
+          console.log(`[Agent Turn ${ i }] (Original with <think> tags redacted)`);
+        }
 
         const action = this.parseToolCall(content);
 
@@ -752,6 +971,16 @@ if (
   !(action as any).args ||
   typeof (action as any).args !== 'object'
 ) {
+  // If the model responded with plain text (no JSON object at all), treat it as an implicit
+  // final_response instead of failing the entire run.
+  // This improves reliability for conversational follow-ups where no tool call is needed.
+  if (!action && !content.includes('{') && content.trim().length > 0) {
+    const finalMessage = content.trim();
+    const finalJson = JSON.stringify({ thought: 'Responding directly.', tool: 'final_response', args: { message: finalMessage } });
+    this.conversationHistory.push(new AIMessage(finalJson));
+    return finalMessage;
+  }
+
   parseFailures++;
 
   let specificError = "Invalid JSON format.";
@@ -763,9 +992,9 @@ if (
   messages.push(new AIMessage(this.redactSecrets(String((response as any)?.content ?? ''))));
   messages.push(
     new SystemMessage(
-      `Error: ${specificError} Output ONLY valid JSON. 
-              Format: {"thought":"your reasoning","tool":"tool_name","args":{...}}
-              To finish: {"thought":"summary","tool":"final_response","args":{"message":"your response"}}`
+      `Error: ${specificError} Output ONLY valid JSON.
+Format: {"thought":"brief reasoning","tool":"tool_name","args":{...}}
+To finish: {"thought":"brief completion summary","tool":"final_response","args":{"message":"your response"}}`
     )
   );
   if (lastVerified && parseFailures >= 2) {
@@ -787,8 +1016,13 @@ if ((action as any).tool !== 'final_response' && !action.thought) {
 
 // Handle Final Response
 if ((action as any).tool === "final_response") {
-  const finalArgs = (action as any).args as { message?: unknown } | undefined;
-  const finalMessage = typeof finalArgs?.message === 'string' ? finalArgs.message : '';
+  const finalArgs = (action as any).args as { message?: unknown; content?: unknown } | undefined;
+  const finalMessage =
+    typeof finalArgs?.message === 'string'
+      ? finalArgs.message
+      : typeof finalArgs?.content === 'string'
+        ? finalArgs.content
+        : '';
   if (!finalMessage) {
     messages.push(response);
     messages.push(
@@ -801,7 +1035,10 @@ if ((action as any).tool === "final_response") {
   if (usedBrowserTools) {
     const lastMessages = messages.slice(-8);
     const lastObs = lastMessages.filter(m => m._getType() === 'system' && m.content.toString().includes('Output:')).pop()?.content.toString() || '';
-    const isTerminalDenial = lastObs.includes('User denied execution') || lastObs.includes('Operation denied by policy');
+    const isTerminalDenial =
+      lastObs.includes('User denied execution') ||
+      lastObs.includes('Approval timed out') ||
+      lastObs.includes('Operation denied by policy');
 
     const lastContent = lastMessages.map((m) => (m as any).content ?? '').join('\n');
     const claimedSuccess =
@@ -826,7 +1063,10 @@ if ((action as any).tool === "final_response") {
     const lastObs = messages.filter(m => m._getType() === 'system' && m.content.toString().includes('Output:')).pop()?.content.toString() || 'No observation';
 
     // Skip verification retry if the failure was a user denial or policy block
-    const isTerminalDenial = lastObs.includes('User denied execution') || lastObs.includes('Operation denied by policy');
+    const isTerminalDenial =
+      lastObs.includes('User denied execution') ||
+      lastObs.includes('Approval timed out') ||
+      lastObs.includes('Operation denied by policy');
 
     const verification = await this.verifyTaskSuccess(userMessage, lastObs);
     if (!verification.success && !isTerminalDenial) {
@@ -886,6 +1126,22 @@ if (tool) {
     const resultStr = String(result);
     const toolName = (action as any).tool;
 
+    const lowerMsg = userMessage.toLowerCase();
+    const isOneShotActionRequest =
+      !lowerMsg.includes(' and ') &&
+      !lowerMsg.includes(' then ') &&
+      !lowerMsg.includes('tell me') &&
+      !lowerMsg.includes('explain') &&
+      !lowerMsg.includes('summarize') &&
+      !lowerMsg.includes('analyze') &&
+      !lowerMsg.includes('find ') &&
+      !lowerMsg.includes('search ') &&
+      !lowerMsg.includes('open ') &&
+      !lowerMsg.includes('click ') &&
+      !lowerMsg.includes('show me') &&
+      !lowerMsg.includes('what is') &&
+      !lowerMsg.includes('look for');
+
     if (toolName === 'browser_execute_plan' && resultStr.startsWith('Plan completed successfully.')) {
       const fastResponse = `Completed the requested steps and verified the outcome.`;
       this.conversationHistory.push(
@@ -896,43 +1152,62 @@ if (tool) {
       return fastResponse;
     }
 
-    // NOTE: Removed fast path for browser_navigate.
-    // The agent needs to continue reasoning after navigation to handle
-    // information-seeking requests like "go to X and tell me Y".
-    // The model will call final_response when it's actually done.
+    // Smart fast path for browser_navigate:
+    // - If the user request is simple navigation (just "open X", "go to X", "navigate to X")
+    //   without follow-up actions like "and tell me", "and find", "and click", return immediately.
+    // - Otherwise, let the model continue reasoning for compound requests.
+    if (toolName === 'browser_navigate' && !resultStr.toLowerCase().includes('error')) {
+      const isSimpleNavigation = (
+        (lowerMsg.startsWith('open ') || lowerMsg.startsWith('go to ') || lowerMsg.startsWith('navigate to ') || lowerMsg.startsWith('visit ')) &&
+        !lowerMsg.includes(' and ') &&
+        !lowerMsg.includes(' then ') &&
+        !lowerMsg.includes('tell me') &&
+        !lowerMsg.includes('find ') &&
+        !lowerMsg.includes('search ') &&
+        !lowerMsg.includes('click ') &&
+        !lowerMsg.includes('what is') &&
+        !lowerMsg.includes('show me')
+      );
+      if (isSimpleNavigation) {
+        const url = (action as any).args?.url || 'the page';
+        const fastResponse = `Navigated to ${url}`;
+        this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: 'final_response', args: { message: fastResponse } })));
+        return fastResponse;
+      }
+    }
 
-    if (toolName === 'browser_scroll' && !resultStr.toLowerCase().includes('error')) {
+    if (toolName === 'browser_scroll' && !resultStr.toLowerCase().includes('error') && isOneShotActionRequest) {
       const fastResponse = `Scrolled the page.`;
       this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: 'final_response', args: { message: fastResponse } })));
       return fastResponse;
     }
 
-    if (toolName === 'browser_go_back' && !resultStr.toLowerCase().includes('error')) {
+    if (toolName === 'browser_go_back' && !resultStr.toLowerCase().includes('error') && isOneShotActionRequest) {
       const fastResponse = `Went back to the previous page.`;
       this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: 'final_response', args: { message: fastResponse } })));
       return fastResponse;
     }
 
-    if (toolName === 'browser_go_forward' && !resultStr.toLowerCase().includes('error')) {
+    if (toolName === 'browser_go_forward' && !resultStr.toLowerCase().includes('error') && isOneShotActionRequest) {
       const fastResponse = `Went forward to the next page.`;
       this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: 'final_response', args: { message: fastResponse } })));
       return fastResponse;
     }
 
-    if (toolName === 'browser_reload' && !resultStr.toLowerCase().includes('error')) {
+    if (toolName === 'browser_reload' && !resultStr.toLowerCase().includes('error') && isOneShotActionRequest) {
       const fastResponse = `Reloaded the page.`;
       this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: 'final_response', args: { message: fastResponse } })));
       return fastResponse;
     }
 
-    if (toolName === 'browser_press_key' && !resultStr.toLowerCase().includes('error')) {
+    if (toolName === 'browser_press_key' && !resultStr.toLowerCase().includes('error') && isOneShotActionRequest) {
       const key = (action as any).args?.key || 'the key';
       const fastResponse = `Pressed ${key}.`;
       this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: 'final_response', args: { message: fastResponse } })));
       return fastResponse;
     }
 
-    if (toolName === 'browser_clear' && !resultStr.toLowerCase().includes('error')) {
+    if (toolName === 'browser_clear' && !resultStr.toLowerCase().includes('error') && isOneShotActionRequest) {
       const fastResponse = `Cleared the input field.`;
       this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: 'final_response', args: { message: fastResponse } })));
       return fastResponse;
@@ -1068,10 +1343,10 @@ async * streamChat(message: string) {
     const response = await this.model.invoke([verifierPrompt]);
     const content = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
     const jsonText = this.extractJsonObject(content);
-    if(jsonText) return JSON.parse(jsonText);
-    return { success: true, reason: 'Assumed success' };
-  } catch {
-    return { success: true, reason: 'Verification failed to run' };
+    if (jsonText) return JSON.parse(jsonText);
+    return { success: false, reason: 'Verifier did not return valid JSON' };
+  } catch (e: any) {
+    return { success: false, reason: `Verifier error: ${String(e?.message ?? e)}` };
   }
 }
 }

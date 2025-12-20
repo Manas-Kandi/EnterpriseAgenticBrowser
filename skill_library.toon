@@ -1,0 +1,368 @@
+meta::
+  version: 1.0
+  description: Comprehensive skill library for AeroCore Mock SaaS automation
+  domain: localhost:3000
+  lastUpdated: 2025-12-18
+
+skills::
+
+  # ============================================
+  # NAVIGATION SKILLS
+  # ============================================
+
+  - id: nav_aerocore_admin
+    name: open_aerocore_admin_console
+    description: Navigate to the AeroCore Admin Console
+    tags: [navigation, admin, aerocore]
+    steps:
+      - action: navigate
+        url: http://localhost:3000/aerocore/admin
+
+  - id: nav_aerocore_dispatch
+    name: open_aerocore_dispatch
+    description: Navigate to the AeroCore Dispatch Command Center
+    tags: [navigation, dispatch, aerocore]
+    steps:
+      - action: navigate
+        url: http://localhost:3000/aerocore/dispatch
+
+  - id: nav_aerocore_fleet
+    name: open_aerocore_fleet
+    description: Navigate to the AeroCore Fleet Management page
+    tags: [navigation, fleet, drones, aerocore]
+    steps:
+      - action: navigate
+        url: http://localhost:3000/aerocore/fleet
+
+  - id: nav_aerocore_hr
+    name: open_aerocore_workforce
+    description: Navigate to the AeroCore WorkforceHub (HR)
+    tags: [navigation, hr, workforce, aerocore]
+    steps:
+      - action: navigate
+        url: http://localhost:3000/aerocore/hr
+
+  - id: nav_aerocore_cargo
+    name: open_aerocore_cargo
+    description: Navigate to the AeroCore CargoFlow (Logistics)
+    tags: [navigation, cargo, logistics, aerocore]
+    steps:
+      - action: navigate
+        url: http://localhost:3000/aerocore/cargo
+
+  - id: nav_aerocore_security
+    name: open_aerocore_security
+    description: Navigate to the AeroCore SecurePerimeter (Security)
+    tags: [navigation, security, aerocore]
+    steps:
+      - action: navigate
+        url: http://localhost:3000/aerocore/security
+
+  - id: nav_aerocore_portal
+    name: open_aerocore_portal
+    description: Navigate to the AeroCore Client Portal
+    tags: [navigation, portal, client, aerocore]
+    steps:
+      - action: navigate
+        url: http://localhost:3000/aerocore/portal
+
+  - id: nav_jira
+    name: open_jira
+    description: Navigate to Jira Software
+    tags: [navigation, jira, legacy]
+    steps:
+      - action: navigate
+        url: http://localhost:3000/jira
+
+  - id: nav_trello
+    name: open_trello
+    description: Navigate to Trello
+    tags: [navigation, trello, legacy]
+    steps:
+      - action: navigate
+        url: http://localhost:3000/trello
+
+  - id: nav_confluence
+    name: open_confluence
+    description: Navigate to Confluence
+    tags: [navigation, confluence, legacy]
+    steps:
+      - action: navigate
+        url: http://localhost:3000/confluence
+
+  # ============================================
+  # ADMIN CONSOLE SKILLS
+  # ============================================
+
+  - id: admin_create_user
+    name: create_admin_user
+    description: Create a new user in the Admin Console
+    tags: [admin, user, create, aerocore]
+    parameters:
+      - name: userName
+        type: string
+        required: true
+      - name: userEmail
+        type: string
+        required: true
+      - name: userRole
+        type: string
+        default: Pilot
+        options: [Pilot, Dispatcher, Admin, Manager, Security]
+    steps:
+      - action: click
+        selector: "[data-testid=admin-create-user-btn]"
+      - action: type
+        selector: "[data-testid=admin-input-name]"
+        value: "{{userName}}"
+      - action: type
+        selector: "[data-testid=admin-input-email]"
+        value: "{{userEmail}}"
+      - action: select
+        selector: "[data-testid=admin-select-role]"
+        value: "{{userRole}}"
+      - action: click
+        selector: "[data-testid=admin-submit-user]"
+      - action: wait
+        text: "{{userName}}"
+
+  # ============================================
+  # DISPATCH SKILLS
+  # ============================================
+
+  - id: dispatch_create_incident
+    name: create_dispatch_incident
+    description: Report a new incident in the Dispatch Command Center
+    tags: [dispatch, incident, create, aerocore]
+    parameters:
+      - name: incidentType
+        type: string
+        default: Security
+        options: [Medical, Security, Fire, Logistics]
+      - name: priority
+        type: string
+        default: Medium
+        options: [Low, Medium, High, Critical]
+      - name: location
+        type: string
+        required: true
+      - name: description
+        type: string
+        required: true
+    steps:
+      - action: click
+        selector: "[data-testid=dispatch-create-btn]"
+      - action: select
+        selector: "[data-testid=dispatch-select-type]"
+        value: "{{incidentType}}"
+      - action: select
+        selector: "[data-testid=dispatch-select-priority]"
+        value: "{{priority}}"
+      - action: type
+        selector: "[data-testid=dispatch-input-location]"
+        value: "{{location}}"
+      - action: type
+        selector: "[data-testid=dispatch-textarea-desc]"
+        value: "{{description}}"
+      - action: click
+        selector: "[data-testid=dispatch-submit-incident]"
+      - action: wait
+        text: "{{location}}"
+
+  - id: dispatch_broadcast_alert
+    name: broadcast_dispatch_alert
+    description: Send a broadcast alert to all units
+    tags: [dispatch, broadcast, alert, aerocore]
+    steps:
+      - action: click
+        selector: "[data-testid=dispatch-broadcast-btn]"
+      - action: wait
+        text: "ALERT"
+
+  # ============================================
+  # FLEET MANAGEMENT SKILLS
+  # ============================================
+
+  - id: fleet_add_drone
+    name: add_drone_to_fleet
+    description: Deploy a new drone to the fleet
+    tags: [fleet, drone, create, aerocore]
+    parameters:
+      - name: model
+        type: string
+        default: Sentinel-X
+        options: [Sentinel-X, CargoLifter-9, Scout-Mini]
+      - name: location
+        type: string
+        default: Base Alpha
+        options: [Base Alpha, Hangar B, Sector 4, Sector 7]
+    steps:
+      - action: click
+        selector: "button:has-text('Add Drone')"
+      - action: select
+        selector: "select:first-of-type"
+        value: "{{model}}"
+      - action: select
+        selector: "select:last-of-type"
+        value: "{{location}}"
+      - action: click
+        selector: "button:has-text('Deploy Unit')"
+      - action: wait
+        text: "{{model}}"
+
+  # ============================================
+  # CARGO / LOGISTICS SKILLS
+  # ============================================
+
+  - id: cargo_create_shipment
+    name: create_cargo_shipment
+    description: Create a new cargo shipment
+    tags: [cargo, shipment, create, logistics, aerocore]
+    parameters:
+      - name: customer
+        type: string
+        required: true
+      - name: origin
+        type: string
+        required: true
+      - name: destination
+        type: string
+        required: true
+      - name: weight
+        type: string
+        required: false
+      - name: priority
+        type: string
+        default: Standard
+        options: [Standard, Express]
+    steps:
+      - action: click
+        selector: "button:has-text('New Shipment')"
+      - action: type
+        selector: "[data-testid=cargo-input-customer]"
+        value: "{{customer}}"
+      - action: type
+        selector: "[data-testid=cargo-input-origin]"
+        value: "{{origin}}"
+      - action: type
+        selector: "[data-testid=cargo-input-destination]"
+        value: "{{destination}}"
+      - action: type
+        selector: "[data-testid=cargo-input-weight]"
+        value: "{{weight}}"
+      - action: select
+        selector: "[data-testid=cargo-select-priority]"
+        value: "{{priority}}"
+      - action: click
+        selector: "[data-testid=cargo-submit-btn]"
+      - action: wait
+        text: "ORD-"
+
+  # ============================================
+  # SECURITY SKILLS
+  # ============================================
+
+  - id: security_simulate_breach
+    name: simulate_security_breach
+    description: Trigger a simulated security breach for testing
+    tags: [security, breach, test, aerocore]
+    steps:
+      - action: click
+        selector: "[data-testid=simulate-breach-button]"
+      - action: wait
+        text: "ALERT"
+
+  - id: security_deploy_drone
+    name: deploy_security_drone
+    description: Deploy a drone to respond to a security alert
+    tags: [security, drone, deploy, aerocore]
+    steps:
+      - action: click
+        selector: "[data-testid=deploy-drone-button]"
+      - action: wait
+        text: "DRONE_EN_ROUTE"
+
+  # ============================================
+  # JIRA SKILLS
+  # ============================================
+
+  - id: jira_create_issue
+    name: create_jira_issue
+    description: Create a new issue in Jira
+    tags: [jira, issue, create, legacy]
+    parameters:
+      - name: summary
+        type: string
+        required: true
+      - name: status
+        type: string
+        default: To Do
+        options: [To Do, In Progress, Done]
+    steps:
+      - action: click
+        selector: "[data-testid=jira-create-button]"
+      - action: type
+        selector: "[data-testid=jira-summary-input]"
+        value: "{{summary}}"
+      - action: select
+        selector: "[data-testid=jira-status-select]"
+        value: "{{status}}"
+      - action: click
+        selector: "[data-testid=jira-submit-create]"
+      - action: wait
+        text: "{{summary}}"
+
+selectors::
+  # Reference of all data-testid selectors in Mock SaaS
+  
+  admin:
+    createUserBtn: "[data-testid=admin-create-user-btn]"
+    inputName: "[data-testid=admin-input-name]"
+    inputEmail: "[data-testid=admin-input-email]"
+    selectRole: "[data-testid=admin-select-role]"
+    submitUser: "[data-testid=admin-submit-user]"
+    editUser: "[data-testid=admin-edit-user-{id}]"
+    userName: "[data-testid=user-name-{id}]"
+
+  dispatch:
+    createBtn: "[data-testid=dispatch-create-btn]"
+    broadcastBtn: "[data-testid=dispatch-broadcast-btn]"
+    selectType: "[data-testid=dispatch-select-type]"
+    selectPriority: "[data-testid=dispatch-select-priority]"
+    inputLocation: "[data-testid=dispatch-input-location]"
+    textareaDesc: "[data-testid=dispatch-textarea-desc]"
+    submitIncident: "[data-testid=dispatch-submit-incident]"
+
+  cargo:
+    inputCustomer: "[data-testid=cargo-input-customer]"
+    inputOrigin: "[data-testid=cargo-input-origin]"
+    inputDestination: "[data-testid=cargo-input-destination]"
+    inputWeight: "[data-testid=cargo-input-weight]"
+    selectPriority: "[data-testid=cargo-select-priority]"
+    submitBtn: "[data-testid=cargo-submit-btn]"
+
+  security:
+    simulateBreachBtn: "[data-testid=simulate-breach-button]"
+    deployDroneBtn: "[data-testid=deploy-drone-button]"
+    camera: "[data-testid=camera-{id}]"
+    sensorLog: "[data-testid=sensor-log]"
+
+  jira:
+    createButton: "[data-testid=jira-create-button]"
+    summaryInput: "[data-testid=jira-summary-input]"
+    statusSelect: "[data-testid=jira-status-select]"
+    submitCreate: "[data-testid=jira-submit-create]"
+    columnTodo: "[data-testid=jira-column-todo]"
+    columnInProgress: "[data-testid=jira-column-in-progress]"
+    columnDone: "[data-testid=jira-column-done]"
+    issueCard: "[data-testid=jira-issue-card-{key}]"
+    issueSummary: "[data-testid=jira-issue-summary]"
+
+  navigation:
+    aeroAdmin: "[data-testid=aero-nav-admin]"
+    aeroDispatch: "[data-testid=aero-nav-dispatch]"
+    aeroFleet: "[data-testid=aero-nav-fleet]"
+    aeroSecurity: "[data-testid=aero-nav-security]"
+    aeroHR: "[data-testid=aero-nav-hr]"
+    aeroCargo: "[data-testid=aero-nav-logistics]"
+    aeroPortal: "[data-testid=aero-nav-portal]"

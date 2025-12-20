@@ -59,6 +59,15 @@ electron.contextBridge.exposeInMainWorld("agent", {
     const listener = (_, step) => callback(step);
     electron.ipcRenderer.on("agent:step", listener);
     return () => electron.ipcRenderer.off("agent:step", listener);
+  },
+  getSavedPlans: () => electron.ipcRenderer.invoke("agent:get-saved-plans"),
+  savePlanFor: (taskId, plan) => electron.ipcRenderer.invoke("agent:save-plan", taskId, plan),
+  deletePlan: (taskId) => electron.ipcRenderer.invoke("agent:delete-plan", taskId),
+  setAutoLearn: (enabled) => electron.ipcRenderer.invoke("agent:set-auto-learn", enabled),
+  onToken: (callback) => {
+    const listener = (_, token) => callback(token);
+    electron.ipcRenderer.on("agent:token", listener);
+    return () => electron.ipcRenderer.off("agent:token", listener);
   }
 });
 electron.contextBridge.exposeInMainWorld("browser", {

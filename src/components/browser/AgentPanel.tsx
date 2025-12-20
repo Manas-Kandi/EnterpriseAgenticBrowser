@@ -1,8 +1,10 @@
 import ReactMarkdown from 'react-markdown';
 import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
-import { Send, X, ChevronDown, Brain, Zap, RotateCcw, MessageSquare, Play, Shield, Activity, Plus, History, MoreHorizontal, ChevronRight, Globe, Search, MousePointerClick } from 'lucide-react';
+import { Send, X, ChevronDown, Brain, Zap, Shield, Activity, RotateCcw, Plus, MoreHorizontal, ChevronRight, BookOpen, Trash2 } from 'lucide-react';
 import { useBrowserStore } from '@/lib/store';
+import { logToolCall, getCallsSince, getAllCalls, aggregateStats, toCSV, AggregatedToolStat } from '@/utils/toolStats';
+import { PlanVisualizer } from './PlanVisualizer';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -42,11 +44,16 @@ export function AgentPanel() {
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [currentModelId, setCurrentModelId] = useState<string>('');
   const [showModelSelector, setShowModelSelector] = useState(false);
-  const [feedbackMap, setFeedbackMap] = useState<Record<number, 'worked' | 'failed' | 'partial'>>({});
-  const [showTrace, setShowTrace] = useState(false);
   const [showBenchmarks, setShowBenchmarks] = useState(false);
   const [benchmarkResults, setBenchmarkResults] = useState<BenchmarkResult[]>([]);
   const [runningBenchmark, setRunningBenchmark] = useState(false);
+  const [currentPlanStep, setCurrentPlanStep] = useState<number>(0);
+  const [toolStats, setToolStats] = useState<AggregatedToolStat[]>([]);
+  const [failureAlerts, setFailureAlerts] = useState<string[]>([]);
+  const [autoLearn, setAutoLearn] = useState(false);
+  const [showPlansModal, setShowPlansModal] = useState(false);
+  const [savedPlans, setSavedPlans] = useState<Array<{id: string; ts: number; plan: string[]}>>([]);
+  const [planSearch, setPlanSearch] = useState('');
 
   const approvalRequest = approvalQueue.length > 0 ? approvalQueue[0] : null;
 
@@ -64,42 +71,62 @@ export function AgentPanel() {
     }
   };
 
-  // Helper to extract skill ID from observation
-  const getSkillIdFromMessage = (content: string): string | null => {
+  const loadToolStats = async () => {
+    const since = Date.now() - 24 * 60 * 60 * 1000;
+    const records = await getCallsSince(since);
+    const aggregated = aggregateStats(records);
+    setToolStats(aggregated);
+    setFailureAlerts(aggregated.filter(s => s.count > 5 && s.failures / s.count > 0.3).map(s => s.tool));
+  };
+
+  const exportCSV = async () => {
+    const all = await getAllCalls();
+    const csv = toCSV(all);
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `tool_stats_${Date.now()}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportJSON = async () => {
+    const all = await getAllCalls();
+    const blob = new Blob([JSON.stringify(all, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `tool_stats_${Date.now()}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const loadSavedPlans = async () => {
+    if (!window.agent?.getSavedPlans) return;
     try {
-      if (!content.includes('"skill"') || !content.includes('"id"')) return null;
-      // Try to find the JSON object if it's wrapped in text
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
-      const jsonStr = jsonMatch ? jsonMatch[0] : content;
-      const data = JSON.parse(jsonStr);
-      return data?.skill?.id || null;
-    } catch {
-      return null;
+      const plans = await window.agent.getSavedPlans();
+      setSavedPlans(plans);
+    } catch (e) {
+      console.error('Failed to load saved plans:', e);
     }
   };
 
-  const getSkillVersionFromMessage = (content: string): number | null => {
+  const deletePlan = async (taskId: string) => {
+    if (!window.agent?.deletePlan) return;
     try {
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
-      const jsonStr = jsonMatch ? jsonMatch[0] : content;
-      const data = JSON.parse(jsonStr);
-      const v = data?.skill?.currentVersion;
-      return typeof v === 'number' ? v : null;
-    } catch {
-      return null;
+      await window.agent.deletePlan(taskId);
+      setSavedPlans(prev => prev.filter(p => p.id !== taskId));
+    } catch (e) {
+      console.error('Failed to delete plan:', e);
     }
   };
 
-  const handleFeedback = async (skillId: string, label: 'worked' | 'failed' | 'partial', index: number) => {
-    if (!window.agent) return;
-    try {
-      const skillVersion = getSkillVersionFromMessage(messages[index]?.content ?? '') ?? undefined;
-      await window.agent.sendFeedback(skillId, label, skillVersion);
-      setFeedbackMap(prev => ({ ...prev, [index]: label }));
-    } catch (err) {
-      console.error('Failed to send feedback:', err);
+  useEffect(() => {
+    if (showBenchmarks) {
+      loadToolStats();
     }
-  };
+  }, [showBenchmarks]);
 
   useEffect(() => {
     if (!window.agent) return;
@@ -128,6 +155,24 @@ export function AgentPanel() {
     });
     // Listen for agent steps
     const offStep = window.agent.onStep((step: any) => {
+      // Track progress through plans
+      if (step.type === 'thought' && step.metadata?.plan && Array.isArray(step.metadata.plan)) {
+        // Reset plan step when a new plan is created
+        setCurrentPlanStep(0);
+      } else if (step.type === 'action') {
+        // Increment plan step when an action is executed
+        setCurrentPlanStep(prev => prev + 1);
+      }
+
+      // Log tool usage stats
+      if (step.metadata?.phase === 'tool_end') {
+        const toolName = step.metadata?.tool ?? 'unknown';
+        const duration = step.metadata?.durationMs ?? 0;
+        const ok = step.metadata?.ok !== false;
+        logToolCall(toolName, duration, ok);
+        if (showBenchmarks) loadToolStats();
+      }
+
       setMessages((prev) => [
         ...prev,
         {
@@ -139,10 +184,26 @@ export function AgentPanel() {
       ]);
     });
 
+    const offToken = window.agent.onToken?.((token: string) => {
+      setMessages((prev) => {
+        const lastMsg = prev[prev.length - 1];
+        // If last message is an assistant message being streamed (not a specialized step type yet or is text)
+        if (lastMsg && lastMsg.role === 'assistant' && (!lastMsg.type || lastMsg.type === 'text')) {
+          return [
+            ...prev.slice(0, -1),
+            { ...lastMsg, content: lastMsg.content + token }
+          ];
+        }
+        // Otherwise start a new message
+        return [...prev, { role: 'assistant', content: token, type: 'text' }];
+      });
+    });
+
     return () => {
       offApproval?.();
       offApprovalTimeout?.();
       offStep?.();
+      offToken?.();
     };
   }, []);
 
@@ -213,7 +274,22 @@ export function AgentPanel() {
 
     try {
       const response = await window.agent.chat(userMessage);
-      setMessages(prev => [...prev, { role: 'assistant', content: response }]);
+      setMessages(prev => {
+        // If in 'do' mode, the response is a new summary message
+        if (agentMode === 'do') {
+          return [...prev, { role: 'assistant', content: response }];
+        }
+        
+        // In 'chat'/'read' mode, we likely streamed the response
+        const lastMsg = prev[prev.length - 1];
+        if (lastMsg && lastMsg.role === 'assistant' && (!lastMsg.type || lastMsg.type === 'text')) {
+          // Update the streamed message with the authoritative final response
+          return [...prev.slice(0, -1), { ...lastMsg, content: response }];
+        }
+        
+        // Fallback if no stream happened
+        return [...prev, { role: 'assistant', content: response }];
+      });
     } catch (error) {
       console.error(error);
       setMessages(prev => [...prev, { role: 'assistant', content: "Sorry, I encountered an error connecting to the agent." }]);
@@ -233,8 +309,26 @@ export function AgentPanel() {
           <button onClick={handleResetConversation} className="p-1.5 hover:bg-secondary rounded-md text-muted-foreground hover:text-foreground transition-colors" title="New Chat">
             <Plus size={14} />
           </button>
-          <button className="p-1.5 hover:bg-secondary rounded-md text-muted-foreground hover:text-foreground transition-colors" title="History">
-            <History size={14} />
+          <button 
+            onClick={() => { setShowPlansModal(true); loadSavedPlans(); }}
+            className="p-1.5 hover:bg-secondary rounded-md text-muted-foreground hover:text-foreground transition-colors" 
+            title="Saved Plans"
+          >
+            <BookOpen size={14} />
+          </button>
+          <button 
+            onClick={() => {
+              const newVal = !autoLearn;
+              setAutoLearn(newVal);
+              window.agent?.setAutoLearn?.(newVal);
+            }}
+            className={cn(
+              "p-1.5 rounded-md transition-colors",
+              autoLearn ? "bg-primary/20 text-primary" : "hover:bg-secondary text-muted-foreground hover:text-foreground"
+            )} 
+            title={autoLearn ? "Auto-learn ON" : "Auto-learn OFF"}
+          >
+            <Brain size={14} />
           </button>
           <button className="p-1.5 hover:bg-secondary rounded-md text-muted-foreground hover:text-foreground transition-colors" title="More">
             <MoreHorizontal size={14} />
@@ -272,6 +366,49 @@ export function AgentPanel() {
               className="flex-1 bg-secondary text-secondary-foreground py-2 rounded text-xs font-medium hover:opacity-90 disabled:opacity-50"
             >
               Run AeroCore Suite
+            </button>
+          </div>
+
+          {failureAlerts.length > 0 && (
+            <div className="mb-3 p-2 rounded bg-red-500/10 border border-red-500/20 text-red-500 text-[11px]">
+              High failure rate (&gt;30%) detected for: {failureAlerts.join(', ')}
+            </div>
+          )}
+
+          {toolStats.length > 0 && (
+            <div className="overflow-x-auto mb-4">
+              <table className="w-full text-[11px]">
+                <thead>
+                  <tr className="text-muted-foreground text-left">
+                    <th className="py-1 pr-2">Tool</th>
+                    <th className="py-1 pr-2 text-right">Calls</th>
+                    <th className="py-1 pr-2 text-right">Fail %</th>
+                    <th className="py-1 pr-2 text-right">Avg ms</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {toolStats.map(stat => {
+                    const failPct = stat.count ? Math.round((stat.failures / stat.count) * 100) : 0;
+                    return (
+                      <tr key={stat.tool} className="border-b border-border/10 last:border-b-0">
+                        <td className="py-1 pr-2">{stat.tool}</td>
+                        <td className="py-1 pr-2 text-right">{stat.count}</td>
+                        <td className={"py-1 pr-2 text-right " + (failPct > 30 ? 'text-red-500 font-semibold' : '')}>{failPct}%</td>
+                        <td className="py-1 pr-2 text-right">{stat.avgLatency}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          <div className="flex gap-2 mb-4">
+            <button onClick={exportCSV} className="flex-1 bg-secondary/50 text-secondary-foreground py-1 rounded text-[11px] font-medium hover:opacity-90">
+              Export CSV
+            </button>
+            <button onClick={exportJSON} className="flex-1 bg-secondary/50 text-secondary-foreground py-1 rounded text-[11px] font-medium hover:opacity-90">
+              Export JSON
             </button>
           </div>
 
@@ -322,6 +459,69 @@ export function AgentPanel() {
         </div>
       )}
 
+      {/* Saved Plans Modal */}
+      {showPlansModal && (
+        <div className="absolute inset-0 z-50 bg-background/95 backdrop-blur-sm p-4 flex flex-col">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-bold flex items-center gap-2">
+              <BookOpen size={16} className="text-primary" />
+              Saved Plans
+            </h2>
+            <button onClick={() => setShowPlansModal(false)} className="p-1 hover:bg-secondary rounded">
+              <X size={16} />
+            </button>
+          </div>
+
+          <input
+            type="text"
+            placeholder="Search plans..."
+            value={planSearch}
+            onChange={(e) => setPlanSearch(e.target.value)}
+            className="w-full mb-4 px-3 py-2 text-xs bg-secondary/30 border border-border/50 rounded-lg focus:outline-none focus:ring-1 focus:ring-primary"
+          />
+
+          <div className="flex-1 overflow-y-auto space-y-2">
+            {savedPlans.length === 0 && (
+              <div className="text-center py-8 text-muted-foreground text-xs">
+                No saved plans yet. Enable Auto-learn to save successful trajectories.
+              </div>
+            )}
+            {savedPlans
+              .filter(p => !planSearch || p.id.toLowerCase().includes(planSearch.toLowerCase()) || p.plan.some(s => s.toLowerCase().includes(planSearch.toLowerCase())))
+              .map((plan) => (
+                <div key={plan.id} className="p-3 rounded border border-border/30 bg-secondary/10 text-xs">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="font-bold truncate flex-1">{plan.id}</div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-muted-foreground text-[10px]">
+                        {new Date(plan.ts).toLocaleDateString()}
+                      </span>
+                      <button 
+                        onClick={() => deletePlan(plan.id)}
+                        className="p-1 hover:bg-red-500/20 rounded text-muted-foreground hover:text-red-500 transition-colors"
+                        title="Delete plan"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                  </div>
+                  <div className="space-y-1 text-muted-foreground">
+                    {plan.plan.slice(0, 3).map((step, idx) => (
+                      <div key={idx} className="flex gap-2">
+                        <span className="text-primary/50">{idx + 1}.</span>
+                        <span className="truncate">{step}</span>
+                      </div>
+                    ))}
+                    {plan.plan.length > 3 && (
+                      <div className="text-muted-foreground/50 italic">+{plan.plan.length - 3} more steps</div>
+                    )}
+                  </div>
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
+
       {/* Main Content Area */}
       <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-6 scrollbar-hide">
         {messages.length === 0 ? (
@@ -332,242 +532,258 @@ export function AgentPanel() {
           </div>
         ) : (
           <div className="space-y-4">
-            {messages.map((msg, i) => {
-              if (msg.role === 'user') {
-                return (
-                  <div key={i} className="group relative">
-                    <div className="text-sm text-foreground/90 whitespace-pre-wrap leading-relaxed pr-6">
-                      {msg.content}
-                    </div>
-                    <button className="absolute right-0 top-0 opacity-0 group-hover:opacity-100 p-1 hover:bg-secondary rounded transition-opacity">
-                      <RotateCcw size={12} className="text-muted-foreground" />
-                    </button>
-                  </div>
-                );
-              }
+            {(() => {
+              // Group messages into conversations (user message + all following assistant messages until next user)
+              const conversations: Array<{ user: Message; steps: Message[]; response: Message | null }> = [];
+              let current: { user: Message; steps: Message[]; response: Message | null } | null = null;
 
-              // Handle Assistant Messages (Thoughts, Actions, Observations, Text)
-              if (msg.type === 'thought') {
-                return (
-                  <details key={i} className="group/thought">
-                    <summary className="flex items-center gap-2 text-[11px] text-muted-foreground/40 hover:text-muted-foreground/70 cursor-pointer list-none select-none py-0.5 transition-colors">
-                      <ChevronRight size={12} className="group-open/thought:rotate-90 transition-transform opacity-50" />
-                      <span>Thought for {msg.metadata?.durationMs ? Math.round(msg.metadata.durationMs / 1000) : '<1'}s</span>
-                    </summary>
-                    <div className="pl-5 pt-1 text-[11px] text-muted-foreground/50 italic leading-relaxed border-l border-border/10 ml-[5px] mb-2 font-mono">
-                      {msg.content}
-                    </div>
-                  </details>
-                );
-              }
-
-              if (msg.type === 'action' || msg.type === 'observation') {
-                const isAction = msg.type === 'action';
-                return (
-                  <div key={i} className="flex items-center gap-2 group/item py-0.5">
-                    <div className="shrink-0 opacity-40 group-hover/item:opacity-70 transition-opacity">
-                      {isAction ? (
-                        <Globe size={11} className="text-blue-400" />
-                      ) : (
-                        <Search size={11} className="text-muted-foreground" />
-                      )}
-                    </div>
-                    <div className="flex-1 flex items-center justify-between overflow-hidden gap-2">
-                      <span className="text-[11px] font-medium text-foreground/50 truncate group-hover/item:text-foreground/70 transition-colors">
-                        {isAction ? (
-                          <>Navigating <span className="text-foreground/30 font-normal truncate">{msg.content.replace(/^Executing\s+/i, '')}</span></>
-                        ) : (
-                          <>Observed <span className="text-foreground/30 font-normal truncate">{msg.content.substring(0, 40)}{msg.content.length > 40 ? '...' : ''}</span></>
-                        )}
-                      </span>
-                      <span className="text-[9px] text-muted-foreground/20 font-mono group-hover/item:text-muted-foreground/40 transition-colors shrink-0">
-                        {msg.metadata?.durationMs ? Math.round(msg.metadata.durationMs) + 'ms' : ''}
-                      </span>
-                    </div>
-                  </div>
-                );
-              }
-
-              // Default Text Message (Bot Response)
-              if (!msg.type || msg.type === 'text') {
-                // Special Case: High-level Task Card (usually first bot response or major update)
-                const isTaskSummary = msg.content.includes('#') || msg.content.length > 200;
-
-                if (isTaskSummary) {
-                  return (
-                    <div key={i} className="rounded-xl border border-border/40 bg-secondary/10 p-4 space-y-4 shadow-sm backdrop-blur-sm select-text">
-                      <div className="space-y-1.5">
-                        <h3 className="text-sm font-bold text-foreground leading-tight">
-                          {msg.content.split('\n')[0].replace(/^#+\s*/, '')}
-                        </h3>
-                        <p className="text-xs text-muted-foreground leading-relaxed">
-                          {msg.content.split('\n').slice(1).find(l => l.trim() && !l.startsWith('-'))?.substring(0, 150)}...
-                        </p>
-                      </div>
-
-                      {/* Browser Actions Section */}
-                      <div className="space-y-2">
-                        <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60 font-semibold">Activity</div>
-                        <div className="space-y-1.5">
-                          <div className="flex items-center gap-2 text-xs text-blue-400">
-                            <Globe size={12} />
-                            Gathering information from web
-                          </div>
-                          <div className="flex items-center gap-2 text-xs text-muted-foreground/70">
-                            <MousePointerClick size={12} />
-                            Processing user request
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Progress Updates - Minimalist for Browser */}
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between">
-                          <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60 font-semibold">Steps</div>
-                        </div>
-                        <div className="space-y-2 relative pl-4 before:absolute before:left-1 before:top-2 before:bottom-2 before:w-px before:bg-border/30">
-                          <div className="text-xs flex gap-3 text-foreground/80">
-                            <span className="text-muted-foreground/30 font-mono text-[10px]">1</span>
-                            <span>Navigated to secure site</span>
-                          </div>
-                          <div className="text-xs flex gap-3 text-foreground/80">
-                            <span className="text-muted-foreground/30 font-mono text-[10px]">2</span>
-                            <span>Extracted relevant data points</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  );
+              messages.forEach((msg) => {
+                if (msg.role === 'user') {
+                  if (current) conversations.push(current);
+                  current = { user: msg, steps: [], response: null };
+                } else if (current) {
+                  if (!msg.type || msg.type === 'text') {
+                    current.response = msg;
+                  } else {
+                    current.steps.push(msg);
+                  }
                 }
+              });
+              if (current) conversations.push(current);
+
+              return conversations.map((conv, convIdx) => {
+                // Count meaningful steps (exclude noise)
+                const meaningfulSteps = conv.steps.filter(s => 
+                  s.type === 'action' || 
+                  (s.type === 'thought' && !s.content.startsWith('Still thinking') && !s.content.startsWith('Calling model') && !s.content.startsWith('Model responded'))
+                );
+                const stepCount = meaningfulSteps.length;
 
                 return (
-                  <div key={i} className="text-sm text-foreground/80 leading-relaxed message-markdown">
-                    <ReactMarkdown
-                      components={{
-                        p: ({ children }) => <p className="mb-3 last:mb-0">{children}</p>,
-                        h1: ({ children }) => <h1 className="text-sm font-bold mt-4 mb-2 first:mt-0 text-foreground">{children}</h1>,
-                        h2: ({ children }) => <h2 className="text-xs font-bold mt-3 mb-1.5 text-foreground/90 uppercase tracking-wide">{children}</h2>,
-                        h3: ({ children }) => <h3 className="text-xs font-semibold mt-2.5 mb-1 text-foreground/80">{children}</h3>,
-                        ul: ({ children }) => <ul className="list-disc pl-4 mb-3 space-y-1">{children}</ul>,
-                        ol: ({ children }) => <ol className="list-decimal pl-4 mb-3 space-y-1">{children}</ol>,
-                        code: ({ className, children }) => {
-                          const match = /language-(\w+)/.exec(className || '')
-                          return !match ? (
-                            <code className="bg-secondary/50 px-1 py-0.5 rounded text-[11px] font-mono border border-border/40 text-primary/80">{children}</code>
-                          ) : (
-                            <code className={cn("block bg-secondary/30 p-3 rounded-lg text-[11px] font-mono border border-border/20 my-3 overflow-x-auto", className)}>{children}</code>
-                          )
-                        },
-                        pre: ({ children }) => <div className="relative group">{children}</div>
-                      }}
-                    >
-                      {msg.content}
-                    </ReactMarkdown>
+                  <div key={convIdx}>
+                    {/* Separator between conversations */}
+                    {convIdx > 0 && (
+                      <div className="border-t border-border/20 my-6" />
+                    )}
+                    
+                    <div className="space-y-3">
+                      {/* User message - prominent, full white */}
+                      <div className="group relative">
+                        <div className="text-sm font-semibold text-foreground whitespace-pre-wrap leading-relaxed pr-6">
+                          {conv.user.content}
+                        </div>
+                        <button className="absolute right-0 top-0 opacity-0 group-hover:opacity-100 p-1 hover:bg-secondary rounded transition-opacity">
+                          <RotateCcw size={12} className="text-muted-foreground" />
+                        </button>
+                      </div>
+
+                    {/* Collapsible steps summary */}
+                    {stepCount > 0 && (
+                      <details className="group/steps">
+                        <summary className="flex items-center gap-1.5 text-[11px] text-muted-foreground/50 cursor-pointer list-none select-none hover:text-muted-foreground/70 transition-colors">
+                          <ChevronRight size={12} className="group-open/steps:rotate-90 transition-transform" />
+                          <span>{stepCount} step{stepCount !== 1 ? 's' : ''} completed</span>
+                        </summary>
+                        <div className="mt-2 pl-4 space-y-2 border-l border-border/20">
+                          {conv.steps.map((step, stepIdx) => {
+                            // Skip noise
+                            if (step.content.startsWith('Still thinking') || 
+                                step.content.startsWith('Calling model') || 
+                                step.content.startsWith('Model responded') ||
+                                step.content.startsWith('Tool Output:')) {
+                              return null;
+                            }
+
+                            if (step.type === 'thought') {
+                              // Check for plan
+                              if (step.metadata?.plan && Array.isArray(step.metadata.plan)) {
+                                return (
+                                  <div key={stepIdx} className="space-y-2">
+                                    <div className="flex items-start gap-2">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/30 mt-1.5 shrink-0" />
+                                      <p className="text-[11px] text-muted-foreground/60 leading-relaxed">
+                                        {step.content}
+                                      </p>
+                                    </div>
+                                    <div className="ml-3">
+                                      <PlanVisualizer plan={step.metadata.plan} currentStepIndex={currentPlanStep} />
+                                    </div>
+                                  </div>
+                                );
+                              }
+                              return (
+                                <div key={stepIdx} className="flex items-start gap-2">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/30 mt-1.5 shrink-0" />
+                                  <p className="text-[11px] text-muted-foreground/60 leading-relaxed">
+                                    {step.content}
+                                  </p>
+                                </div>
+                              );
+                            }
+
+                            if (step.type === 'action') {
+                              return (
+                                <div key={stepIdx} className="flex items-start gap-2">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-blue-400/50 mt-1.5 shrink-0" />
+                                  <span className="text-[11px] text-muted-foreground/60">
+                                    {step.content.replace(/^Executing\s+/i, '')}
+                                  </span>
+                                </div>
+                              );
+                            }
+
+                            if (step.type === 'observation' && !step.content.startsWith('Tool Output:')) {
+                              return (
+                                <div key={stepIdx} className="flex items-start gap-2">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-green-400/50 mt-1.5 shrink-0" />
+                                  <span className="text-[11px] text-muted-foreground/60">
+                                    {step.content.substring(0, 80)}{step.content.length > 80 ? '...' : ''}
+                                  </span>
+                                </div>
+                              );
+                            }
+
+                            return null;
+                          })}
+                        </div>
+                      </details>
+                    )}
+
+                    {/* Loading indicator when no response yet */}
+                    {!conv.response && loading && convIdx === conversations.length - 1 && (
+                      <div className="flex items-center gap-2 text-[11px] text-muted-foreground/40">
+                        <span className="w-1.5 h-1.5 rounded-full bg-primary/50 animate-pulse" />
+                        <span>Thinking...</span>
+                      </div>
+                    )}
+
+                    {/* Final response */}
+                    {conv.response && (
+                      <div className="text-sm text-foreground/80 leading-relaxed">
+                        <ReactMarkdown
+                          components={{
+                            p: ({ children }) => <p className="mb-3 last:mb-0">{children}</p>,
+                            h1: ({ children }) => <h1 className="text-sm font-bold mt-4 mb-2 first:mt-0 text-foreground">{children}</h1>,
+                            h2: ({ children }) => <h2 className="text-xs font-bold mt-3 mb-1.5 text-foreground/90">{children}</h2>,
+                            h3: ({ children }) => <h3 className="text-xs font-semibold mt-2.5 mb-1 text-foreground/80">{children}</h3>,
+                            ul: ({ children }) => <ul className="list-disc pl-4 mb-3 space-y-1">{children}</ul>,
+                            ol: ({ children }) => <ol className="list-decimal pl-4 mb-3 space-y-1">{children}</ol>,
+                            li: ({ children }) => <li className="text-sm">{children}</li>,
+                            strong: ({ children }) => <strong className="font-semibold text-foreground">{children}</strong>,
+                            code: ({ className, children }) => {
+                              const match = /language-(\w+)/.exec(className || '');
+                              return !match ? (
+                                <code className="bg-secondary/50 px-1 py-0.5 rounded text-[11px] font-mono">{children}</code>
+                              ) : (
+                                <code className={cn("block bg-secondary/30 p-3 rounded-lg text-[11px] font-mono my-3 overflow-x-auto", className)}>{children}</code>
+                              );
+                            },
+                          }}
+                        >
+                          {conv.response.content}
+                        </ReactMarkdown>
+                      </div>
+                    )}
+                    </div>
                   </div>
                 );
-              }
+              });
+            })()}
 
-              return null;
-            })}
-
-            {approvalRequest && (
-              <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 space-y-3 animate-in fade-in slide-in-from-bottom-2">
-                <div className="flex items-center gap-2 text-amber-500 font-semibold text-xs uppercase tracking-tight">
-                  <Shield size={14} />
-                  Action Required
-                </div>
-                <div className="text-sm font-medium text-foreground/90">
-                  Agent wants to run <code className="bg-amber-500/10 px-1.5 py-0.5 rounded text-xs select-all">{approvalRequest.toolName}</code>
-                </div>
-                <pre className="text-[10px] font-mono bg-background/50 p-2.5 rounded-lg border border-amber-500/10 overflow-x-auto text-muted-foreground max-h-40">
-                  {JSON.stringify(approvalRequest.args, null, 2)}
-                </pre>
-                <div className="flex gap-2 pt-1">
-                  <button
-                    onClick={() => handleApproval(false)}
-                    className="flex-1 px-3 py-2 bg-secondary/50 hover:bg-destructive/10 text-muted-foreground hover:text-destructive text-xs font-medium rounded-lg transition-all border border-border/50"
-                  >
-                    Reject
-                  </button>
-                  <button
-                    onClick={() => handleApproval(true)}
-                    className="flex-1 px-3 py-2 bg-primary text-primary-foreground hover:opacity-90 text-xs font-medium rounded-lg transition-all border border-primary"
-                  >
-                    Accept all
-                  </button>
-                </div>
-              </div>
-            )}
-
+            {/* Global loading when processing */}
             {loading && (
-              <div className="flex items-center gap-3 py-2">
-                <div className="relative">
-                  <Brain size={16} className="text-primary/40 animate-pulse" />
-                  <span className="absolute -top-1 -right-1 flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-40"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-primary/60"></span>
-                  </span>
-                </div>
-                <span className="text-[11px] font-medium text-muted-foreground/50 tracking-wide uppercase">Processing...</span>
+              <div className="flex items-center gap-2 text-[11px] text-muted-foreground/40">
+                <span className="w-1.5 h-1.5 rounded-full bg-primary/50 animate-pulse" />
+                <span>Processing...</span>
               </div>
             )}
           </div>
         )}
       </div>
 
-      {/* Footer / Input Area */}
-      <div className="shrink-0 p-4 border-t border-border/50 space-y-4 bg-background/80 backdrop-blur-md">
-        <div className="relative group/input">
-          <div className="absolute left-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5 opacity-40 group-focus-within/input:opacity-80 transition-opacity">
-            <button className="p-1 hover:bg-secondary rounded text-muted-foreground">
-              <Plus size={14} />
+      {/* Approval Request - moved outside the message loop */}
+      {approvalRequest && (
+        <div className="mx-4 mb-4 rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 space-y-3">
+          <div className="flex items-center gap-2 text-amber-500 font-semibold text-xs uppercase tracking-tight">
+            <Shield size={14} />
+            Action Required
+          </div>
+          <div className="text-sm font-medium text-foreground/90">
+            Agent wants to run <code className="bg-amber-500/10 px-1.5 py-0.5 rounded text-xs">{approvalRequest.toolName}</code>
+          </div>
+          <pre className="text-[10px] font-mono bg-background/50 p-2.5 rounded-lg border border-amber-500/10 overflow-x-auto text-muted-foreground max-h-40">
+            {JSON.stringify(approvalRequest.args, null, 2)}
+          </pre>
+          <div className="flex gap-2 pt-1">
+            <button
+              onClick={() => handleApproval(false)}
+              className="flex-1 px-3 py-2 bg-secondary/50 hover:bg-destructive/10 text-muted-foreground hover:text-destructive text-xs font-medium rounded-lg transition-all border border-border/50"
+            >
+              Reject
+            </button>
+            <button
+              onClick={() => handleApproval(true)}
+              className="flex-1 px-3 py-2 bg-primary text-primary-foreground hover:opacity-90 text-xs font-medium rounded-lg transition-all"
+            >
+              Accept
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Footer / Input Area - Clean minimal design */}
+      <div className="shrink-0 p-3 bg-background/60">
+        <div className="bg-secondary/40 rounded-xl border border-border/30">
+          {/* Input row */}
           <form onSubmit={handleSubmit}>
             <input
-              className="w-full bg-secondary/30 border border-border/20 rounded-xl pl-10 pr-12 py-3 text-sm focus:outline-none focus:border-primary/20 focus:bg-secondary/50 transition-all placeholder:text-muted-foreground/30 shadow-inner"
+              className="w-full bg-transparent px-4 py-3 text-sm focus:outline-none placeholder:text-muted-foreground/40"
               placeholder="Ask anything (⌘L), @ to mention, / for workflows"
               value={input}
               onChange={e => setInput(e.target.value)}
               disabled={loading}
             />
-            <button
-              type="submit"
-              disabled={loading || !input.trim()}
-              className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-muted-foreground hover:text-primary disabled:opacity-0 transition-all scale-90 hover:scale-100"
-            >
-              <Send size={18} />
-            </button>
           </form>
-        </div>
 
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
+          {/* Controls row */}
+          <div className="flex items-center gap-1 px-2 pb-2 pt-0.5">
+            {/* Add button */}
+            <button className="p-1.5 text-muted-foreground/60 hover:text-foreground hover:bg-secondary/50 rounded-md transition-colors">
+              <Plus size={14} />
+            </button>
+
+            {/* Mode selector */}
+            <button
+              onClick={() => handleModeChange(agentMode === 'chat' ? 'do' : 'chat')}
+              className="flex items-center gap-1 px-2 py-1 text-xs text-muted-foreground/70 hover:text-foreground hover:bg-secondary/50 rounded-md transition-colors"
+            >
+              <ChevronDown size={12} className="rotate-180" />
+              <span>{agentMode === 'do' ? 'Do' : 'Fast'}</span>
+            </button>
+
+            {/* Model selector */}
             <div className="relative">
               <button
                 onClick={() => setShowModelSelector(!showModelSelector)}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-medium text-muted-foreground hover:text-foreground hover:bg-secondary/50 rounded-lg transition-all"
+                className="flex items-center gap-1 px-2 py-1 text-xs text-muted-foreground/70 hover:text-foreground hover:bg-secondary/50 rounded-md transition-colors"
               >
-                {models.find(m => m.id === currentModelId)?.supportsThinking ? (
-                  <Brain size={12} className="text-primary" />
-                ) : (
-                  <Zap size={12} className="text-amber-500" />
-                )}
-                <span>{models.find(m => m.id === currentModelId)?.name || 'Gemini 3 Flash'}</span>
-                <ChevronDown size={10} className={cn("mt-0.5", showModelSelector && "rotate-180")} />
+                <ChevronDown size={12} className="rotate-180" />
+                <span className="max-w-[120px] truncate">
+                  {models.find(m => m.id === currentModelId)?.name || 'Select Model'}
+                </span>
               </button>
               {showModelSelector && (
-                <div className="absolute bottom-full left-0 mb-2 w-48 bg-background border border-border/50 rounded-xl shadow-2xl overflow-hidden py-1 z-50 animate-in fade-in slide-in-from-bottom-2">
+                <div className="absolute bottom-full left-0 mb-1 w-52 bg-background/95 backdrop-blur-md border border-border/40 rounded-lg shadow-xl overflow-hidden py-1 z-50">
                   {models.map((model) => (
                     <button
                       key={model.id}
                       onClick={() => handleModelChange(model.id)}
                       className={cn(
-                        "w-full flex items-center gap-2 px-3 py-2 text-[11px] hover:bg-secondary/50 transition-colors text-left",
-                        model.id === currentModelId ? "text-primary bg-primary/5" : "text-muted-foreground"
+                        "w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-secondary/50 transition-colors text-left",
+                        model.id === currentModelId ? "text-foreground bg-secondary/30" : "text-muted-foreground"
                       )}
                     >
-                      {model.supportsThinking ? <Brain size={12} /> : <Zap size={12} />}
+                      {model.supportsThinking ? <Brain size={11} /> : <Zap size={11} />}
                       <span className="truncate">{model.name}</span>
                     </button>
                   ))}
@@ -575,38 +791,41 @@ export function AgentPanel() {
               )}
             </div>
 
-            <div className="h-4 w-px bg-border/30 mx-1" />
+            {/* Spacer */}
+            <div className="flex-1" />
 
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => handleModeChange('chat')}
-                className={cn(
-                  "flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-medium rounded-lg transition-all",
-                  agentMode === 'chat' ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground hover:bg-secondary/40"
-                )}
-              >
-                <MessageSquare size={12} />
-                <span>Chat</span>
-              </button>
-              <button
-                onClick={() => handleModeChange('do')}
-                className={cn(
-                  "flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-medium rounded-lg transition-all",
-                  agentMode === 'do' ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground hover:bg-secondary/40"
-                )}
-              >
-                <Play size={12} />
-                <span>Do</span>
-              </button>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-secondary/50 rounded-lg transition-colors">
-              <Activity size={12} />
+            {/* Permission mode - compact */}
+            <button
+              onClick={() => handlePermissionModeChange(agentPermissionMode === 'yolo' ? 'permissions' : 'yolo')}
+              className={cn(
+                "p-1.5 rounded-md transition-colors",
+                agentPermissionMode === 'yolo' 
+                  ? "text-red-400/80 hover:bg-red-500/10" 
+                  : "text-muted-foreground/60 hover:text-foreground hover:bg-secondary/50"
+              )}
+              title={agentPermissionMode === 'yolo' ? 'YOLO Mode' : 'Safe Mode'}
+            >
+              <Shield size={14} />
             </button>
-            <button className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-secondary/50 rounded-lg transition-colors">
-              <RotateCcw size={12} />
+
+            {/* Send button - circular */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                if (input.trim() && !loading) {
+                  handleSubmit(e as any);
+                }
+              }}
+              disabled={loading || !input.trim()}
+              className={cn(
+                "p-1.5 rounded-full border transition-all",
+                input.trim() 
+                  ? "border-foreground/20 text-foreground hover:bg-foreground/10" 
+                  : "border-border/30 text-muted-foreground/30"
+              )}
+            >
+              <Send size={14} />
             </button>
           </div>
         </div>

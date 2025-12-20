@@ -11,6 +11,7 @@ import { toolRegistry } from './services/ToolRegistry'
 import { browserTargetService } from './services/BrowserTargetService'
 import { agentRunContext } from './services/AgentRunContext'
 import { telemetryService } from './services/TelemetryService'
+import { PlanMemory } from './services/PlanMemory'
 import { PolicyService } from './services/PolicyService'
 import { benchmarkService, BenchmarkResult } from './services/BenchmarkService'
 import './services/CodeReaderService'
@@ -20,6 +21,8 @@ import './integrations/mock/MockTrelloConnector'; // Initialize Mock Trello
 import './integrations/BrowserAutomationService'; // Initialize Playwright Automation
 import './services/WebAPIService'; // Initialize Web API tools (GitHub, HN, Wikipedia APIs)
 import './services/CodeExecutionService'; // Initialize dynamic code execution for agent
+
+const planMemory = new PlanMemory();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -50,7 +53,7 @@ type PendingApproval = {
   requesterWebContentsId: number;
   createdAt: number;
   timeout: NodeJS.Timeout;
-  resolve: (approved: boolean) => void;
+  resolve: (result: boolean | { approved: boolean; reason?: 'timeout' | 'denied' }) => void;
 };
 
 const pendingApprovals = new Map<string, PendingApproval>();
@@ -118,7 +121,7 @@ app.whenReady().then(() => {
 
     clearTimeout(pending.timeout);
     pendingApprovals.delete(requestId);
-    pending.resolve(approved);
+    pending.resolve(approved ? true : { approved: false, reason: 'denied' });
   });
 
   toolRegistry.setApprovalHandler(async (toolName, args) => {
@@ -133,7 +136,7 @@ app.whenReady().then(() => {
     const createdAt = Date.now();
     wc.send('agent:request-approval', { requestId, toolName, args, runId, timeoutMs: APPROVAL_TIMEOUT_MS });
 
-    return await new Promise<boolean>((resolve) => {
+    return await new Promise<boolean | { approved: boolean; reason?: 'timeout' | 'denied' }>((resolve) => {
       const timeout = setTimeout(() => {
         pendingApprovals.delete(requestId);
         try {
@@ -144,7 +147,7 @@ app.whenReady().then(() => {
         } catch {
           // ignore
         }
-        resolve(false);
+        resolve({ approved: false, reason: 'timeout' });
       }, APPROVAL_TIMEOUT_MS);
 
       pendingApprovals.set(requestId, {
@@ -242,6 +245,11 @@ app.whenReady().then(() => {
     return results;
   });
 
+  ipcMain.handle('agent:set-auto-learn', async (_, enabled: boolean) => {
+    benchmarkService.setAutoLearn(enabled);
+    return { success: true, enabled };
+  });
+
   ipcMain.handle('benchmark:runSuiteWithFlag', async (_, filter?: string, enableActionsPolicy?: boolean) => {
     const results = await benchmarkService.runSuite(filter, enableActionsPolicy);
     return results;
@@ -253,7 +261,21 @@ app.whenReady().then(() => {
   });
 
   // Agent IPC Handlers
-  ipcMain.handle('agent:chat', async (event, message) => {
+  ipcMain.handle('agent:get-saved-plans', async () => {
+  return planMemory.getPlans();
+});
+
+ipcMain.handle('agent:save-plan', async (_event, taskId: string, plan: string[]) => {
+  await planMemory.savePlan(taskId, plan);
+  return { success: true };
+});
+
+ipcMain.handle('agent:delete-plan', async (_event, taskId: string) => {
+  await planMemory.deletePlan(taskId);
+  return { success: true };
+});
+
+ipcMain.handle('agent:chat', async (event, message) => {
     const runId = uuidv4();
 
     try {
@@ -360,6 +382,11 @@ app.whenReady().then(() => {
         }
     });
 
+    // Set up Token Handler for streaming
+    agentService.setTokenHandler((token) => {
+        event.sender.send('agent:token', token);
+    });
+
     // Get current browser context
     let browserContext = 'Current browser state: No active tab';
     try {
@@ -373,9 +400,9 @@ app.whenReady().then(() => {
 
     let response = '';
     try {
-      const yoloMode = agentService.isYoloMode();
+      const permissionMode = agentService.getPermissionMode();
       response = await agentRunContext.run(
-        { runId, requesterWebContentsId: event.sender.id, browserContext: { url, domain }, yoloMode },
+        { runId, requesterWebContentsId: event.sender.id, browserContext: { url, domain }, permissionMode },
         async () => {
         return await agentService.chat(message, browserContext);
         }
@@ -435,7 +462,7 @@ app.whenReady().then(() => {
     return agentService.getAgentMode();
   });
 
-  ipcMain.handle('agent:set-permission-mode', async (_, mode: 'yolo' | 'permissions') => {
+  ipcMain.handle('agent:set-permission-mode', async (_, mode: 'yolo' | 'permissions' | 'manual') => {
     agentService.setPermissionMode(mode);
     return { success: true };
   });

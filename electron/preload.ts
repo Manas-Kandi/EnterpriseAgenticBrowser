@@ -66,6 +66,16 @@ contextBridge.exposeInMainWorld('agent', {
     ipcRenderer.on('agent:step', listener);
     return () => ipcRenderer.off('agent:step', listener);
   },
+  getSavedPlans: () => ipcRenderer.invoke('agent:get-saved-plans'),
+  savePlanFor: (taskId: string, plan: string[]) => ipcRenderer.invoke('agent:save-plan', taskId, plan),
+  deletePlan: (taskId: string) => ipcRenderer.invoke('agent:delete-plan', taskId),
+  setAutoLearn: (enabled: boolean) => ipcRenderer.invoke('agent:set-auto-learn', enabled),
+
+  onToken: (callback: (token: string) => void) => {
+    const listener = (_: unknown, token: string) => callback(token);
+    ipcRenderer.on('agent:token', listener);
+    return () => ipcRenderer.off('agent:token', listener);
+  },
 })
 
 contextBridge.exposeInMainWorld('browser', {
