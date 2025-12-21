@@ -41,61 +41,25 @@ function IconAgent(props: DockIconProps) {
     );
 }
 
-function IconDrive(props: DockIconProps) {
+function IconTabs(props: DockIconProps) {
     return (
         <DockIconBase {...props}>
-            <path d="M7.5 7h9" />
-            <path d="M6.5 7.8 9 5.2h6L17.5 7.8" />
-            <path d="M6 8v10a2.2 2.2 0 0 0 2.2 2.2h7.6A2.2 2.2 0 0 0 18 18V8" />
-            <path d="M9 12h6" />
+            <rect x="6" y="7" width="14" height="12" rx="2.5" />
+            <path d="M9 5h8" />
+            <path d="M4 9.5h2" />
         </DockIconBase>
     );
 }
 
-function IconMail(props: DockIconProps) {
+function IconWorkflows(props: DockIconProps) {
     return (
         <DockIconBase {...props}>
-            <rect x="4" y="6.5" width="16" height="11" rx="2.5" />
-            <path d="M6.5 8.5 12 12.3 17.5 8.5" />
-        </DockIconBase>
-    );
-}
-
-function IconCalendar(props: DockIconProps) {
-    return (
-        <DockIconBase {...props}>
-            <rect x="5" y="6.5" width="14" height="13" rx="2.5" />
-            <path d="M8 5v3" />
-            <path d="M16 5v3" />
-            <path d="M5 10h14" />
-            <path d="M9 13.5h.01" />
-            <path d="M12 13.5h.01" />
-            <path d="M15 13.5h.01" />
-        </DockIconBase>
-    );
-}
-
-function IconSlack(props: DockIconProps) {
-    return (
-        <DockIconBase {...props}>
-            <path d="M10 6.5h2a1.8 1.8 0 0 1 1.8 1.8v0" />
-            <path d="M9 8.3v2.2" />
-            <path d="M14.9 9h2.2" />
-            <path d="M16.7 10v2" />
-            <path d="M14 17.5h-2a1.8 1.8 0 0 1-1.8-1.8" />
-            <path d="M15 15.7v-2.2" />
-            <path d="M7.1 15H4.9" />
-            <path d="M7.3 14v-2" />
-            <path d="M8.6 9.1 12 12.5" />
-            <path d="M15.4 14.9 12 11.5" />
-        </DockIconBase>
-    );
-}
-
-function IconPuzzle(props: DockIconProps) {
-    return (
-        <DockIconBase {...props}>
-            <path d="M10 6.5a2 2 0 1 1 4 0v1.2h2.2A2.8 2.8 0 0 1 19 10.5V18a2.2 2.2 0 0 1-2.2 2.2H9.2A2.2 2.2 0 0 1 7 18v-2.2H5.8A2.8 2.8 0 0 1 3 13V10.5a2.8 2.8 0 0 1 2.8-2.8H7V6.5" />
+            <path d="M8.5 7.5h7" />
+            <path d="M8.5 12h7" />
+            <path d="M8.5 16.5h7" />
+            <path d="M6.5 7.5h.01" />
+            <path d="M6.5 12h.01" />
+            <path d="M6.5 16.5h.01" />
         </DockIconBase>
     );
 }
@@ -130,7 +94,7 @@ function IconExternalLink(props: DockIconProps) {
 }
 
 export function WorkspaceSidebar() {
-    const { activeSidebarPanel, setSidebarPanel, addTab, user, setUser } = useBrowserStore();
+    const { activeSidebarPanel, setSidebarPanel, user, setUser } = useBrowserStore();
     const [isProfileOpen, setIsProfileOpen] = useState(false);
     const profileRef = useRef<HTMLDivElement>(null);
 
@@ -146,23 +110,15 @@ export function WorkspaceSidebar() {
 
     const apps = [
         { id: 'agent', icon: IconAgent, label: 'Agent' },
-        { id: 'drive', icon: IconDrive, label: 'Drive' },
-        { id: 'gmail', icon: IconMail, label: 'Gmail', url: 'https://mail.google.com' },
-        { id: 'calendar', icon: IconCalendar, label: 'Calendar', url: 'https://calendar.google.com' },
-        { id: 'slack', icon: IconSlack, label: 'Slack', url: 'https://slack.com' },
-        { id: 'extensions', icon: IconPuzzle, label: 'Extensions' },
+        { id: 'tabs', icon: IconTabs, label: 'Tabs' },
+        { id: 'workflows', icon: IconWorkflows, label: 'Workflows' },
     ] as const;
 
     const handleAppClick = (app: typeof apps[number]) => {
-        if (app.id === 'drive' || app.id === 'agent' || app.id === 'extensions') {
-            setSidebarPanel(activeSidebarPanel === app.id ? null : app.id as any);
-        } else if ('url' in app && app.url) {
-            addTab(app.url);
-        }
+        setSidebarPanel(activeSidebarPanel === app.id ? null : app.id);
     };
 
     const handleLogin = () => {
-        addTab('https://accounts.google.com');
         setTimeout(() => {
             setUser({ name: 'Demo User', email: 'user@example.com', avatar: undefined });
         }, 2000);

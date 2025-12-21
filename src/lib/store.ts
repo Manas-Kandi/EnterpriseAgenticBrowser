@@ -22,11 +22,13 @@ export interface HistoryItem {
     timestamp: number;
 }
 
+export type SidebarPanel = 'agent' | 'tabs' | 'workflows' | null;
+
 interface BrowserState {
   tabs: BrowserTab[];
   activeTabId: string | null;
   history: HistoryItem[];
-  activeSidebarPanel: 'drive' | 'gmail' | 'calendar' | 'slack' | 'agent' | 'extensions' | null;
+  activeSidebarPanel: SidebarPanel;
   user: { name: string; email: string; avatar?: string } | null;
   appMode: 'personal' | 'dev' | 'saas' | null;
   agentMode: AgentMode;
@@ -39,7 +41,7 @@ interface BrowserState {
   updateTab: (id: string, data: Partial<BrowserTab>) => void;
   reorderTabs: (fromIndex: number, toIndex: number) => void;
   addToHistory: (url: string, title: string) => void;
-  setSidebarPanel: (panel: 'drive' | 'gmail' | 'calendar' | 'slack' | null) => void;
+  setSidebarPanel: (panel: SidebarPanel) => void;
   setUser: (user: { name: string; email: string; avatar?: string } | null) => void;
   setAppMode: (mode: 'personal' | 'dev' | 'saas' | null) => void;
   setAgentMode: (mode: AgentMode) => void;

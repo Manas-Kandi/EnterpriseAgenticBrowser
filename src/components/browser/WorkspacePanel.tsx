@@ -3,7 +3,7 @@ import { X } from 'lucide-react';
 import { AgentPanel } from './AgentPanel';
 
 export function WorkspacePanel() {
-    const { activeSidebarPanel, setSidebarPanel } = useBrowserStore();
+    const { activeSidebarPanel, setSidebarPanel, tabs, activeTabId, setActiveTab, removeTab, addTab } = useBrowserStore();
 
     if (!activeSidebarPanel) return null;
 
@@ -20,21 +20,57 @@ export function WorkspacePanel() {
                 </div>
             )}
             <div className="flex-1 overflow-hidden relative flex flex-col">
-                {activeSidebarPanel === 'drive' ? (
-                    <webview
-                        src="https://drive.google.com/drive/my-drive"
-                        className="flex-1 w-full h-full"
-                        // @ts-ignore
-                        allowpopups="true"
-                        // Use mobile user agent to get a more compact view
-                        // @ts-ignore
-                        useragent="Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1"
-                    />
-                ) : activeSidebarPanel === 'agent' ? (
+                {activeSidebarPanel === 'agent' ? (
                     <AgentPanel />
-                ) : activeSidebarPanel === 'extensions' ? (
+                ) : activeSidebarPanel === 'tabs' ? (
+                    <div className="flex-1 overflow-auto browser-minimal-scrollbar">
+                        <div className="p-3 border-b border-border/50 flex items-center justify-between gap-2">
+                            <div className="text-xs text-muted-foreground">Tabs</div>
+                            <button
+                                onClick={() => addTab()}
+                                className="px-2 py-1 text-xs rounded-md bg-secondary/30 hover:bg-secondary/50 transition-colors"
+                            >
+                                New Tab
+                            </button>
+                        </div>
+                        <div className="p-2">
+                            <div className="flex flex-col gap-1">
+                                {tabs.map((tab) => (
+                                    <div
+                                        key={tab.id}
+                                        className={
+                                            tab.id === activeTabId
+                                                ? 'flex items-center gap-2 rounded-md px-2 py-2 bg-secondary/30'
+                                                : 'flex items-center gap-2 rounded-md px-2 py-2 hover:bg-secondary/20'
+                                        }
+                                    >
+                                        <button
+                                            onClick={() => setActiveTab(tab.id)}
+                                            className="flex-1 min-w-0 text-left"
+                                            title={tab.url}
+                                        >
+                                            <div className="text-xs font-medium truncate">
+                                                {tab.title || 'Untitled'}
+                                            </div>
+                                            <div className="text-[11px] text-muted-foreground truncate">
+                                                {tab.url}
+                                            </div>
+                                        </button>
+                                        <button
+                                            onClick={() => removeTab(tab.id)}
+                                            className="p-1 rounded hover:bg-secondary/40 text-muted-foreground hover:text-foreground transition-colors"
+                                            title="Close"
+                                        >
+                                            <X size={14} />
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                ) : activeSidebarPanel === 'workflows' ? (
                     <div className="p-4 text-center text-muted-foreground text-sm">
-                        Extensions Marketplace (Coming Soon)
+                        Workflow Builder (Coming Soon)
                     </div>
                 ) : (
                     <div className="p-4 text-center text-muted-foreground text-sm">
