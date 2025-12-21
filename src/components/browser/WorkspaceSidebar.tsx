@@ -64,6 +64,45 @@ function IconWorkflows(props: DockIconProps) {
     );
 }
 
+function IconAeroPortal(props: DockIconProps) {
+    return (
+        <DockIconBase {...props}>
+            <rect x="6" y="6" width="12" height="12" rx="2.5" />
+            <path d="M6 12h12" />
+            <path d="M12 6v12" />
+        </DockIconBase>
+    );
+}
+
+function IconAeroAdmin(props: DockIconProps) {
+    return (
+        <DockIconBase {...props}>
+            <path d="M12 4.5 18 7v5.3c0 4.2-2.6 7-6 7.7-3.4-.7-6-3.5-6-7.7V7l6-2.5Z" />
+            <path d="M10 12h4" />
+        </DockIconBase>
+    );
+}
+
+function IconAeroDispatch(props: DockIconProps) {
+    return (
+        <DockIconBase {...props}>
+            <path d="M5 12h5" />
+            <path d="M14 12h5" />
+            <path d="M10 7 14 12l-4 5" />
+        </DockIconBase>
+    );
+}
+
+function IconAeroFleet(props: DockIconProps) {
+    return (
+        <DockIconBase {...props}>
+            <path d="M7 16.5h10" />
+            <path d="M9 16.5v-7.2a3 3 0 0 1 6 0v7.2" />
+            <path d="M9.5 10.5h5" />
+        </DockIconBase>
+    );
+}
+
 function IconUser(props: DockIconProps) {
     return (
         <DockIconBase {...props}>
@@ -94,7 +133,7 @@ function IconExternalLink(props: DockIconProps) {
 }
 
 export function WorkspaceSidebar() {
-    const { activeSidebarPanel, setSidebarPanel, user, setUser } = useBrowserStore();
+    const { activeSidebarPanel, setSidebarPanel, addTab, user, setUser, appMode } = useBrowserStore();
     const [isProfileOpen, setIsProfileOpen] = useState(false);
     const profileRef = useRef<HTMLDivElement>(null);
 
@@ -114,6 +153,13 @@ export function WorkspaceSidebar() {
         { id: 'workflows', icon: IconWorkflows, label: 'Workflows' },
     ] as const;
 
+    const aerocoreApps = [
+        { id: 'aerocore-portal', icon: IconAeroPortal, label: 'AeroCore Portal', url: 'http://localhost:3000/aerocore/portal' },
+        { id: 'aerocore-admin', icon: IconAeroAdmin, label: 'AeroCore Admin', url: 'http://localhost:3000/aerocore/admin' },
+        { id: 'aerocore-dispatch', icon: IconAeroDispatch, label: 'AeroCore Dispatch', url: 'http://localhost:3000/aerocore/dispatch' },
+        { id: 'aerocore-fleet', icon: IconAeroFleet, label: 'AeroCore Fleet', url: 'http://localhost:3000/aerocore/fleet' },
+    ] as const;
+
     const handleAppClick = (app: typeof apps[number]) => {
         setSidebarPanel(activeSidebarPanel === app.id ? null : app.id);
     };
@@ -124,6 +170,8 @@ export function WorkspaceSidebar() {
         }, 2000);
         setIsProfileOpen(false);
     };
+
+    const isDevMode = appMode === 'dev';
 
     return (
         <div 
@@ -142,25 +190,102 @@ export function WorkspaceSidebar() {
                     </span>
                 </div>
             </div>
-            <div className="flex-1 flex flex-col items-center gap-2 pt-0 pb-1" style={{ WebkitAppRegion: 'no-drag' } as any}>
-                {apps.map((app) => (
-                    <button
-                        key={app.id}
-                        onClick={() => handleAppClick(app)}
-                        className={cn(
-                            "relative w-10 h-10 flex items-center justify-center rounded-md transition-all group",
-                            activeSidebarPanel === app.id 
-                                ? "text-foreground bg-secondary/30 shadow-[inset_0_0_0_1px_hsl(var(--border)/0.35)]"
-                                : "text-muted-foreground hover:text-foreground hover:bg-secondary/25"
-                        )}
-                        title={app.label}
-                    >
-                        <app.icon size={20} className={cn("shrink-0 transition-opacity", activeSidebarPanel === app.id ? "opacity-100" : "opacity-85 group-hover:opacity-100")} />
-                        {activeSidebarPanel === app.id && (
-                            <div className="absolute left-0 top-2 bottom-2 w-0.5 bg-foreground/80 rounded-r-full" />
-                        )}
-                    </button>
-                ))}
+            <div className="flex-1 flex flex-col items-center pt-0 pb-1" style={{ WebkitAppRegion: 'no-drag' } as any}>
+                {isDevMode ? (
+                    <>
+                        <div className="flex flex-col items-center gap-2">
+                            {aerocoreApps.map((app) => (
+                                <button
+                                    key={app.id}
+                                    onClick={() => addTab(app.url)}
+                                    className={cn(
+                                        "relative w-10 h-10 flex items-center justify-center rounded-md transition-all group",
+                                        "text-muted-foreground hover:text-foreground hover:bg-secondary/25"
+                                    )}
+                                    title={app.label}
+                                >
+                                    <app.icon size={20} className="shrink-0 opacity-85 group-hover:opacity-100 transition-opacity" />
+                                </button>
+                            ))}
+                        </div>
+
+                        <div className="w-8 h-px bg-border/70 my-2" />
+
+                        <div className="flex flex-col items-center gap-2 mt-auto">
+                            {apps.map((app) => (
+                                <button
+                                    key={app.id}
+                                    onClick={() => handleAppClick(app)}
+                                    className={cn(
+                                        "relative w-10 h-10 flex items-center justify-center rounded-md transition-all group",
+                                        activeSidebarPanel === app.id
+                                            ? "text-foreground bg-secondary/30 shadow-[inset_0_0_0_1px_hsl(var(--border)/0.35)]"
+                                            : "text-muted-foreground hover:text-foreground hover:bg-secondary/25"
+                                    )}
+                                    title={app.label}
+                                >
+                                    <app.icon
+                                        size={20}
+                                        className={cn(
+                                            "shrink-0 transition-opacity",
+                                            activeSidebarPanel === app.id ? "opacity-100" : "opacity-85 group-hover:opacity-100"
+                                        )}
+                                    />
+                                    {activeSidebarPanel === app.id && (
+                                        <div className="absolute left-0 top-2 bottom-2 w-0.5 bg-foreground/80 rounded-r-full" />
+                                    )}
+                                </button>
+                            ))}
+                        </div>
+                    </>
+                ) : (
+                    <>
+                        <div className="flex flex-col items-center gap-2">
+                            {apps.map((app) => (
+                                <button
+                                    key={app.id}
+                                    onClick={() => handleAppClick(app)}
+                                    className={cn(
+                                        "relative w-10 h-10 flex items-center justify-center rounded-md transition-all group",
+                                        activeSidebarPanel === app.id
+                                            ? "text-foreground bg-secondary/30 shadow-[inset_0_0_0_1px_hsl(var(--border)/0.35)]"
+                                            : "text-muted-foreground hover:text-foreground hover:bg-secondary/25"
+                                    )}
+                                    title={app.label}
+                                >
+                                    <app.icon
+                                        size={20}
+                                        className={cn(
+                                            "shrink-0 transition-opacity",
+                                            activeSidebarPanel === app.id ? "opacity-100" : "opacity-85 group-hover:opacity-100"
+                                        )}
+                                    />
+                                    {activeSidebarPanel === app.id && (
+                                        <div className="absolute left-0 top-2 bottom-2 w-0.5 bg-foreground/80 rounded-r-full" />
+                                    )}
+                                </button>
+                            ))}
+                        </div>
+
+                        <div className="w-8 h-px bg-border/70 my-2" />
+
+                        <div className="flex flex-col items-center gap-2">
+                            {aerocoreApps.map((app) => (
+                                <button
+                                    key={app.id}
+                                    onClick={() => addTab(app.url)}
+                                    className={cn(
+                                        "relative w-10 h-10 flex items-center justify-center rounded-md transition-all group",
+                                        "text-muted-foreground hover:text-foreground hover:bg-secondary/25"
+                                    )}
+                                    title={app.label}
+                                >
+                                    <app.icon size={20} className="shrink-0 opacity-85 group-hover:opacity-100 transition-opacity" />
+                                </button>
+                            ))}
+                        </div>
+                    </>
+                )}
             </div>
             <div className="flex flex-col items-center gap-2 pb-4" style={{ WebkitAppRegion: 'no-drag' } as any}>
                 <div className="relative" ref={profileRef}>
