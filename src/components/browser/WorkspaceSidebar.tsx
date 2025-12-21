@@ -174,7 +174,18 @@ export function WorkspaceSidebar() {
             className="flex flex-col w-12 bg-background border-r border-border/50 z-20"
             style={{ WebkitAppRegion: 'drag' } as any}
         >
-            <div className="h-12 shrink-0" />
+            <div className="h-12 shrink-0 flex items-center justify-center">
+                <div
+                    className="text-[11px] font-semibold text-muted-foreground/70 select-none pointer-events-none"
+                    style={{ letterSpacing: '-0.02em' }}
+                >
+                    <span>9</span>
+                    <span className="font-light">x</span>
+                    <span className="font-normal" style={{ fontFamily: 'Marck Script, cursive' }}>
+                        f
+                    </span>
+                </div>
+            </div>
             <div className="flex-1 flex flex-col items-center gap-2 py-2" style={{ WebkitAppRegion: 'no-drag' } as any}>
                 {apps.map((app) => (
                     <button
