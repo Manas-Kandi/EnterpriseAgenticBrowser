@@ -24,6 +24,23 @@ export interface HistoryItem {
 
 export type SidebarPanel = 'agent' | 'tabs' | 'workflows' | null;
 
+export type DockCoreItemId = 'agent' | 'tabs' | 'workflows';
+export type DockAeroItemId = 'aerocore-portal' | 'aerocore-admin' | 'aerocore-dispatch' | 'aerocore-fleet';
+
+export interface DockConfig {
+  coreOrder: DockCoreItemId[];
+  coreHidden: DockCoreItemId[];
+  aeroOrder: DockAeroItemId[];
+  aeroHidden: DockAeroItemId[];
+}
+
+const defaultDockConfig: DockConfig = {
+  coreOrder: ['agent', 'tabs', 'workflows'],
+  coreHidden: [],
+  aeroOrder: ['aerocore-portal', 'aerocore-admin', 'aerocore-dispatch', 'aerocore-fleet'],
+  aeroHidden: [],
+};
+
 interface BrowserState {
   tabs: BrowserTab[];
   activeTabId: string | null;
@@ -33,6 +50,7 @@ interface BrowserState {
   appMode: 'personal' | 'dev' | 'saas' | null;
   agentMode: AgentMode;
   agentPermissionMode: AgentPermissionMode;
+  dockConfig: DockConfig;
   
   // Actions
   addTab: (url?: string) => void;
@@ -46,6 +64,10 @@ interface BrowserState {
   setAppMode: (mode: 'personal' | 'dev' | 'saas' | null) => void;
   setAgentMode: (mode: AgentMode) => void;
   setAgentPermissionMode: (mode: AgentPermissionMode) => void;
+
+  toggleDockItem: (group: 'core' | 'aero', id: DockCoreItemId | DockAeroItemId) => void;
+  moveDockItem: (group: 'core' | 'aero', id: DockCoreItemId | DockAeroItemId, direction: 'up' | 'down') => void;
+  resetDockConfig: () => void;
 }
 
 export const useBrowserStore = create<BrowserState>()(
@@ -61,6 +83,7 @@ export const useBrowserStore = create<BrowserState>()(
       appMode: null,
       agentMode: 'do',
       agentPermissionMode: 'permissions',
+      dockConfig: defaultDockConfig,
 
       addTab: (url = 'about:newtab') => set((state) => {
         const newTab = {
@@ -109,10 +132,68 @@ export const useBrowserStore = create<BrowserState>()(
       setAppMode: (mode) => set({ appMode: mode }),
       setAgentMode: (mode) => set({ agentMode: mode }),
       setAgentPermissionMode: (mode) => set({ agentPermissionMode: mode }),
+
+      toggleDockItem: (group, id) => set((state) => {
+        const cfg = state.dockConfig;
+        if (group === 'core') {
+          const typedId = id as DockCoreItemId;
+          const isHidden = cfg.coreHidden.includes(typedId);
+          return {
+            dockConfig: {
+              ...cfg,
+              coreHidden: isHidden ? cfg.coreHidden.filter((x) => x !== typedId) : [...cfg.coreHidden, typedId],
+            },
+          };
+        }
+
+        const typedId = id as DockAeroItemId;
+        const isHidden = cfg.aeroHidden.includes(typedId);
+        return {
+          dockConfig: {
+            ...cfg,
+            aeroHidden: isHidden ? cfg.aeroHidden.filter((x) => x !== typedId) : [...cfg.aeroHidden, typedId],
+          },
+        };
+      }),
+
+      moveDockItem: (group, id, direction) => set((state) => {
+        const cfg = state.dockConfig;
+        const move = <T extends string>(arr: T[], item: T) => {
+          const idx = arr.indexOf(item);
+          if (idx === -1) return arr;
+          const nextIdx = direction === 'up' ? idx - 1 : idx + 1;
+          if (nextIdx < 0 || nextIdx >= arr.length) return arr;
+          const copy = [...arr];
+          const tmp = copy[nextIdx];
+          copy[nextIdx] = copy[idx];
+          copy[idx] = tmp;
+          return copy;
+        };
+
+        if (group === 'core') {
+          const typedId = id as DockCoreItemId;
+          return {
+            dockConfig: {
+              ...cfg,
+              coreOrder: move(cfg.coreOrder, typedId),
+            },
+          };
+        }
+
+        const typedId = id as DockAeroItemId;
+        return {
+          dockConfig: {
+            ...cfg,
+            aeroOrder: move(cfg.aeroOrder, typedId),
+          },
+        };
+      }),
+
+      resetDockConfig: () => set({ dockConfig: defaultDockConfig }),
     }),
     {
       name: 'browser-storage',
-      partialize: (state) => ({ tabs: state.tabs, activeTabId: state.activeTabId, history: state.history, user: state.user, appMode: state.appMode, agentMode: state.agentMode, agentPermissionMode: state.agentPermissionMode }), // Persist these fields
+      partialize: (state) => ({ tabs: state.tabs, activeTabId: state.activeTabId, history: state.history, user: state.user, appMode: state.appMode, agentMode: state.agentMode, agentPermissionMode: state.agentPermissionMode, dockConfig: state.dockConfig }), // Persist these fields
     }
   )
 );

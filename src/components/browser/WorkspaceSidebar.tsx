@@ -133,9 +133,11 @@ function IconExternalLink(props: DockIconProps) {
 }
 
 export function WorkspaceSidebar() {
-    const { activeSidebarPanel, setSidebarPanel, addTab, user, setUser, appMode } = useBrowserStore();
+    const { activeSidebarPanel, setSidebarPanel, addTab, user, setUser, appMode, dockConfig } = useBrowserStore();
     const [isProfileOpen, setIsProfileOpen] = useState(false);
     const profileRef = useRef<HTMLDivElement>(null);
+
+    const isDevMode = appMode === 'dev';
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
@@ -147,18 +149,38 @@ export function WorkspaceSidebar() {
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
-    const apps = [
-        { id: 'agent', icon: IconAgent, label: 'Agent' },
-        { id: 'tabs', icon: IconTabs, label: 'Tabs' },
-        { id: 'workflows', icon: IconWorkflows, label: 'Workflows' },
-    ] as const;
+    const coreItemsById = {
+        agent: { id: 'agent', icon: IconAgent, label: 'Agent' },
+        tabs: { id: 'tabs', icon: IconTabs, label: 'Tabs' },
+        workflows: { id: 'workflows', icon: IconWorkflows, label: 'Workflows' },
+    } as const;
 
-    const aerocoreApps = [
-        { id: 'aerocore-portal', icon: IconAeroPortal, label: 'AeroCore Portal', url: 'http://localhost:3000/aerocore/portal' },
-        { id: 'aerocore-admin', icon: IconAeroAdmin, label: 'AeroCore Admin', url: 'http://localhost:3000/aerocore/admin' },
-        { id: 'aerocore-dispatch', icon: IconAeroDispatch, label: 'AeroCore Dispatch', url: 'http://localhost:3000/aerocore/dispatch' },
-        { id: 'aerocore-fleet', icon: IconAeroFleet, label: 'AeroCore Fleet', url: 'http://localhost:3000/aerocore/fleet' },
-    ] as const;
+    const aeroItemsById = {
+        'aerocore-portal': { id: 'aerocore-portal', icon: IconAeroPortal, label: 'AeroCore Portal', url: 'http://localhost:3000/aerocore/portal' },
+        'aerocore-admin': { id: 'aerocore-admin', icon: IconAeroAdmin, label: 'AeroCore Admin', url: 'http://localhost:3000/aerocore/admin' },
+        'aerocore-dispatch': { id: 'aerocore-dispatch', icon: IconAeroDispatch, label: 'AeroCore Dispatch', url: 'http://localhost:3000/aerocore/dispatch' },
+        'aerocore-fleet': { id: 'aerocore-fleet', icon: IconAeroFleet, label: 'AeroCore Fleet', url: 'http://localhost:3000/aerocore/fleet' },
+    } as const;
+
+    const defaultCoreItems = [coreItemsById.agent, coreItemsById.tabs, coreItemsById.workflows];
+    const defaultAeroItems = [
+        aeroItemsById['aerocore-portal'],
+        aeroItemsById['aerocore-admin'],
+        aeroItemsById['aerocore-dispatch'],
+        aeroItemsById['aerocore-fleet'],
+    ];
+
+    const apps = isDevMode
+        ? dockConfig.coreOrder
+            .filter((id) => !dockConfig.coreHidden.includes(id))
+            .map((id) => coreItemsById[id])
+        : defaultCoreItems;
+
+    const aerocoreApps = isDevMode
+        ? dockConfig.aeroOrder
+            .filter((id) => !dockConfig.aeroHidden.includes(id))
+            .map((id) => aeroItemsById[id])
+        : defaultAeroItems;
 
     const handleAppClick = (app: typeof apps[number]) => {
         setSidebarPanel(activeSidebarPanel === app.id ? null : app.id);
@@ -170,8 +192,6 @@ export function WorkspaceSidebar() {
         }, 2000);
         setIsProfileOpen(false);
     };
-
-    const isDevMode = appMode === 'dev';
 
     return (
         <div 
