@@ -1,10 +1,10 @@
 import { useBrowserStore } from '@/lib/store';
-import { X, Plus, Search, RotateCw, ArrowLeft, ArrowRight, Globe, Lock, Unlock, MoreVertical, Terminal, History as HistoryIcon, Pin, Copy, Trash, RefreshCcw, ChevronRight, ChevronDown } from 'lucide-react';
+import { X, Plus, Search, RotateCw, ArrowLeft, ArrowRight, Globe, Lock, Unlock, MoreVertical, Terminal, History as HistoryIcon, Pin, Copy, Trash, RefreshCcw, ChevronRight, ChevronDown, LogIn, LogOut } from 'lucide-react';
 import { useMemo, useState, useEffect, useRef, useLayoutEffect } from 'react';
 import { cn, getFaviconUrl } from '@/lib/utils';
 
 export function BrowserChrome() {
-  const { tabs, activeTabId, addTab, removeTab, setActiveTab, updateTab, setAppMode, reorderTabs, reopenLastClosedTab, tabGroups, createOrMergeGroupFromDrag, toggleGroupCollapsed, renameGroup, setGroupColor, tabsLayout, setTabsLayout, saasModeEnabled, setSaasModeEnabled } = useBrowserStore();
+  const { tabs, activeTabId, addTab, removeTab, setActiveTab, updateTab, setAppMode, reorderTabs, reopenLastClosedTab, tabGroups, createOrMergeGroupFromDrag, toggleGroupCollapsed, renameGroup, setGroupColor, tabsLayout, setTabsLayout, saasModeEnabled, setSaasModeEnabled, setSidebarPanel, user, setUser } = useBrowserStore();
   const activeTab = tabs.find(t => t.id === activeTabId);
   const [urlInput, setUrlInput] = useState('');
   const [isUrlFocused, setIsUrlFocused] = useState(false);
@@ -19,6 +19,14 @@ export function BrowserChrome() {
   const [draggedTabIndex, setDraggedTabIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [draggedTabId, setDraggedTabId] = useState<string | null>(null);
+
+  const handleLogin = () => {
+    // Placeholder auth behavior (matches prior sidebar behavior)
+    setTimeout(() => {
+      setUser({ name: 'Demo User', email: 'user@example.com', avatar: undefined });
+    }, 2000);
+    setIsMenuOpen(false);
+  };
 
   const tabRefs = useRef(new Map<string, HTMLDivElement>());
   const prevRects = useRef(new Map<string, DOMRect>());
@@ -568,12 +576,28 @@ export function BrowserChrome() {
               >
                 <Plus size={12} /> New Tab
               </button>
+
+              <button 
+                onClick={() => { setSidebarPanel('tabs'); setIsMenuOpen(false); }}
+                className="w-full text-left px-3 py-1.5 text-xs hover:bg-secondary/50 flex items-center gap-2 text-foreground"
+              >
+                <ChevronRight size={12} /> Tabs
+              </button>
+
+              <button 
+                onClick={() => { setSidebarPanel('workflows'); setIsMenuOpen(false); }}
+                className="w-full text-left px-3 py-1.5 text-xs hover:bg-secondary/50 flex items-center gap-2 text-foreground"
+              >
+                <ChevronRight size={12} /> Workflows
+              </button>
+
               <button
                 onClick={() => { reopenLastClosedTab(); setIsMenuOpen(false); }}
                 className="w-full text-left px-3 py-1.5 text-xs hover:bg-secondary/50 flex items-center gap-2 text-foreground"
               >
                 <HistoryIcon size={12} /> Reopen Closed Tab
               </button>
+
               <button
                 onClick={() => {
                   setTabsLayout(tabsLayout === 'horizontal' ? 'vertical' : 'horizontal');
@@ -592,12 +616,24 @@ export function BrowserChrome() {
               >
                 <HistoryIcon size={12} /> SaaS Mode: {saasModeEnabled ? 'On' : 'Off'}
               </button>
-              <button 
-                onClick={() => { setIsMenuOpen(false); }}
-                className="w-full text-left px-3 py-1.5 text-xs hover:bg-secondary/50 flex items-center gap-2 text-foreground"
-              >
-                <HistoryIcon size={12} /> History
-              </button>
+              <div className="h-px bg-border/30 my-1" />
+
+              {user ? (
+                <button 
+                  onClick={() => { setUser(null); setIsMenuOpen(false); }}
+                  className="w-full text-left px-3 py-1.5 text-xs hover:bg-secondary/50 flex items-center gap-2 text-foreground"
+                >
+                  <LogOut size={12} /> Sign Out
+                </button>
+              ) : (
+                <button 
+                  onClick={handleLogin}
+                  className="w-full text-left px-3 py-1.5 text-xs hover:bg-secondary/50 flex items-center gap-2 text-foreground"
+                >
+                  <LogIn size={12} /> Sign in
+                </button>
+              )}
+
               <div className="h-px bg-border/30 my-1" />
               <button 
                 onClick={() => { 
