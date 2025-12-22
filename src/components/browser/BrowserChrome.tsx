@@ -211,28 +211,28 @@ export function BrowserChrome() {
           <button 
             onClick={() => activeTabId && updateTab(activeTabId, { action: 'back' })}
             disabled={!activeTab?.canGoBack}
-            className="p-1.5 hover:bg-secondary/50 rounded text-muted-foreground transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+            className="p-1.5 hover:bg-secondary/25 rounded text-muted-foreground transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
           >
             <ArrowLeft size={14} />
           </button>
           <button 
             onClick={() => activeTabId && updateTab(activeTabId, { action: 'forward' })}
             disabled={!activeTab?.canGoForward}
-            className="p-1.5 hover:bg-secondary/50 rounded text-muted-foreground transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+            className="p-1.5 hover:bg-secondary/25 rounded text-muted-foreground transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
           >
             <ArrowRight size={14} />
           </button>
           {activeTab?.loading ? (
             <button 
               onClick={() => activeTabId && updateTab(activeTabId, { action: 'stop', loading: false })}
-              className="p-1.5 hover:bg-secondary/50 rounded text-muted-foreground transition-colors"
+              className="p-1.5 hover:bg-secondary/25 rounded text-muted-foreground transition-colors"
             >
               <X size={14} />
             </button>
           ) : (
             <button 
               onClick={() => activeTabId && updateTab(activeTabId, { action: 'reload' })}
-              className="p-1.5 hover:bg-secondary/50 rounded text-muted-foreground transition-colors"
+              className="p-1.5 hover:bg-secondary/25 rounded text-muted-foreground transition-colors"
             >
               <RotateCw size={14} />
             </button>
@@ -296,7 +296,7 @@ export function BrowserChrome() {
                       >
                         <span
                           aria-hidden="true"
-                          className="w-2 h-2 rounded-full shadow-[0_0_0_1px_rgba(255,255,255,0.10)]"
+                          className="w-2 h-2 rounded-full"
                           style={{ background: group!.color ?? 'rgba(255,255,255,0.18)' }}
                         />
                         <span className="px-1.5 py-0.5 rounded bg-secondary/30 text-foreground/80">
@@ -339,19 +339,12 @@ export function BrowserChrome() {
                         "will-change-transform",
                         "rounded-md",
                         activeTabId === tab.id
-                          ? (isUrlFocused ? "text-foreground/85 z-20" : "text-foreground z-20")
-                          : (isUrlFocused ? "text-muted-foreground/60 z-10" : "text-muted-foreground/80 z-10"),
+                          ? (isUrlFocused ? "text-foreground/80 z-20" : "text-foreground/90 z-20")
+                          : (isUrlFocused ? "text-muted-foreground/55 z-10" : "text-muted-foreground/75 z-10"),
                         draggedTabIndex === index && "opacity-40 scale-95",
-                        activeTabId === tab.id ? "bg-secondary/20" : "hover:bg-secondary/15"
+                        activeTabId === tab.id ? "bg-secondary/15" : "hover:bg-secondary/10"
                       )}
                     >
-                      {activeTabId === tab.id && (
-                        <div
-                          aria-hidden="true"
-                          className="absolute left-2.5 right-2.5 bottom-1 h-px bg-foreground/35"
-                        />
-                      )}
-
                       <div
                         onDragOver={(e) => {
                           e.preventDefault();
@@ -427,7 +420,7 @@ export function BrowserChrome() {
                         className={cn(
                           "absolute -left-0.5 top-1 bottom-1 rounded-full transition-all duration-120 ease-out",
                           dragOverIndex === index
-                            ? "w-1 bg-foreground/70 shadow-[0_0_8px_rgba(255,255,255,0.4)]"
+                            ? "w-0.5 bg-foreground/50"
                             : "w-0 bg-transparent"
                         )}
                       />
@@ -435,7 +428,7 @@ export function BrowserChrome() {
                         className={cn(
                           "absolute -right-0.5 top-1 bottom-1 rounded-full transition-all duration-120 ease-out",
                           dragOverIndex === index + 1
-                            ? "w-1 bg-foreground/70 shadow-[0_0_8px_rgba(255,255,255,0.4)]"
+                            ? "w-0.5 bg-foreground/50"
                             : "w-0 bg-transparent"
                         )}
                       />
@@ -496,7 +489,7 @@ export function BrowserChrome() {
               })}
               <button
                 onClick={() => addTab()}
-                className="ml-2 mb-0.5 w-8 h-8 grid place-items-center rounded-full text-muted-foreground hover:text-foreground hover:bg-secondary/30 transition-colors duration-100 ease-out shrink-0"
+                className="ml-2 mb-0.5 w-8 h-8 grid place-items-center rounded-full text-muted-foreground hover:text-foreground hover:bg-secondary/25 transition-colors duration-100 ease-out shrink-0"
               >
                 <Plus size={14} />
               </button>
@@ -541,9 +534,9 @@ export function BrowserChrome() {
               </div>
               <input
                 className={cn(
-                  "w-full h-8 bg-secondary/20 hover:bg-secondary/25 rounded-[10px] pl-8 pr-3 text-xs text-foreground placeholder:text-muted-foreground/50 outline-none",
+                  "w-full h-8 bg-secondary/15 hover:bg-secondary/20 rounded-[10px] pl-8 pr-3 text-xs text-foreground placeholder:text-muted-foreground/50 outline-none",
                   "transition-colors duration-120 ease-out",
-                  "focus:bg-secondary/30 focus:ring-1 focus:ring-ring/50"
+                  "focus:bg-secondary/25 focus:ring-1 focus:ring-ring/35"
                 )}
                 value={urlInput}
                 onChange={(e) => setUrlInput(e.target.value)}
@@ -562,7 +555,7 @@ export function BrowserChrome() {
         <div className="flex items-center shrink-0" ref={menuRef} style={{ WebkitAppRegion: 'no-drag' } as any}>
           <button
             onClick={() => setIsMenuOpen(!isMenuOpen)}
-            className={cn("p-1.5 hover:bg-secondary/50 rounded text-muted-foreground transition-colors", isMenuOpen && "bg-secondary/50")}
+            className={cn("p-1.5 hover:bg-secondary/25 rounded text-muted-foreground transition-colors", isMenuOpen && "bg-secondary/25")}
           >
             <MoreVertical size={14} />
           </button>
