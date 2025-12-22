@@ -2,13 +2,14 @@ import { BrowserChrome } from '@/components/browser/BrowserChrome';
 import { BrowserView } from '@/components/browser/BrowserView';
 import { WorkspaceSidebar } from '@/components/browser/WorkspaceSidebar';
 import { WorkspacePanel } from '@/components/browser/WorkspacePanel';
+import { VerticalTabStrip } from '@/components/browser/VerticalTabStrip';
 import { OnboardingPage } from '@/components/onboarding/OnboardingPage';
 import { SaasSetupPage } from '@/components/onboarding/SaasSetupPage';
 import { useEffect } from 'react';
 import { useBrowserStore } from '@/lib/store';
 
 function App() {
-  const { addTab, removeTab, updateTab, activeTabId, appMode, setAppMode } = useBrowserStore();
+  const { addTab, removeTab, updateTab, activeTabId, appMode, setAppMode, tabsLayout } = useBrowserStore();
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -48,6 +49,8 @@ function App() {
       <div className="flex-1 flex overflow-hidden">
         {/* Workspace Dock */}
         <WorkspaceSidebar />
+
+        {tabsLayout === 'vertical' && <VerticalTabStrip />}
         
         {/* Workspace Panel */}
         <WorkspacePanel />
