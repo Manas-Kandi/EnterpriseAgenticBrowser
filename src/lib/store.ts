@@ -64,6 +64,7 @@ interface BrowserState {
   recentlyClosed: RecentlyClosedTab[];
   tabGroups: TabGroup[];
   tabsLayout: TabsLayout;
+  saasModeEnabled: boolean;
   activeSidebarPanel: SidebarPanel;
   user: { name: string; email: string; avatar?: string } | null;
   appMode: 'personal' | 'dev' | 'saas' | null;
@@ -92,6 +93,7 @@ interface BrowserState {
   setAgentMode: (mode: AgentMode) => void;
   setAgentPermissionMode: (mode: AgentPermissionMode) => void;
   setTabsLayout: (layout: TabsLayout) => void;
+  setSaasModeEnabled: (enabled: boolean) => void;
 
   toggleDockItem: (group: 'core' | 'aero', id: DockCoreItemId | DockAeroItemId) => void;
   moveDockItem: (group: 'core' | 'aero', id: DockCoreItemId | DockAeroItemId, direction: 'up' | 'down') => void;
@@ -109,10 +111,11 @@ export const useBrowserStore = create<BrowserState>()(
       recentlyClosed: [],
       tabGroups: [],
       tabsLayout: 'horizontal',
+      saasModeEnabled: false,
       activeSidebarPanel: null,
       user: null,
       appMode: null,
-      agentMode: 'do',
+      agentMode: 'chat',
       agentPermissionMode: 'permissions',
       dockConfig: defaultDockConfig,
 
@@ -310,6 +313,7 @@ export const useBrowserStore = create<BrowserState>()(
       setAgentMode: (mode) => set({ agentMode: mode }),
       setAgentPermissionMode: (mode) => set({ agentPermissionMode: mode }),
       setTabsLayout: (layout) => set({ tabsLayout: layout }),
+      setSaasModeEnabled: (enabled) => set({ saasModeEnabled: enabled }),
 
       toggleDockItem: (group, id) => set((state) => {
         const cfg = state.dockConfig;
@@ -371,7 +375,19 @@ export const useBrowserStore = create<BrowserState>()(
     }),
     {
       name: 'browser-storage',
-      partialize: (state) => ({ tabs: state.tabs, activeTabId: state.activeTabId, history: state.history, recentlyClosed: state.recentlyClosed, tabGroups: state.tabGroups, tabsLayout: state.tabsLayout, user: state.user, appMode: state.appMode, agentMode: state.agentMode, agentPermissionMode: state.agentPermissionMode, dockConfig: state.dockConfig }), // Persist these fields
+      partialize: (state) => ({
+        tabs: state.tabs,
+        activeTabId: state.activeTabId,
+        recentlyClosed: state.recentlyClosed,
+        tabGroups: state.tabGroups,
+        tabsLayout: state.tabsLayout,
+        saasModeEnabled: state.saasModeEnabled,
+        user: state.user,
+        appMode: state.appMode,
+        agentMode: state.agentMode,
+        agentPermissionMode: state.agentPermissionMode,
+        dockConfig: state.dockConfig,
+      }),
     }
   )
 );

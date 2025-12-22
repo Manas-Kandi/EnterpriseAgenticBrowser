@@ -1,6 +1,5 @@
-import React from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
-import { Grid, Shield, Users, Box, Radio, LayoutDashboard, Settings, FileBarChart, Globe } from 'lucide-react';
+import { Shield, Users, Box, Radio, LayoutDashboard, Settings, FileBarChart, Globe } from 'lucide-react';
 
 // Inline utility if needed
 const classNames = (...classes: (string | undefined)[]) => classes.filter(Boolean).join(' ');
@@ -20,9 +19,9 @@ export function AeroShell() {
   const location = useLocation();
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans flex">
+    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans flex" data-aerocore-shell>
       {/* Sidebar */}
-      <aside className="w-64 bg-slate-900 border-r border-slate-800 flex flex-col">
+      <aside className="w-64 bg-slate-900 border-r border-slate-800 flex flex-col" data-aerocore-sidebar>
         <div className="p-4 border-b border-slate-800 flex items-center gap-2">
             <div className="w-8 h-8 bg-sky-500 rounded flex items-center justify-center text-white font-bold">A</div>
             <span className="font-bold text-lg tracking-wide uppercase text-sky-400">AeroCore</span>

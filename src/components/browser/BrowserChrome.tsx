@@ -4,7 +4,7 @@ import { useMemo, useState, useEffect, useRef, useLayoutEffect } from 'react';
 import { cn, getFaviconUrl } from '@/lib/utils';
 
 export function BrowserChrome() {
-  const { tabs, activeTabId, addTab, removeTab, setActiveTab, updateTab, setAppMode, reorderTabs, reopenLastClosedTab, tabGroups, createOrMergeGroupFromDrag, toggleGroupCollapsed, renameGroup, setGroupColor, tabsLayout, setTabsLayout } = useBrowserStore();
+  const { tabs, activeTabId, addTab, removeTab, setActiveTab, updateTab, setAppMode, reorderTabs, reopenLastClosedTab, tabGroups, createOrMergeGroupFromDrag, toggleGroupCollapsed, renameGroup, setGroupColor, tabsLayout, setTabsLayout, saasModeEnabled, setSaasModeEnabled } = useBrowserStore();
   const activeTab = tabs.find(t => t.id === activeTabId);
   const [urlInput, setUrlInput] = useState('');
   const [isUrlFocused, setIsUrlFocused] = useState(false);
@@ -589,6 +589,15 @@ export function BrowserChrome() {
                 className="w-full text-left px-3 py-1.5 text-xs hover:bg-secondary/50 flex items-center gap-2 text-foreground"
               >
                 <HistoryIcon size={12} /> {tabsLayout === 'vertical' ? 'Horizontal Tabs' : 'Vertical Tabs'}
+              </button>
+              <button
+                onClick={() => {
+                  setSaasModeEnabled(!saasModeEnabled);
+                  setIsMenuOpen(false);
+                }}
+                className="w-full text-left px-3 py-1.5 text-xs hover:bg-secondary/50 flex items-center gap-2 text-foreground"
+              >
+                <HistoryIcon size={12} /> SaaS Mode: {saasModeEnabled ? 'On' : 'Off'}
               </button>
               <button 
                 onClick={() => { setIsMenuOpen(false); }}

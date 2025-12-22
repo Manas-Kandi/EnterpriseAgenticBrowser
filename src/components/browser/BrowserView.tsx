@@ -3,7 +3,7 @@ import { useEffect, useRef } from 'react';
 import { NewTabPage } from './NewTabPage';
 
 function WebViewInstance({ tab, active }: { tab: BrowserTab; active: boolean }) {
-  const { updateTab, addToHistory } = useBrowserStore();
+  const { updateTab, addToHistory, saasModeEnabled } = useBrowserStore();
   const webviewRef = useRef<any>(null);
   const registeredRef = useRef(false);
   const domReadyRef = useRef(false);
@@ -109,6 +109,20 @@ function WebViewInstance({ tab, active }: { tab: BrowserTab; active: boolean }) 
           background: rgba(128, 128, 128, 0.4);
         }
       `);
+
+      // SaaS Mode: hide internal AeroCore sidebar to avoid duplicate navigation rails
+      try {
+        if (saasModeEnabled) {
+          const url = el.getURL?.() || tab.url || '';
+          if (url.includes('/aerocore/')) {
+            el.insertCSS(`
+              [data-aerocore-sidebar] { display: none !important; }
+            `);
+          }
+        }
+      } catch {
+        // ignore
+      }
     });
     el.addEventListener('did-navigate', register); // Re-register on nav just in case
     register();
