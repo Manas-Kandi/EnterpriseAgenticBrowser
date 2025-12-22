@@ -2,6 +2,7 @@ import { useBrowserStore } from '@/lib/store';
 import { X } from 'lucide-react';
 import { AgentPanel } from './AgentPanel';
 import { useMemo, useState } from 'react';
+import { cn } from '@/lib/utils';
 
 export function WorkspacePanel() {
     const {
@@ -36,7 +37,15 @@ export function WorkspacePanel() {
     if (!activeSidebarPanel) return null;
 
     return (
-        <div className="w-[400px] border-r border-border/50 bg-background flex flex-col shadow-xl z-10">
+        <div
+            className={cn(
+                'w-[400px] bg-background flex flex-col z-10',
+                // Make the agent panel feel like part of the dock surface (less boxy)
+                activeSidebarPanel === 'agent'
+                    ? 'shadow-none'
+                    : 'border-r border-border/50 shadow-xl'
+            )}
+        >
             {activeSidebarPanel !== 'agent' && (
                 <div className="h-10 flex items-center justify-between px-3 border-b border-border/50 bg-secondary/20">
                     <span className="text-sm font-medium capitalize flex items-center gap-2">

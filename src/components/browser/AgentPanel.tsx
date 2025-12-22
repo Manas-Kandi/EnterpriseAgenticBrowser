@@ -301,7 +301,7 @@ export function AgentPanel() {
   return (
     <div className="h-full flex flex-col bg-background relative">
       {/* Header */}
-      <div className="h-10 shrink-0 flex items-center justify-between px-3 border-b border-border/50 bg-background/50 backdrop-blur-sm z-20">
+      <div className="h-10 shrink-0 flex items-center justify-between px-3 bg-background z-20">
         <div className="flex items-center gap-2 overflow-hidden">
           {/* No title here as requested */}
         </div>
@@ -732,8 +732,8 @@ export function AgentPanel() {
       )}
 
       {/* Footer / Input Area - Clean minimal design */}
-      <div className="shrink-0 p-3 bg-background/60">
-        <div className="bg-secondary/40 rounded-xl border border-border/30">
+      <div className="shrink-0 p-3 bg-background">
+        <div className="bg-secondary/20 rounded-xl">
           {/* Input row */}
           <form onSubmit={handleSubmit}>
             <input
