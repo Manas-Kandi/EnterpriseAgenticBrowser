@@ -10,6 +10,7 @@ import { toolRegistry } from './ToolRegistry';
 import { taskKnowledgeService } from './TaskKnowledgeService';
 import { agentRunContext } from './AgentRunContext';
 import { telemetryService } from './TelemetryService';
+import { classifyIntent, shouldNavigateActiveTab } from './IntentClassifier';
 import { safeParseTOON, TOON_SUMMARY_PROMPT_TEMPLATE } from '../lib/toon';
 import { safeValidateToonSummary, createToonSummary, ToonSummary } from '../lib/validateToonSummary';
 
@@ -657,6 +658,14 @@ You can answer questions about what's on the page, explain content, summarize in
     let lastVerified: string | null = null;
     let messages: BaseMessage[] = [];
 
+    // Intent classification for context preservation
+    // Core UX Principle: User attention defines agent scope
+    const intentClassification = classifyIntent(userMessage, browserContext);
+    this.emitStep('thought', `Intent: ${intentClassification.type} (${Math.round(intentClassification.confidence * 100)}% confidence) - ${intentClassification.reason}`, {
+      phase: 'intent_classification',
+      intent: intentClassification,
+    });
+
     try {
       // Use provided browser context or default
       let context = browserContext || 'Current browser state: No context provided';
@@ -1092,6 +1101,57 @@ if (tool) {
   console.log(`Executing tool: ${tool.name} with args:`, action.args);
   const toolCallId = uuidv4();
   const toolStartedAt = Date.now();
+
+  // NAVIGATION GUARD: Check if browser_navigate should open a new tab instead
+  // Core UX Principle: The active tab is sacred context
+  if (tool.name === 'browser_navigate' && (action as any).args?.url) {
+    const targetUrl = (action as any).args.url;
+    const navCheck = shouldNavigateActiveTab(userMessage, targetUrl, context);
+    
+    if (!navCheck.allowNavigation) {
+      this.emitStep('thought', `Navigation guard: ${navCheck.reason}`, {
+        phase: 'navigation_guard',
+        targetUrl,
+        decision: 'new_tab',
+      });
+      
+      // Instead of navigating the active tab, signal to open a new tab
+      // This will be handled by the renderer via IPC
+      const { BrowserWindow } = await import('electron');
+      const win = BrowserWindow.getAllWindows()[0];
+      if (win) {
+        // Send IPC to open new tab in background with agent indicator
+        win.webContents.send('browser:open-agent-tab', {
+          url: targetUrl,
+          background: intentClassification.openInBackground,
+          agentCreated: true,
+        });
+        
+        const toolDurationMs = Date.now() - toolStartedAt;
+        const result = `Opened ${targetUrl} in a new tab (preserving your current context)`;
+        this.emitStep('observation', `Tool Output: ${result}`, {
+          tool: tool.name,
+          result,
+          toolCallId,
+          phase: 'tool_end',
+          durationMs: toolDurationMs,
+          navigationGuarded: true,
+        });
+        
+        // Add to messages and continue
+        const safeToolCall = this.redactSecrets(content);
+        const aiMsg = new AIMessage(safeToolCall);
+        const toolOutputMsg = new SystemMessage(`Tool '${tool.name}' Output:\n${result}`);
+        messages.push(aiMsg);
+        messages.push(toolOutputMsg);
+        this.conversationHistory.push(aiMsg);
+        this.conversationHistory.push(toolOutputMsg);
+        usedBrowserTools = true;
+        continue;
+      }
+    }
+  }
+
   this.emitStep('action', `Executing ${tool.name}`, {
     tool: tool.name,
     args: action.args,

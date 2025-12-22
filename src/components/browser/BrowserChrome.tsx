@@ -458,6 +458,14 @@ export function BrowserChrome() {
                             className="absolute -right-0.5 -bottom-0.5 w-1.5 h-1.5 rounded-full bg-foreground/60"
                           />
                         )}
+                        {/* Agent-created tab indicator */}
+                        {tab.agentCreated && !tab.loading && (
+                          <span
+                            aria-hidden="true"
+                            className="absolute -left-0.5 -top-0.5 w-1.5 h-1.5 rounded-full bg-primary/70"
+                            title="Opened by AI Agent"
+                          />
+                        )}
                       </div>
 
                       <span

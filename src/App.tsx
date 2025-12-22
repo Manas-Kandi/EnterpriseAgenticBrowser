@@ -9,7 +9,7 @@ import { useEffect } from 'react';
 import { useBrowserStore } from '@/lib/store';
 
 function App() {
-  const { addTab, removeTab, updateTab, activeTabId, appMode, setAppMode, tabsLayout } = useBrowserStore();
+  const { addTab, addTabInBackground, removeTab, updateTab, activeTabId, appMode, setAppMode, tabsLayout } = useBrowserStore();
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -35,6 +35,19 @@ function App() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [addTab, removeTab, updateTab, activeTabId]);
+
+  // Listen for agent-triggered tab opens (navigation guard)
+  // Core UX: Agent opens exploratory tabs in background to preserve user context
+  useEffect(() => {
+    const off = window.browser?.onOpenAgentTab?.(({ url, background, agentCreated }) => {
+      if (background) {
+        addTabInBackground(url, { agentCreated });
+      } else {
+        addTab(url, { agentCreated });
+      }
+    });
+    return () => off?.();
+  }, [addTab, addTabInBackground]);
 
   if (!appMode) {
       return <OnboardingPage onSelectMode={setAppMode} />;

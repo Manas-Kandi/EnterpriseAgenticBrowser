@@ -43474,6 +43474,166 @@ class TaskKnowledgeService {
   }
 }
 const taskKnowledgeService = new TaskKnowledgeService();
+const IN_CONTEXT_PATTERNS = [
+  /\b(summarize|summary of)\s+(this|the|current)\s+(page|article|content|document)/i,
+  /\b(explain|describe)\s+(this|what('s| is) on|the current)/i,
+  /\b(find|search|look for)\s+(on|in|within)\s+(this|the|current)\s+(page|document)/i,
+  /\b(scroll|go)\s+(down|up|to the|to section)/i,
+  /\bwhat('s| is)\s+(this|on this page|here)\b/i,
+  /\b(read|analyze|extract from)\s+(this|the current|the page)/i,
+  /\b(click|press|select|fill|type|enter)\s/i,
+  /\b(submit|save|create|add|delete|remove|update|edit)\s+(the|this|a)\b/i,
+  /\bthis\s+(page|repo|article|document|form|table|list)\b/i,
+  /\b(on|in|within)\s+this\s+(page|site|tab)\b/i
+];
+const EXPLORATORY_PATTERNS = [
+  /\b(find|search|look up|look for|research)\s+(articles?|information|docs?|documentation|alternatives?|examples?|tutorials?)\s+(about|on|for|regarding)/i,
+  /\b(compare|contrast)\s+(this|it)\s+(with|to|against)/i,
+  /\b(go to|open|navigate to|visit)\s+(a different|another|new|the)\s+(page|site|website|url)/i,
+  /\b(search|google|look up)\s+(for|about)?\s*[^(this|the current)]/i,
+  /\bfind\s+(me\s+)?(an?|some|the)\s+(article|page|site|resource|documentation)/i,
+  /\b(what is|who is|where is|how to|how do)\b(?!.*\b(this|here|on this page)\b)/i,
+  /\b(learn|read)\s+(more\s+)?(about|regarding)/i
+];
+const EXPLICIT_REPLACE_TAB = [
+  /\breplace\s+(this|the|current)\s+tab\b/i,
+  /\bin\s+(this|the same)\s+tab\b/i,
+  /\buse\s+(this|the current)\s+(page|tab)\b/i,
+  /\bnavigate\s+away\b/i
+];
+const EXPLICIT_BACKGROUND = [
+  /\b(in the\s+)?background\b/i,
+  /\bdon't\s+(switch|change|leave)\b/i,
+  /\bkeep\s+(me\s+)?(here|on this page)\b/i,
+  /\bwithout\s+(leaving|switching|navigating away)\b/i
+];
+const EXPLICIT_NEW_TAB = [
+  /\b(in\s+)?a?\s*new\s+tab\b/i,
+  /\bopen\s+(it\s+)?(separately|aside)\b/i
+];
+function classifyIntent(userMessage, currentPageContext) {
+  const msg = userMessage.toLowerCase().trim();
+  for (const pattern of EXPLICIT_REPLACE_TAB) {
+    if (pattern.test(msg)) {
+      return {
+        type: "in_context",
+        confidence: 1,
+        reason: "User explicitly requested to use current tab",
+        openInBackground: false,
+        explicitOverride: "replace_tab"
+      };
+    }
+  }
+  for (const pattern of EXPLICIT_BACKGROUND) {
+    if (pattern.test(msg)) {
+      return {
+        type: "exploratory",
+        confidence: 1,
+        reason: "User explicitly requested background operation",
+        openInBackground: true,
+        explicitOverride: "background"
+      };
+    }
+  }
+  for (const pattern of EXPLICIT_NEW_TAB) {
+    if (pattern.test(msg)) {
+      return {
+        type: "exploratory",
+        confidence: 1,
+        reason: "User explicitly requested new tab",
+        openInBackground: false,
+        explicitOverride: "new_tab"
+      };
+    }
+  }
+  let inContextScore = 0;
+  let inContextReasons = [];
+  for (const pattern of IN_CONTEXT_PATTERNS) {
+    if (pattern.test(msg)) {
+      inContextScore += 1;
+      inContextReasons.push(pattern.source.slice(0, 30));
+    }
+  }
+  let exploratoryScore = 0;
+  let exploratoryReasons = [];
+  for (const pattern of EXPLORATORY_PATTERNS) {
+    if (pattern.test(msg)) {
+      exploratoryScore += 1;
+      exploratoryReasons.push(pattern.source.slice(0, 30));
+    }
+  }
+  if (/\bthis\s+(page|repo|article|document|site|tab)\b/i.test(msg)) {
+    inContextScore += 2;
+  }
+  if (/https?:\/\/|www\.|\.com|\.org|\.io/i.test(msg)) {
+    exploratoryScore += 2;
+  }
+  const simpleActionWords = /^(open|go to|navigate to|visit|find|search|look up)\s/i;
+  if (simpleActionWords.test(msg) && !/\bthis\b/i.test(msg)) {
+    exploratoryScore += 1;
+  }
+  const isExplicitNavigation = /^(open|go to|navigate to|visit)\s/i.test(msg);
+  const totalScore = inContextScore + exploratoryScore;
+  if (totalScore === 0) {
+    return {
+      type: "exploratory",
+      confidence: 0.5,
+      reason: "Ambiguous intent - defaulting to new tab (reversible)",
+      openInBackground: !isExplicitNavigation
+      // Foreground if explicit navigation
+    };
+  }
+  if (inContextScore > exploratoryScore) {
+    return {
+      type: "in_context",
+      confidence: inContextScore / totalScore,
+      reason: `In-context signals: ${inContextReasons.join(", ")}`,
+      openInBackground: false
+    };
+  }
+  if (exploratoryScore > inContextScore) {
+    return {
+      type: "exploratory",
+      confidence: exploratoryScore / totalScore,
+      reason: `Exploratory signals: ${exploratoryReasons.join(", ")}`,
+      // Explicit navigation ("open X") should switch to the new tab (foreground)
+      // Research/search queries should stay in background to preserve context
+      openInBackground: !isExplicitNavigation
+    };
+  }
+  return {
+    type: "exploratory",
+    confidence: 0.5,
+    reason: "Equal signals - defaulting to new tab (reversible)",
+    openInBackground: !isExplicitNavigation
+  };
+}
+function shouldNavigateActiveTab(userMessage, targetUrl, currentUrl) {
+  const intent = classifyIntent(userMessage);
+  if (intent.explicitOverride === "replace_tab") {
+    return { allowNavigation: true, reason: "User explicitly requested tab replacement" };
+  }
+  if (intent.explicitOverride === "new_tab" || intent.explicitOverride === "background") {
+    return { allowNavigation: false, reason: "User explicitly requested new tab" };
+  }
+  if (intent.type === "in_context" && intent.confidence >= 0.7) {
+    return { allowNavigation: true, reason: intent.reason };
+  }
+  if (currentUrl && targetUrl) {
+    try {
+      const currentDomain = new URL(currentUrl).hostname;
+      const targetDomain = new URL(targetUrl).hostname;
+      if (currentDomain === targetDomain) {
+        return { allowNavigation: true, reason: "Same-domain navigation" };
+      }
+    } catch {
+    }
+  }
+  return {
+    allowNavigation: false,
+    reason: `Exploratory intent detected (${intent.reason}) - opening new tab to preserve context`
+  };
+}
 const LIST_ITEM_MARKER = "-";
 const LIST_ITEM_PREFIX = "- ";
 const COMMA = ",";
@@ -44820,12 +44980,17 @@ You can answer questions about what's on the page, explain content, summarize in
    * Do mode: Full agentic capabilities with tools
    */
   async doMode(userMessage, browserContext) {
-    var _a3, _b, _c, _d;
+    var _a3, _b, _c, _d, _e;
     const tools = toolRegistry.toLangChainTools();
     let usedBrowserTools = false;
     let parseFailures = 0;
     let lastVerified = null;
     let messages = [];
+    const intentClassification = classifyIntent(userMessage);
+    this.emitStep("thought", `Intent: ${intentClassification.type} (${Math.round(intentClassification.confidence * 100)}% confidence) - ${intentClassification.reason}`, {
+      phase: "intent_classification",
+      intent: intentClassification
+    });
     try {
       let context = browserContext || "Current browser state: No context provided";
       context = this.redactSecrets(context);
@@ -45172,6 +45337,46 @@ To finish: {"thought":"brief completion summary","tool":"final_response","args":
           console.log(`Executing tool: ${tool2.name} with args:`, action.args);
           const toolCallId = v4$1();
           const toolStartedAt = Date.now();
+          if (tool2.name === "browser_navigate" && ((_c = action.args) == null ? void 0 : _c.url)) {
+            const targetUrl = action.args.url;
+            const navCheck = shouldNavigateActiveTab(userMessage, targetUrl, context);
+            if (!navCheck.allowNavigation) {
+              this.emitStep("thought", `Navigation guard: ${navCheck.reason}`, {
+                phase: "navigation_guard",
+                targetUrl,
+                decision: "new_tab"
+              });
+              const { BrowserWindow: BrowserWindow2 } = await import("electron");
+              const win2 = BrowserWindow2.getAllWindows()[0];
+              if (win2) {
+                win2.webContents.send("browser:open-agent-tab", {
+                  url: targetUrl,
+                  background: intentClassification.openInBackground,
+                  agentCreated: true
+                });
+                const toolDurationMs = Date.now() - toolStartedAt;
+                const result = `Opened ${targetUrl} in a new tab (preserving your current context)`;
+                this.emitStep("observation", `Tool Output: ${result}`, {
+                  tool: tool2.name,
+                  result,
+                  toolCallId,
+                  phase: "tool_end",
+                  durationMs: toolDurationMs,
+                  navigationGuarded: true
+                });
+                const safeToolCall = this.redactSecrets(content);
+                const aiMsg = new AIMessage(safeToolCall);
+                const toolOutputMsg = new SystemMessage(`Tool '${tool2.name}' Output:
+${result}`);
+                messages.push(aiMsg);
+                messages.push(toolOutputMsg);
+                this.conversationHistory.push(aiMsg);
+                this.conversationHistory.push(toolOutputMsg);
+                usedBrowserTools = true;
+                continue;
+              }
+            }
+          }
           this.emitStep("action", `Executing ${tool2.name}`, {
             tool: tool2.name,
             args: action.args,
@@ -45210,7 +45415,7 @@ To finish: {"thought":"brief completion summary","tool":"final_response","args":
             if (toolName === "browser_navigate" && !resultStr.toLowerCase().includes("error")) {
               const isSimpleNavigation = (lowerMsg.startsWith("open ") || lowerMsg.startsWith("go to ") || lowerMsg.startsWith("navigate to ") || lowerMsg.startsWith("visit ")) && !lowerMsg.includes(" and ") && !lowerMsg.includes(" then ") && !lowerMsg.includes("tell me") && !lowerMsg.includes("find ") && !lowerMsg.includes("search ") && !lowerMsg.includes("click ") && !lowerMsg.includes("what is") && !lowerMsg.includes("show me");
               if (isSimpleNavigation) {
-                const url = ((_c = action.args) == null ? void 0 : _c.url) || "the page";
+                const url = ((_d = action.args) == null ? void 0 : _d.url) || "the page";
                 const fastResponse = `Navigated to ${url}`;
                 this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: "final_response", args: { message: fastResponse } })));
                 return fastResponse;
@@ -45237,7 +45442,7 @@ To finish: {"thought":"brief completion summary","tool":"final_response","args":
               return fastResponse;
             }
             if (toolName === "browser_press_key" && !resultStr.toLowerCase().includes("error") && isOneShotActionRequest) {
-              const key = ((_d = action.args) == null ? void 0 : _d.key) || "the key";
+              const key = ((_e = action.args) == null ? void 0 : _e.key) || "the key";
               const fastResponse = `Pressed ${key}.`;
               this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: "final_response", args: { message: fastResponse } })));
               return fastResponse;

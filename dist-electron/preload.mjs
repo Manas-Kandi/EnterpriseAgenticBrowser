@@ -77,6 +77,11 @@ electron.contextBridge.exposeInMainWorld("browser", {
     const listener = (_, url) => callback(url);
     electron.ipcRenderer.on("browser:navigate-to", listener);
     return () => electron.ipcRenderer.off("browser:navigate-to", listener);
+  },
+  onOpenAgentTab: (callback) => {
+    const listener = (_, payload) => callback(payload);
+    electron.ipcRenderer.on("browser:open-agent-tab", listener);
+    return () => electron.ipcRenderer.off("browser:open-agent-tab", listener);
   }
 });
 electron.contextBridge.exposeInMainWorld("newtab", {

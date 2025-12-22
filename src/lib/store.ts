@@ -15,6 +15,8 @@ export interface BrowserTab {
   canGoBack?: boolean;
   canGoForward?: boolean;
   pinned?: boolean;
+  /** True if this tab was opened by the AI agent (for visual indicator) */
+  agentCreated?: boolean;
 }
 
 export interface HistoryItem {
@@ -73,8 +75,8 @@ interface BrowserState {
   dockConfig: DockConfig;
   
   // Actions
-  addTab: (url?: string) => void;
-  addTabInBackground: (url: string) => void;
+  addTab: (url?: string, options?: { agentCreated?: boolean }) => void;
+  addTabInBackground: (url: string, options?: { agentCreated?: boolean }) => void;
   removeTab: (id: string) => void;
   reopenLastClosedTab: () => void;
   reopenClosedTab: (id: string) => void;
@@ -119,12 +121,13 @@ export const useBrowserStore = create<BrowserState>()(
       agentPermissionMode: 'permissions',
       dockConfig: defaultDockConfig,
 
-      addTab: (url = 'about:newtab') => set((state) => {
+      addTab: (url = 'about:newtab', options) => set((state) => {
         const newTab = {
           id: Math.random().toString(36).substring(2, 9),
           url,
-          title: 'New Tab',
+          title: options?.agentCreated ? 'Research: New Tab' : 'New Tab',
           loading: false,
+          agentCreated: options?.agentCreated,
         };
 
         const activeIndex = state.activeTabId
@@ -138,12 +141,13 @@ export const useBrowserStore = create<BrowserState>()(
         return { tabs: nextTabs, activeTabId: newTab.id };
       }),
 
-      addTabInBackground: (url) => set((state) => {
+      addTabInBackground: (url, options) => set((state) => {
         const newTab = {
           id: Math.random().toString(36).substring(2, 9),
           url,
-          title: 'New Tab',
+          title: options?.agentCreated ? 'Research: New Tab' : 'New Tab',
           loading: false,
+          agentCreated: options?.agentCreated,
         };
 
         const activeIndex = state.activeTabId
