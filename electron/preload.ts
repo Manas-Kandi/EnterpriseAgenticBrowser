@@ -90,7 +90,12 @@ contextBridge.exposeInMainWorld('browser', {
 })
 
 contextBridge.exposeInMainWorld('newtab', {
-  getInsights: () => ipcRenderer.invoke('newtab:get-insights'),
+  getDashboardSnapshot: () => ipcRenderer.invoke('newtab:dashboard-snapshot'),
+  onDashboardUpdate: (callback: (snapshot: any) => void) => {
+    const listener = (_: unknown, snapshot: unknown) => callback(snapshot);
+    ipcRenderer.on('newtab:dashboard-update', listener);
+    return () => ipcRenderer.off('newtab:dashboard-update', listener);
+  },
 })
 
 contextBridge.exposeInMainWorld('telemetry', {

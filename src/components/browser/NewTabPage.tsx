@@ -1,74 +1,70 @@
-import ReactMarkdown from 'react-markdown';
-import { useState } from 'react';
-import { useBrowserStore } from '@/lib/store';
+import { useEffect, useState } from 'react';
+
+type DashboardSnapshot = {
+    ts: number;
+    kpis: Array<{ id: string; label: string; value: string; delta?: string }>;
+    events: Array<{ id: string; ts: number; title: string; severity?: 'info' | 'warn' | 'critical' }>;
+    reasoning: Array<{ id: string; ts: number; markdown: string }>;
+};
 
 export function NewTabPage() {
-    const { appMode } = useBrowserStore();
-    const isDevMode = appMode === 'dev';
+    const [snapshot, setSnapshot] = useState<DashboardSnapshot | null>(null);
 
-    const [insightsLoading, setInsightsLoading] = useState(false);
-    const [insightsError, setInsightsError] = useState<string | null>(null);
-    const [insightsMarkdown, setInsightsMarkdown] = useState<string>('');
+    useEffect(() => {
+        let unsub: (() => void) | undefined;
+        let cancelled = false;
 
-    const handleGenerateInsights = async () => {
-        if (!isDevMode) return;
-        setInsightsLoading(true);
-        setInsightsError(null);
+        (async () => {
+            try {
+                const initial = await window.newtab?.getDashboardSnapshot();
+                if (!cancelled && initial) setSnapshot(initial as DashboardSnapshot);
+            } catch {
+                // silent
+            }
+        })();
+
         try {
-            const res = await window.newtab?.getInsights();
-            if (!res) {
-                setInsightsError('Insights API unavailable.');
-                return;
-            }
-            if (!res.ok) {
-                setInsightsError(res.error ?? 'Failed to generate insights.');
-                return;
-            }
-            setInsightsMarkdown(res.markdown ?? '');
-        } catch (e: any) {
-            setInsightsError(String(e?.message ?? e));
-        } finally {
-            setInsightsLoading(false);
+            unsub = window.newtab?.onDashboardUpdate((next) => {
+                if (!cancelled) setSnapshot(next as DashboardSnapshot);
+            });
+        } catch {
+            // silent
         }
-    };
+
+        return () => {
+            cancelled = true;
+            unsub?.();
+        };
+    }, []);
+
+    const kpis = snapshot?.kpis ?? [];
+    const latestSignal = snapshot?.events?.[0];
+    const hasWarning = latestSignal?.severity === 'warn' || latestSignal?.severity === 'critical';
 
     return (
-        <div className="flex flex-col items-center justify-center min-h-full bg-background text-foreground p-8">
-            <div className="w-full max-w-4xl">
-                {!isDevMode ? (
-                    <div className="text-sm text-muted-foreground">
-                        New Tab
-                    </div>
-                ) : (
-                    <div className="space-y-3">
-                        <div className="flex items-center justify-between">
-                            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider pl-1">Mock SaaS Insights</h2>
-                            <button
-                                onClick={handleGenerateInsights}
-                                disabled={insightsLoading}
-                                className="h-8 px-3 rounded-md border border-border/40 bg-card hover:bg-secondary/20 transition-colors text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
-                            >
-                                {insightsLoading ? 'Generating…' : 'Generate'}
-                            </button>
+        <div className="flex items-center justify-center min-h-full bg-background text-foreground select-none">
+            <div className="flex flex-col items-center gap-8">
+                <div className="flex items-center gap-1.5">
+                    {hasWarning && (
+                        <div className="w-1.5 h-1.5 rounded-full bg-foreground/40 animate-pulse" />
+                    )}
+                    <span className="text-[11px] text-muted-foreground/60 uppercase tracking-widest">
+                        {latestSignal ? latestSignal.title : 'All clear'}
+                    </span>
+                </div>
+
+                <div className="flex items-baseline gap-6">
+                    {kpis.slice(0, 4).map((k) => (
+                        <div key={k.id} className="flex flex-col items-center">
+                            <div className="text-3xl font-light text-foreground/80 tabular-nums tracking-tight">
+                                {k.value}
+                            </div>
+                            <div className="mt-1 text-[10px] text-muted-foreground/50 uppercase tracking-wider">
+                                {k.label}
+                            </div>
                         </div>
-
-                        {insightsError && (
-                            <div className="text-xs text-destructive px-1">{insightsError}</div>
-                        )}
-
-                        {insightsMarkdown ? (
-                            <div className="rounded-lg border border-border/30 bg-card/40 p-4">
-                                <div className="prose prose-sm dark:prose-invert max-w-none">
-                                    <ReactMarkdown>{insightsMarkdown}</ReactMarkdown>
-                                </div>
-                            </div>
-                        ) : (
-                            <div className="text-xs text-muted-foreground px-1">
-                                Uses <span className="font-medium">NVIDIA_API_KEY</span> and the local mock SaaS docs.
-                            </div>
-                        )}
-                    </div>
-                )}
+                    ))}
+                </div>
             </div>
         </div>
     );

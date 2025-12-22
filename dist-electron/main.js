@@ -6,12 +6,12 @@ import { app, webContents, BrowserWindow, ipcMain } from "electron";
 import { URL as URL$2, fileURLToPath } from "node:url";
 import path$2 from "node:path";
 import crypto$2, { randomFillSync, randomUUID } from "node:crypto";
-import fs$1 from "node:fs/promises";
 import keytar from "keytar";
 import require$$0 from "fs";
 import require$$1 from "path";
 import require$$2 from "os";
 import crypto$3 from "crypto";
+import fs$1 from "node:fs/promises";
 import { AsyncLocalStorage } from "node:async_hooks";
 import Database from "better-sqlite3";
 import fs$2 from "node:fs";
@@ -47214,6 +47214,183 @@ class BenchmarkService {
   }
 }
 const benchmarkService = new BenchmarkService();
+function clamp(n, min, max) {
+  return Math.max(min, Math.min(max, n));
+}
+function formatPct(n) {
+  return `${Math.round(n)}%`;
+}
+function formatDelta(n, unit) {
+  const sign = n > 0 ? "+" : "";
+  return `${sign}${n}${unit}`;
+}
+function uid(prefix) {
+  return `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
+}
+class DummyAeroCoreDataSource {
+  constructor() {
+    __publicField(this, "ts", Date.now());
+    __publicField(this, "openOrders", 42);
+    __publicField(this, "slaBreaches", 3);
+    __publicField(this, "fleetUtil", 78);
+    __publicField(this, "activeIncidents", 1);
+    __publicField(this, "last", {
+      openOrders: this.openOrders,
+      slaBreaches: this.slaBreaches,
+      fleetUtil: this.fleetUtil,
+      activeIncidents: this.activeIncidents
+    });
+    __publicField(this, "events", []);
+    __publicField(this, "reasoning", []);
+  }
+  async getSnapshot() {
+    return this.buildSnapshot();
+  }
+  async tick() {
+    this.ts = Date.now();
+    this.openOrders = clamp(this.openOrders + this.randInt(-2, 4), 10, 140);
+    this.slaBreaches = clamp(this.slaBreaches + this.randInt(-1, 2), 0, 20);
+    this.fleetUtil = clamp(this.fleetUtil + this.randInt(-2, 2), 40, 98);
+    this.activeIncidents = clamp(this.activeIncidents + this.randInt(-1, 1), 0, 6);
+    if (Math.random() < 0.55) {
+      this.events.unshift(this.makeEvent());
+      this.events = this.events.slice(0, 8);
+    }
+    const deltas = {
+      openOrders: this.openOrders - this.last.openOrders,
+      slaBreaches: this.slaBreaches - this.last.slaBreaches,
+      fleetUtil: this.fleetUtil - this.last.fleetUtil,
+      activeIncidents: this.activeIncidents - this.last.activeIncidents
+    };
+    const reasoningMd = this.makeReasoning(deltas);
+    if (reasoningMd) {
+      this.reasoning.unshift({ id: uid("r"), ts: this.ts, markdown: reasoningMd });
+      this.reasoning = this.reasoning.slice(0, 10);
+    }
+    this.last = {
+      openOrders: this.openOrders,
+      slaBreaches: this.slaBreaches,
+      fleetUtil: this.fleetUtil,
+      activeIncidents: this.activeIncidents
+    };
+    return this.buildSnapshot();
+  }
+  buildSnapshot() {
+    const kpis = [
+      {
+        id: "open_orders",
+        label: "Open Orders",
+        value: String(this.openOrders),
+        delta: formatDelta(this.openOrders - this.last.openOrders, "")
+      },
+      {
+        id: "fleet_util",
+        label: "Fleet Utilization",
+        value: formatPct(this.fleetUtil),
+        delta: formatDelta(this.fleetUtil - this.last.fleetUtil, "pp")
+      },
+      {
+        id: "sla_breaches",
+        label: "SLA Breaches",
+        value: String(this.slaBreaches),
+        delta: formatDelta(this.slaBreaches - this.last.slaBreaches, "")
+      },
+      {
+        id: "active_incidents",
+        label: "Active Incidents",
+        value: String(this.activeIncidents),
+        delta: formatDelta(this.activeIncidents - this.last.activeIncidents, "")
+      }
+    ];
+    return {
+      ts: this.ts,
+      kpis,
+      events: this.events,
+      reasoning: this.reasoning
+    };
+  }
+  randInt(min, max) {
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+  }
+  makeEvent() {
+    const choices = [
+      {
+        title: "Dispatch backlog rebalanced",
+        detail: "Reassigned 6 loads from ATL to DAL to reduce spillover.",
+        severity: "info"
+      },
+      {
+        title: "Carrier ETA drift detected",
+        detail: "2 shipments trending late (>35m). Consider proactive reroute.",
+        severity: "warn"
+      },
+      {
+        title: "SLA breach risk rising",
+        detail: "Queue depth increased on inbound dock; validate staffing plan.",
+        severity: "warn"
+      },
+      {
+        title: "Incident: Telemetry ingest lag",
+        detail: "Event stream delay ~3m; dashboards may be stale.",
+        severity: "critical"
+      },
+      {
+        title: "Fleet utilization stabilized",
+        detail: "Idle time reduced across Zone 3; keep monitoring.",
+        severity: "info"
+      }
+    ];
+    const base = choices[Math.floor(Math.random() * choices.length)];
+    return { id: uid("e"), ts: this.ts, ...base };
+  }
+  makeReasoning(d) {
+    const lines = [];
+    if (d.openOrders >= 3) {
+      lines.push(`- **Signal**: Open orders spiked (${d.openOrders} net).`);
+      lines.push(`  - **Hypothesis**: Dispatch throughput < intake (check staffing + carrier acceptance).`);
+      lines.push(`  - **Next**: Prioritize high-SLA lanes; batch low-risk loads.`);
+    }
+    if (d.slaBreaches > 0) {
+      lines.push(`- **Risk**: SLA breaches increased (+${d.slaBreaches}).`);
+      lines.push(`  - **Next**: Trigger proactive notifications; escalate only critical routes.`);
+    }
+    if (d.activeIncidents > 0) {
+      lines.push(`- **Incident**: New incident(s) detected (+${d.activeIncidents}).`);
+      lines.push(`  - **Next**: Freeze non-essential workflow changes; validate telemetry pipeline.`);
+    }
+    if (d.fleetUtil <= -2) {
+      lines.push(`- **Signal**: Fleet utilization dropped (${d.fleetUtil}pp).`);
+      lines.push(`  - **Hypothesis**: Route fragmentation or staging delays.`);
+      lines.push(`  - **Next**: Consolidate loads; adjust zone boundaries.`);
+    }
+    if (lines.length === 0) {
+      if (Math.random() < 0.35) {
+        return `- **Steady state**: No major anomalies.
+  - **Next**: Keep monitoring lane-level SLA drift.`;
+      }
+      return "";
+    }
+    return lines.join("\n");
+  }
+}
+class NewTabDashboardService {
+  constructor(source) {
+    __publicField(this, "source");
+    __publicField(this, "snapshot");
+    this.source = source;
+    this.snapshot = { ts: Date.now(), kpis: [], events: [], reasoning: [] };
+  }
+  async init() {
+    this.snapshot = await this.source.getSnapshot();
+  }
+  getSnapshot() {
+    return this.snapshot;
+  }
+  async tick() {
+    this.snapshot = await this.source.tick();
+    return this.snapshot;
+  }
+}
 const MAX_FILES_DEFAULT = 2e3;
 const MAX_FILE_BYTES_DEFAULT = 2e5;
 const IGNORE_DIRS = /* @__PURE__ */ new Set([
@@ -48233,6 +48410,8 @@ const MAIN_DIST = path$2.join(process.env.APP_ROOT, "dist-electron");
 const RENDERER_DIST = path$2.join(process.env.APP_ROOT, "dist");
 process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path$2.join(process.env.APP_ROOT, "public") : RENDERER_DIST;
 let win;
+const newTabDashboardService = new NewTabDashboardService(new DummyAeroCoreDataSource());
+let newTabDashboardTimer = null;
 const pendingApprovals = /* @__PURE__ */ new Map();
 const APPROVAL_TIMEOUT_MS = 3e4;
 function createWindow() {
@@ -48270,6 +48449,25 @@ app.on("activate", () => {
 app.whenReady().then(() => {
   const policyService = new PolicyService(telemetryService, auditService);
   toolRegistry.setPolicyService(policyService);
+  newTabDashboardService.init().then(() => {
+    if (newTabDashboardTimer) clearInterval(newTabDashboardTimer);
+    newTabDashboardTimer = setInterval(async () => {
+      try {
+        const next = await newTabDashboardService.tick();
+        for (const w of BrowserWindow.getAllWindows()) {
+          if (!w || w.isDestroyed()) continue;
+          try {
+            w.webContents.send("newtab:dashboard-update", next);
+          } catch {
+          }
+        }
+      } catch {
+      }
+    }, 3500);
+  }).catch(() => void 0);
+  ipcMain.handle("newtab:dashboard-snapshot", async () => {
+    return newTabDashboardService.getSnapshot();
+  });
   ipcMain.on("agent:approval-response", (event, payload) => {
     var _a3;
     const requestId = payload == null ? void 0 : payload.requestId;
@@ -48388,60 +48586,6 @@ app.whenReady().then(() => {
   ipcMain.handle("benchmark:exportTrajectories", async (_, results) => {
     const filePath = await benchmarkService.exportTrajectories(results);
     return { success: true, path: filePath };
-  });
-  ipcMain.handle("newtab:get-insights", async () => {
-    var _a3, _b, _c;
-    if (!VITE_DEV_SERVER_URL) {
-      return { ok: false, error: "Insights are only available in dev mode" };
-    }
-    const apiKey = process.env.NVIDIA_API_KEY;
-    if (typeof apiKey !== "string" || apiKey.trim().length < 8) {
-      return { ok: false, error: "Missing NVIDIA_API_KEY in environment" };
-    }
-    try {
-      const docsDir = path$2.join(process.env.APP_ROOT ?? process.cwd(), "mock-saas", "aerocore-docs");
-      const files = (await fs$1.readdir(docsDir)).filter((f) => f.toLowerCase().endsWith(".md"));
-      const texts = await Promise.all(
-        files.map(async (f) => {
-          const full = path$2.join(docsDir, f);
-          const content = await fs$1.readFile(full, "utf8");
-          return `# ${f}
-
-${content}`;
-        })
-      );
-      const combined = texts.join("\n\n---\n\n");
-      const context = combined.length > 24e3 ? combined.slice(0, 24e3) : combined;
-      const system = "You are an assistant that produces concise, high-signal product/ops insights for an enterprise SaaS. You will be given internal mock SaaS documentation. Output must be minimal, with few colors implied, no fluff. Return Markdown only.";
-      const user = "Using the following mock SaaS docs, produce:\n1) Top insights (5 bullets max)\n2) Risks / gaps (3 bullets max)\n3) Suggested next actions (5 bullets max)\n4) A short list of key URLs/routes mentioned (if any)\n\nDocs:\n\n" + context;
-      const resp = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${apiKey}`
-        },
-        body: JSON.stringify({
-          model: "meta/llama-3.3-70b-instruct",
-          temperature: 0.2,
-          messages: [
-            { role: "system", content: system },
-            { role: "user", content: user }
-          ]
-        })
-      });
-      if (!resp.ok) {
-        const txt = await resp.text().catch(() => "");
-        return { ok: false, error: `LLM request failed (${resp.status})`, details: txt.slice(0, 2e3) };
-      }
-      const data = await resp.json();
-      const contentOut = (_c = (_b = (_a3 = data == null ? void 0 : data.choices) == null ? void 0 : _a3[0]) == null ? void 0 : _b.message) == null ? void 0 : _c.content;
-      if (typeof contentOut !== "string" || !contentOut.trim()) {
-        return { ok: false, error: "LLM returned empty response" };
-      }
-      return { ok: true, markdown: contentOut };
-    } catch (e) {
-      return { ok: false, error: "Failed to generate insights", details: String((e == null ? void 0 : e.message) ?? e) };
-    }
   });
   ipcMain.handle("agent:get-saved-plans", async () => {
     return planMemory.getPlans();

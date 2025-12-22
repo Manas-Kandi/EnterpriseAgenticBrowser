@@ -80,7 +80,12 @@ electron.contextBridge.exposeInMainWorld("browser", {
   }
 });
 electron.contextBridge.exposeInMainWorld("newtab", {
-  getInsights: () => electron.ipcRenderer.invoke("newtab:get-insights")
+  getDashboardSnapshot: () => electron.ipcRenderer.invoke("newtab:dashboard-snapshot"),
+  onDashboardUpdate: (callback) => {
+    const listener = (_, snapshot) => callback(snapshot);
+    electron.ipcRenderer.on("newtab:dashboard-update", listener);
+    return () => electron.ipcRenderer.off("newtab:dashboard-update", listener);
+  }
 });
 electron.contextBridge.exposeInMainWorld("telemetry", {
   export: () => electron.ipcRenderer.invoke("telemetry:export")
