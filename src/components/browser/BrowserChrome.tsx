@@ -273,7 +273,13 @@ export function BrowserChrome() {
                   groupRepTabId.get(group.id) === tab.id;
 
                 return (
-                  <div key={tab.id} className="relative flex items-center">
+                  <div
+                    key={tab.id}
+                    className={cn(
+                      "relative flex items-center",
+                      "min-w-[140px] max-w-[240px] flex-1 basis-0"
+                    )}
+                  >
                     {showGroupChip && (
                       <button
                         onClick={(e) => {
@@ -342,7 +348,7 @@ export function BrowserChrome() {
                       title={tab.title || tab.url || 'New Tab'}
                       className={cn(
                         "group relative flex items-center gap-2.5 h-8 px-2.5 text-xs cursor-pointer select-none overflow-hidden",
-                        "min-w-[140px] max-w-[240px] flex-1 basis-0",
+                        "w-full",
                         "transition-colors duration-120 ease-out",
                         "will-change-transform",
                         "rounded-md",
