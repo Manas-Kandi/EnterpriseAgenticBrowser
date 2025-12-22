@@ -1,6 +1,6 @@
 import { useBrowserStore } from '@/lib/store';
 import { X, Plus, Search, RotateCw, ArrowLeft, ArrowRight, Loader2, Globe, Lock, Unlock, MoreVertical, Terminal, History as HistoryIcon, Pin, Copy, Trash, RefreshCcw } from 'lucide-react';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import { cn, getFaviconUrl } from '@/lib/utils';
 
 export function BrowserChrome() {
@@ -15,6 +15,38 @@ export function BrowserChrome() {
   
   const [draggedTabIndex, setDraggedTabIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+
+  const tabRefs = useRef(new Map<string, HTMLDivElement>());
+  const prevRects = useRef(new Map<string, DOMRect>());
+
+  useLayoutEffect(() => {
+    const nextRects = new Map<string, DOMRect>();
+    tabs.forEach((t) => {
+      const el = tabRefs.current.get(t.id);
+      if (el) nextRects.set(t.id, el.getBoundingClientRect());
+    });
+
+    // FLIP: animate from previous rects -> new rects
+    tabs.forEach((t) => {
+      const el = tabRefs.current.get(t.id);
+      const prev = prevRects.current.get(t.id);
+      const next = nextRects.get(t.id);
+      if (!el || !prev || !next) return;
+
+      const dx = prev.left - next.left;
+      if (Math.abs(dx) < 0.5) return;
+
+      el.style.transform = `translateX(${dx}px)`;
+      el.style.transition = 'transform 0s';
+
+      requestAnimationFrame(() => {
+        el.style.transition = 'transform 220ms cubic-bezier(0.22, 1, 0.36, 1)';
+        el.style.transform = '';
+      });
+    });
+
+    prevRects.current = nextRects;
+  }, [tabs]);
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -95,6 +127,10 @@ export function BrowserChrome() {
             <div key={tab.id} className="relative flex items-center">
               {/* Tab */}
               <div
+                ref={(node) => {
+                  if (node) tabRefs.current.set(tab.id, node);
+                  else tabRefs.current.delete(tab.id);
+                }}
                 draggable
                 onDragStart={(e) => {
                   setDraggedTabIndex(index);
@@ -110,7 +146,9 @@ export function BrowserChrome() {
                   setContextMenu({ x: e.clientX, y: e.clientY, tabId: tab.id });
                 }}
                 className={cn(
-                  "group flex items-center gap-2 h-8 px-3 text-xs cursor-pointer select-none rounded-md min-w-[100px] max-w-[180px] transition-all duration-200 ease-out",
+                  "group flex items-center gap-2 h-8 px-3 text-xs cursor-pointer select-none rounded-md w-[160px] flex-none overflow-hidden",
+                  "transition-colors duration-150 ease-out",
+                  "will-change-transform",
                   activeTabId === tab.id 
                     ? "bg-secondary/60 text-foreground" 
                     : "text-muted-foreground hover:bg-secondary/30",
@@ -196,7 +234,8 @@ export function BrowserChrome() {
               <button
                 onClick={(e) => { e.stopPropagation(); removeTab(tab.id); }}
                 className={cn(
-                  "p-0.5 rounded transition-all text-muted-foreground hover:text-foreground hover:bg-secondary/50 opacity-0 group-hover:opacity-100",
+                  "w-4 h-4 grid place-items-center rounded transition-colors text-muted-foreground hover:text-foreground hover:bg-secondary/50",
+                  "opacity-0 group-hover:opacity-100",
                   activeTabId === tab.id && "opacity-60"
                 )}
               >
