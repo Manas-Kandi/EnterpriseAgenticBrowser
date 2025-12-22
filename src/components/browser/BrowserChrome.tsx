@@ -1,13 +1,12 @@
 import { useBrowserStore } from '@/lib/store';
-import { X, Plus, Search, RotateCw, ArrowLeft, ArrowRight, Globe, Lock, Unlock, MoreVertical, Terminal, History as HistoryIcon, Pin, Copy, Trash, RefreshCcw, ChevronRight, ChevronDown, LogIn, LogOut } from 'lucide-react';
+import { X, Plus, RotateCw, ArrowLeft, ArrowRight, Globe, MoreVertical, Terminal, History as HistoryIcon, Pin, Copy, Trash, RefreshCcw, ChevronRight, ChevronDown, LogIn, LogOut } from 'lucide-react';
 import { useMemo, useState, useEffect, useRef, useLayoutEffect } from 'react';
 import { cn, getFaviconUrl } from '@/lib/utils';
+import { Omnibox } from './Omnibox';
 
 export function BrowserChrome() {
   const { tabs, activeTabId, addTab, removeTab, setActiveTab, updateTab, setAppMode, reorderTabs, reopenLastClosedTab, tabGroups, createOrMergeGroupFromDrag, toggleGroupCollapsed, renameGroup, setGroupColor, tabsLayout, setTabsLayout, saasModeEnabled, setSaasModeEnabled, setSidebarPanel, user, setUser } = useBrowserStore();
   const activeTab = tabs.find(t => t.id === activeTabId);
-  const [urlInput, setUrlInput] = useState('');
-  const [isUrlFocused, setIsUrlFocused] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const tabsViewportRef = useRef<HTMLDivElement>(null);
@@ -188,23 +187,6 @@ export function BrowserChrome() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [reopenLastClosedTab]);
 
-  // Sync input with active tab URL
-  useEffect(() => {
-    if (activeTab) {
-      setUrlInput(activeTab.url);
-    }
-  }, [activeTabId, activeTab?.url]);
-
-  const handleNavigate = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (activeTabId && urlInput) {
-      let finalUrl = urlInput;
-      if (!finalUrl.startsWith('http')) {
-          finalUrl = `https://${finalUrl}`;
-      }
-      updateTab(activeTabId, { url: finalUrl, loading: true });
-    }
-  };
 
   return (
     <div className="flex flex-col bg-background relative z-10">
@@ -353,8 +335,8 @@ export function BrowserChrome() {
                         "will-change-transform",
                         "rounded-md",
                         activeTabId === tab.id
-                          ? (isUrlFocused ? "text-foreground/80 z-20" : "text-foreground/90 z-20")
-                          : (isUrlFocused ? "text-muted-foreground/55 z-10" : "text-muted-foreground/75 z-10"),
+                          ? "text-foreground/90 z-20"
+                          : "text-muted-foreground/75 z-10",
                         draggedTabIndex === index && "opacity-40 scale-95",
                         activeTabId === tab.id ? "bg-secondary/15" : "hover:bg-secondary/10"
                       )}
@@ -541,37 +523,8 @@ export function BrowserChrome() {
           </div>
         )}
 
-        {/* URL Bar */}
-        <div className="w-80 shrink-0" style={{ WebkitAppRegion: 'no-drag' } as any}>
-          <form onSubmit={handleNavigate} className="w-full">
-            <div className="relative">
-              <div className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/60">
-                {urlInput.startsWith('https://') ? (
-                  <Lock size={11} />
-                ) : urlInput.startsWith('http://') ? (
-                  <Unlock size={11} />
-                ) : (
-                  <Search size={11} />
-                )}
-              </div>
-              <input
-                className={cn(
-                  "w-full h-8 bg-secondary/15 hover:bg-secondary/20 rounded-[10px] pl-8 pr-3 text-xs text-foreground placeholder:text-muted-foreground/50 outline-none",
-                  "transition-colors duration-120 ease-out",
-                  "focus:bg-secondary/25 focus:ring-1 focus:ring-ring/35"
-                )}
-                value={urlInput}
-                onChange={(e) => setUrlInput(e.target.value)}
-                placeholder="Search or enter URL"
-                onFocus={(e) => {
-                  setIsUrlFocused(true);
-                  e.target.select();
-                }}
-                onBlur={() => setIsUrlFocused(false)}
-              />
-            </div>
-          </form>
-        </div>
+        {/* Omnibox - Predictive, unified intent surface */}
+        <Omnibox className="w-80 shrink-0" />
 
         {/* Menu */}
         <div className="flex items-center shrink-0" ref={menuRef} style={{ WebkitAppRegion: 'no-drag' } as any}>

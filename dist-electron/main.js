@@ -43511,7 +43511,7 @@ const EXPLICIT_NEW_TAB = [
   /\b(in\s+)?a?\s*new\s+tab\b/i,
   /\bopen\s+(it\s+)?(separately|aside)\b/i
 ];
-function classifyIntent(userMessage, currentPageContext) {
+function classifyIntent(userMessage, _currentPageContext) {
   const msg = userMessage.toLowerCase().trim();
   for (const pattern of EXPLICIT_REPLACE_TAB) {
     if (pattern.test(msg)) {

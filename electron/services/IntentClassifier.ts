@@ -72,7 +72,7 @@ const EXPLICIT_NEW_TAB = [
  * Conservative default: When ambiguous, default to exploratory (new tab)
  * because opening a new tab is reversible, destroying context is not.
  */
-export function classifyIntent(userMessage: string, currentPageContext?: string): IntentClassification {
+export function classifyIntent(userMessage: string, _currentPageContext?: string): IntentClassification {
   const msg = userMessage.toLowerCase().trim();
   
   // Check for explicit overrides first (highest priority)
