@@ -195,7 +195,10 @@ export function WorkspaceSidebar() {
 
     return (
         <div 
-            className="flex flex-col w-12 bg-background border-r border-border/50 z-20"
+            className={cn(
+                "flex flex-col w-12 border-r z-20",
+                "bg-background border-border/50"
+            )}
             style={{ WebkitAppRegion: 'drag' } as any}
         >
             <div className="h-12 shrink-0 flex items-center justify-center">
@@ -229,7 +232,7 @@ export function WorkspaceSidebar() {
                             ))}
                         </div>
 
-                        <div className="w-8 h-px bg-border/70 my-2" />
+                        <div className={cn("w-8 h-px my-2", "bg-border/70")} />
 
                         <div className="flex flex-col items-center gap-2 mt-auto">
                             {apps.map((app) => (
@@ -252,7 +255,10 @@ export function WorkspaceSidebar() {
                                         )}
                                     />
                                     {activeSidebarPanel === app.id && (
-                                        <div className="absolute left-0 top-2 bottom-2 w-0.5 bg-foreground/80 rounded-r-full" />
+                                        <div className={cn(
+                                            "absolute left-0 top-2 bottom-2 w-0.5 rounded-r-full",
+                                            "bg-foreground/80"
+                                        )} />
                                     )}
                                 </button>
                             ))}
@@ -281,13 +287,16 @@ export function WorkspaceSidebar() {
                                         )}
                                     />
                                     {activeSidebarPanel === app.id && (
-                                        <div className="absolute left-0 top-2 bottom-2 w-0.5 bg-foreground/80 rounded-r-full" />
+                                        <div className={cn(
+                                            "absolute left-0 top-2 bottom-2 w-0.5 rounded-r-full",
+                                            "bg-foreground/80"
+                                        )} />
                                     )}
                                 </button>
                             ))}
                         </div>
 
-                        <div className="w-8 h-px bg-border/70 my-2" />
+                        <div className={cn("w-8 h-px my-2", "bg-border/70")} />
 
                         <div className="flex flex-col items-center gap-2">
                             {aerocoreApps.map((app) => (
