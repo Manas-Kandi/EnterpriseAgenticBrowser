@@ -71,7 +71,7 @@ export function VerticalTabStrip() {
         <div className="text-xs text-muted-foreground">Tabs</div>
         <button
           onClick={() => addTab()}
-          className="p-1.5 rounded hover:bg-secondary/30 text-muted-foreground hover:text-foreground transition-colors"
+          className="w-8 h-8 grid place-items-center rounded-full hover:bg-secondary/30 text-muted-foreground hover:text-foreground transition-colors"
           title="New Tab"
         >
           <Plus size={14} />
@@ -90,7 +90,7 @@ export function VerticalTabStrip() {
                 <button
                   onClick={() => setCollapsedGroupsOpen((s) => ({ ...s, [row.groupId]: !isOpen }))}
                   className={cn(
-                    'w-full flex items-center gap-2 px-2 py-2 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-secondary/20 transition-colors',
+                    'w-full flex items-center gap-2 px-2 py-2 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-secondary/20 transition-colors duration-100 ease-out',
                   )}
                   title={g.name}
                 >
@@ -116,7 +116,7 @@ export function VerticalTabStrip() {
                             toggleGroupCollapsed(row.groupId);
                             setActiveTab(t.id);
                           }}
-                          className="flex items-center gap-2 px-2 py-2 rounded-md hover:bg-secondary/20 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                          className="flex items-center gap-2.5 px-2 py-2 rounded-md hover:bg-secondary/20 text-xs text-muted-foreground hover:text-foreground transition-colors duration-100 ease-out"
                           title={t.title || t.url || 'New Tab'}
                         >
                           <div className="w-4 h-4 flex items-center justify-center shrink-0">
@@ -158,7 +158,7 @@ export function VerticalTabStrip() {
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               className={cn(
-                'group w-full flex items-center gap-2 px-2 py-2 rounded-md text-left transition-colors',
+                'group w-full flex items-center gap-2.5 px-2 py-2 rounded-md text-left transition-colors duration-120 ease-out',
                 tab.id === activeTabId ? 'bg-secondary/30 text-foreground' : 'hover:bg-secondary/20 text-muted-foreground',
               )}
               title={tab.title || tab.url || 'New Tab'}
@@ -200,12 +200,12 @@ export function VerticalTabStrip() {
                   }}
                   className={cn(
                     'w-6 h-6 grid place-items-center rounded text-muted-foreground hover:text-foreground hover:bg-secondary/40 transition-colors',
-                    'opacity-0 group-hover:opacity-100',
+                    'opacity-0 group-hover:opacity-100 transition-opacity duration-100 ease-out',
                     tab.id === activeTabId && 'opacity-100',
                   )}
                   title="Close"
                 >
-                  <X size={12} />
+                  <X size={12} className="translate-y-[0.5px]" />
                 </button>
               </span>
             </button>

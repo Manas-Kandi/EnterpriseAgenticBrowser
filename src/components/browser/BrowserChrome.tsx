@@ -7,6 +7,7 @@ export function BrowserChrome() {
   const { tabs, activeTabId, addTab, removeTab, setActiveTab, updateTab, setAppMode, reorderTabs, reopenLastClosedTab, tabGroups, createOrMergeGroupFromDrag, toggleGroupCollapsed, renameGroup, setGroupColor, tabsLayout, setTabsLayout } = useBrowserStore();
   const activeTab = tabs.find(t => t.id === activeTabId);
   const [urlInput, setUrlInput] = useState('');
+  const [isUrlFocused, setIsUrlFocused] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const tabsViewportRef = useRef<HTMLDivElement>(null);
@@ -101,7 +102,7 @@ export function BrowserChrome() {
       el.style.transition = 'transform 0s';
 
       requestAnimationFrame(() => {
-        el.style.transition = 'transform 220ms cubic-bezier(0.22, 1, 0.36, 1)';
+        el.style.transition = 'transform 160ms ease-out';
         el.style.transform = '';
       });
     });
@@ -201,7 +202,7 @@ export function BrowserChrome() {
     <div className="flex flex-col bg-background relative z-10">
       {/* Unified Tab Bar - Chrome/Arc style */}
       <div 
-        className="h-11 flex items-center gap-1 pl-1 pr-2 bg-background select-none border-b border-border/40"
+        className="h-11 flex items-center gap-1 pl-1 pr-2 bg-background select-none"
         style={{ WebkitAppRegion: 'drag' } as any}
       >
 
@@ -240,7 +241,7 @@ export function BrowserChrome() {
 
         {/* Tabs */}
         {tabsLayout === 'horizontal' && (
-          <div className="relative flex-1 mx-1" style={{ WebkitAppRegion: 'no-drag' } as any}>
+          <div className="relative flex-1 min-w-0 mx-1 mt-[1px]" style={{ WebkitAppRegion: 'no-drag' } as any}>
             <div
               ref={tabsViewportRef}
               onWheel={(e) => {
@@ -255,258 +256,247 @@ export function BrowserChrome() {
                 e.preventDefault();
                 el.scrollLeft += intended;
               }}
-              className="flex items-end overflow-x-auto no-scrollbar"
+              className="flex items-center overflow-x-auto no-scrollbar min-w-0"
             >
               {visibleTabs.map((tab, index) => {
-              const group = tab.groupId ? groupById.get(tab.groupId) : undefined;
-              const showGroupChip =
-                !!group &&
-                groupRepTabId.get(group.id) === tab.id;
+                const group = tab.groupId ? groupById.get(tab.groupId) : undefined;
+                const showGroupChip =
+                  !!group &&
+                  groupRepTabId.get(group.id) === tab.id;
 
-              return (
-              <div key={tab.id} className="relative flex items-center -ml-2 first:ml-0">
-                {showGroupChip && (
-                  <button
-                    onClick={(e) => {
-                      if (e.shiftKey) {
-                        const current = group!.color;
-                        const idx = groupColorCycle.findIndex((c) => c === current);
-                        const next = groupColorCycle[(idx + 1 + groupColorCycle.length) % groupColorCycle.length];
-                        setGroupColor(group!.id, next);
-                        return;
-                      }
-                      toggleGroupCollapsed(group!.id);
-                    }}
-                    onDoubleClick={() => {
-                      const next = window.prompt('Group name', group!.name);
-                      if (!next) return;
-                      const trimmed = next.trim();
-                      if (!trimmed) return;
-                      renameGroup(group!.id, trimmed);
-                    }}
-                    className={cn(
-                      "mr-1 mb-0.5 flex items-center gap-1.5 h-6 px-2 rounded-md text-[11px]",
-                      "text-muted-foreground hover:text-foreground hover:bg-secondary/30 transition-colors",
-                      "shrink-0"
-                    )}
-                    title={group!.name}
-                  >
-                    <span
-                      aria-hidden="true"
-                      className="w-2 h-2 rounded-full shadow-[0_0_0_1px_rgba(255,255,255,0.10)]"
-                      style={{ background: group!.color ?? 'rgba(255,255,255,0.18)' }}
-                    />
-
-                    {group!.collapsed ? (
-                      <>
-                        <span className="px-1.5 py-0.5 rounded bg-secondary/40 text-foreground/80">
+                return (
+                  <div key={tab.id} className="relative flex items-center">
+                    {showGroupChip && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (e.shiftKey) {
+                            const current = group!.color;
+                            const idx = groupColorCycle.findIndex((c) => c === current);
+                            const next =
+                              groupColorCycle[(idx + 1 + groupColorCycle.length) % groupColorCycle.length];
+                            setGroupColor(group!.id, next);
+                            return;
+                          }
+                          toggleGroupCollapsed(group!.id);
+                        }}
+                        onDoubleClick={() => {
+                          const next = window.prompt('Group name', group!.name);
+                          if (!next) return;
+                          const trimmed = next.trim();
+                          if (!trimmed) return;
+                          renameGroup(group!.id, trimmed);
+                        }}
+                        className={cn(
+                          "mr-2 flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-medium",
+                          "bg-secondary/20 hover:bg-secondary/30 transition-colors duration-100 ease-out",
+                          group!.collapsed && "opacity-80"
+                        )}
+                        title={group!.name}
+                      >
+                        <span
+                          aria-hidden="true"
+                          className="w-2 h-2 rounded-full shadow-[0_0_0_1px_rgba(255,255,255,0.10)]"
+                          style={{ background: group!.color ?? 'rgba(255,255,255,0.18)' }}
+                        />
+                        <span className="px-1.5 py-0.5 rounded bg-secondary/30 text-foreground/80">
                           {groupCounts.get(group!.id) ?? 1}
                         </span>
-                        <ChevronRight size={12} />
-                      </>
-                    ) : (
-                      <>
-                        <ChevronDown size={12} />
-                        {group!.name !== 'Group' && (
+                        {group!.collapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
+                        {!group!.collapsed && group!.name !== 'Group' && (
                           <span className="max-w-[120px] truncate">{group!.name}</span>
                         )}
-                      </>
+                      </button>
                     )}
-                  </button>
-                )}
-                {/* Tab */}
-                <div
-                ref={(node) => {
-                  if (node) tabRefs.current.set(tab.id, node);
-                  else tabRefs.current.delete(tab.id);
-                }}
-                draggable
-                onDragStart={(e) => {
-                  setDraggedTabIndex(index);
-                  setDraggedTabId(tab.id);
-                  e.dataTransfer.setData('text/tab-id', tab.id);
-                  e.dataTransfer.effectAllowed = 'move';
-                }}
-                onDragEnd={() => {
-                  setDraggedTabIndex(null);
-                  setDragOverIndex(null);
-                  setDraggedTabId(null);
-                }}
-                onClick={() => setActiveTab(tab.id)}
-                onContextMenu={(e) => {
-                  e.preventDefault();
-                  setContextMenu({ x: e.clientX, y: e.clientY, tabId: tab.id });
-                }}
-                title={tab.title || tab.url || 'New Tab'}
-                className={cn(
-                  "group relative flex items-center gap-2 h-8 px-3 text-xs cursor-pointer select-none overflow-hidden",
-                  "min-w-[140px] max-w-[240px] flex-1 basis-0",
-                  "transition-colors duration-150 ease-out",
-                  "will-change-transform",
-                  activeTabId === tab.id
-                    ? "text-foreground z-20 -mb-px"
-                    : "text-muted-foreground/80 z-10",
-                  draggedTabIndex === index && "opacity-40 scale-95"
-                )}
-                style={{
-                  paddingLeft: 'clamp(8px, 1.2vw, 12px)',
-                  paddingRight: 'clamp(8px, 1.2vw, 12px)',
-                }}
-              >
-                {activeTabId !== tab.id && (
-                  <div aria-hidden="true" className="absolute left-2 top-2 bottom-2 w-px bg-border/30" />
-                )}
-                <div
-                  aria-hidden="true"
-                  className={cn(
-                    "absolute inset-0",
-                    activeTabId === tab.id ? "bg-secondary/75" : "bg-secondary/0 group-hover:bg-secondary/25",
-                    activeTabId === tab.id
-                      ? "shadow-[0_1px_0_rgba(255,255,255,0.10)_inset,0_10px_24px_rgba(0,0,0,0.35)]"
-                      : ""
-                  )}
-                  style={{
-                    clipPath:
-                      'polygon(10px 0, calc(100% - 10px) 0, 100% 100%, 0 100%)',
-                  }}
-                />
-                <div
-                  aria-hidden="true"
-                  className={cn(
-                    "absolute inset-0 pointer-events-none",
-                    activeTabId === tab.id
-                      ? "shadow-[0_1px_0_rgba(255,255,255,0.10)_inset]"
-                      : ""
-                  )}
-                  style={{
-                    clipPath:
-                      'polygon(10px 0, calc(100% - 10px) 0, 100% 100%, 0 100%)',
-                  }}
-                />
-                {/* Left drop zone - covers left half of tab */}
-                <div
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    if (draggedTabIndex !== null && draggedTabIndex !== index && draggedTabIndex !== index - 1) {
-                      setDragOverIndex(index);
-                    }
-                  }}
-                  onDragLeave={() => setDragOverIndex(null)}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    if (draggedTabIndex !== null) {
-                      const targetIndex = draggedTabIndex < index ? index - 1 : index;
-                      if (draggedTabIndex !== targetIndex) {
-                        reorderTabs(draggedTabIndex, targetIndex);
-                      }
-                    }
-                    setDraggedTabIndex(null);
-                    setDragOverIndex(null);
-                  }}
-                  className="absolute left-0 top-0 w-3/4 h-full z-10"
-                />
-                {/* Right drop zone - covers right half of tab */}
-                <div
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    if (draggedTabIndex !== null && draggedTabIndex !== index && draggedTabIndex !== index + 1) {
-                      setDragOverIndex(index + 1);
-                    }
-                  }}
-                  onDragLeave={() => setDragOverIndex(null)}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    if (draggedTabIndex !== null) {
-                      const targetIndex = draggedTabIndex < index + 1 ? index : index + 1;
-                      if (draggedTabIndex !== targetIndex) {
-                        reorderTabs(draggedTabIndex, targetIndex);
-                      }
-                    }
-                    setDraggedTabIndex(null);
-                    setDragOverIndex(null);
-                  }}
-                  className="absolute right-0 top-0 w-3/4 h-full z-10"
-                />
 
-                {/* Center drop zone - drag tab onto tab to create/merge group */}
-                <div
-                  onDragOver={(e) => {
-                    if (!draggedTabId) return;
-                    if (draggedTabId === tab.id) return;
-                    e.preventDefault();
-                    e.dataTransfer.dropEffect = 'move';
-                  }}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    const sourceId = e.dataTransfer.getData('text/tab-id') || draggedTabId;
-                    if (!sourceId) return;
-                    if (sourceId === tab.id) return;
-                    createOrMergeGroupFromDrag(sourceId, tab.id);
-                    setDraggedTabIndex(null);
-                    setDragOverIndex(null);
-                    setDraggedTabId(null);
-                  }}
-                  className="absolute left-1/4 top-0 w-1/2 h-full z-10"
-                />
-                {/* Left indicator */}
-                <div 
-                  className={cn(
-                    "absolute -left-0.5 top-1 bottom-1 rounded-full transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)]",
-                    dragOverIndex === index 
-                      ? "w-1 bg-foreground/70 shadow-[0_0_8px_rgba(255,255,255,0.4)]" 
-                      : "w-0 bg-transparent"
-                  )}
-                />
-                {/* Right indicator */}
-                <div 
-                  className={cn(
-                    "absolute -right-0.5 top-1 bottom-1 rounded-full transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)]",
-                    dragOverIndex === index + 1 
-                      ? "w-1 bg-foreground/70 shadow-[0_0_8px_rgba(255,255,255,0.4)]" 
-                      : "w-0 bg-transparent"
-                  )}
-                />
-              <div className="relative z-10 flex items-center justify-center w-4 h-4 shrink-0">
-                <img 
-                  src={getFaviconUrl(tab.url)} 
-                  onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextElementSibling?.classList.remove('hidden'); }}
-                  className="w-4 h-4 object-contain"
-                  alt=""
-                />
-                <Globe size={12} className="hidden text-muted-foreground" />
-                {tab.loading && (
-                  <span
-                    aria-hidden="true"
-                    className="absolute -right-0.5 -bottom-0.5 w-1.5 h-1.5 rounded-full bg-foreground/60"
-                  />
-                )}
-              </div>
-              <span
-                className="relative z-10 truncate flex-1"
-                style={{
-                  WebkitMaskImage: 'linear-gradient(to right, rgba(0,0,0,1) 75%, rgba(0,0,0,0) 100%)',
-                  maskImage: 'linear-gradient(to right, rgba(0,0,0,1) 75%, rgba(0,0,0,0) 100%)',
-                }}
-              >
-                {tab.title || 'New Tab'}
-              </span>
-              <button
-                onClick={(e) => { e.stopPropagation(); removeTab(tab.id); }}
-                className={cn(
-                  "relative z-10 w-5 h-5 grid place-items-center rounded transition-colors text-muted-foreground hover:text-foreground hover:bg-secondary/50",
-                  "opacity-0 group-hover:opacity-100",
-                  activeTabId === tab.id && "opacity-100"
-                )}
-              >
-                <X size={10} />
-              </button>
-              </div>
-            </div>
-              );
+                    <div
+                      ref={(el) => {
+                        if (el) tabRefs.current.set(tab.id, el);
+                        else tabRefs.current.delete(tab.id);
+                      }}
+                      draggable
+                      onDragStart={(e) => {
+                        setDraggedTabIndex(index);
+                        setDraggedTabId(tab.id);
+                        e.dataTransfer.setData('text/tab-id', tab.id);
+                        e.dataTransfer.effectAllowed = 'move';
+                      }}
+                      onDragEnd={() => {
+                        setDraggedTabIndex(null);
+                        setDragOverIndex(null);
+                        setDraggedTabId(null);
+                      }}
+                      onClick={() => setActiveTab(tab.id)}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        setContextMenu({ x: e.clientX, y: e.clientY, tabId: tab.id });
+                      }}
+                      title={tab.title || tab.url || 'New Tab'}
+                      className={cn(
+                        "group relative flex items-center gap-2.5 h-8 px-2.5 text-xs cursor-pointer select-none overflow-hidden",
+                        "min-w-[140px] max-w-[240px] flex-1 basis-0",
+                        "transition-colors duration-120 ease-out",
+                        "will-change-transform",
+                        "rounded-md",
+                        activeTabId === tab.id
+                          ? (isUrlFocused ? "text-foreground/85 z-20" : "text-foreground z-20")
+                          : (isUrlFocused ? "text-muted-foreground/60 z-10" : "text-muted-foreground/80 z-10"),
+                        draggedTabIndex === index && "opacity-40 scale-95",
+                        activeTabId === tab.id ? "bg-secondary/20" : "hover:bg-secondary/15"
+                      )}
+                    >
+                      {activeTabId === tab.id && (
+                        <div
+                          aria-hidden="true"
+                          className="absolute left-2.5 right-2.5 bottom-1 h-px bg-foreground/35"
+                        />
+                      )}
+
+                      <div
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          if (
+                            draggedTabIndex !== null &&
+                            draggedTabIndex !== index &&
+                            draggedTabIndex !== index - 1
+                          ) {
+                            setDragOverIndex(index);
+                          }
+                        }}
+                        onDragLeave={() => setDragOverIndex(null)}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          if (draggedTabIndex !== null) {
+                            const targetIndex = draggedTabIndex < index ? index - 1 : index;
+                            if (draggedTabIndex !== targetIndex) {
+                              reorderTabs(draggedTabIndex, targetIndex);
+                            }
+                          }
+                          setDraggedTabIndex(null);
+                          setDragOverIndex(null);
+                        }}
+                        className="absolute left-0 top-0 w-3/4 h-full z-10 cursor-default"
+                      />
+                      <div
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          if (
+                            draggedTabIndex !== null &&
+                            draggedTabIndex !== index &&
+                            draggedTabIndex !== index + 1
+                          ) {
+                            setDragOverIndex(index + 1);
+                          }
+                        }}
+                        onDragLeave={() => setDragOverIndex(null)}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          if (draggedTabIndex !== null) {
+                            const targetIndex = draggedTabIndex < index + 1 ? index : index + 1;
+                            if (draggedTabIndex !== targetIndex) {
+                              reorderTabs(draggedTabIndex, targetIndex);
+                            }
+                          }
+                          setDraggedTabIndex(null);
+                          setDragOverIndex(null);
+                        }}
+                        className="absolute right-0 top-0 w-3/4 h-full z-10 cursor-default"
+                      />
+
+                      <div
+                        onDragOver={(e) => {
+                          if (!draggedTabId) return;
+                          if (draggedTabId === tab.id) return;
+                          e.preventDefault();
+                          e.dataTransfer.dropEffect = 'move';
+                        }}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          const sourceId = e.dataTransfer.getData('text/tab-id') || draggedTabId;
+                          if (!sourceId) return;
+                          if (sourceId === tab.id) return;
+                          createOrMergeGroupFromDrag(sourceId, tab.id);
+                          setDraggedTabIndex(null);
+                          setDragOverIndex(null);
+                          setDraggedTabId(null);
+                        }}
+                        className="absolute left-1/4 top-0 w-1/2 h-full z-10 cursor-default"
+                      />
+
+                      <div
+                        className={cn(
+                          "absolute -left-0.5 top-1 bottom-1 rounded-full transition-all duration-120 ease-out",
+                          dragOverIndex === index
+                            ? "w-1 bg-foreground/70 shadow-[0_0_8px_rgba(255,255,255,0.4)]"
+                            : "w-0 bg-transparent"
+                        )}
+                      />
+                      <div
+                        className={cn(
+                          "absolute -right-0.5 top-1 bottom-1 rounded-full transition-all duration-120 ease-out",
+                          dragOverIndex === index + 1
+                            ? "w-1 bg-foreground/70 shadow-[0_0_8px_rgba(255,255,255,0.4)]"
+                            : "w-0 bg-transparent"
+                        )}
+                      />
+
+                      <div className="relative z-10 flex items-center justify-center w-4 h-4 shrink-0 translate-y-[0.5px]">
+                        <img
+                          src={getFaviconUrl(tab.url)}
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none';
+                            e.currentTarget.nextElementSibling?.classList.remove('hidden');
+                          }}
+                          className="w-4 h-4 object-contain"
+                          alt=""
+                        />
+                        <Globe size={12} className="hidden text-muted-foreground" />
+                        {tab.loading && (
+                          <span
+                            aria-hidden="true"
+                            className="absolute -right-0.5 -bottom-0.5 w-1.5 h-1.5 rounded-full bg-foreground/60"
+                          />
+                        )}
+                      </div>
+
+                      <span
+                        className={cn(
+                          "relative z-10 truncate flex-1",
+                          activeTabId === tab.id
+                            ? "font-medium text-foreground"
+                            : "font-normal text-foreground/75"
+                        )}
+                        style={{
+                          letterSpacing: '0.2px',
+                          WebkitMaskImage:
+                            'linear-gradient(to right, rgba(0,0,0,1) 75%, rgba(0,0,0,0) 100%)',
+                          maskImage:
+                            'linear-gradient(to right, rgba(0,0,0,1) 75%, rgba(0,0,0,0) 100%)',
+                        }}
+                      >
+                        {tab.title || 'New Tab'}
+                      </span>
+
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removeTab(tab.id);
+                        }}
+                        className={cn(
+                          "relative z-10 w-5 h-5 grid place-items-center rounded transition-colors text-muted-foreground hover:text-foreground hover:bg-secondary/25",
+                          "opacity-0 group-hover:opacity-100 transition-opacity duration-100 ease-out",
+                          activeTabId === tab.id && "opacity-100"
+                        )}
+                      >
+                        <X size={12} className="translate-y-[0.5px]" />
+                      </button>
+                    </div>
+                  </div>
+                );
               })}
               <button
                 onClick={() => addTab()}
-                className="mb-0.5 p-1.5 hover:bg-secondary/30 rounded text-muted-foreground hover:text-foreground transition-colors shrink-0"
+                className="ml-2 mb-0.5 w-8 h-8 grid place-items-center rounded-full text-muted-foreground hover:text-foreground hover:bg-secondary/30 transition-colors duration-100 ease-out shrink-0"
               >
                 <Plus size={14} />
               </button>
@@ -550,11 +540,19 @@ export function BrowserChrome() {
                 )}
               </div>
               <input
-                className="w-full h-8 bg-secondary/40 hover:bg-secondary/60 focus:bg-secondary/80 rounded-md pl-8 pr-3 text-xs text-foreground placeholder:text-muted-foreground/50 outline-none transition-all"
+                className={cn(
+                  "w-full h-8 bg-secondary/20 hover:bg-secondary/25 rounded-[10px] pl-8 pr-3 text-xs text-foreground placeholder:text-muted-foreground/50 outline-none",
+                  "transition-colors duration-120 ease-out",
+                  "focus:bg-secondary/30 focus:ring-1 focus:ring-ring/50"
+                )}
                 value={urlInput}
                 onChange={(e) => setUrlInput(e.target.value)}
                 placeholder="Search or enter URL"
-                onFocus={(e) => e.target.select()}
+                onFocus={(e) => {
+                  setIsUrlFocused(true);
+                  e.target.select();
+                }}
+                onBlur={() => setIsUrlFocused(false)}
               />
             </div>
           </form>
