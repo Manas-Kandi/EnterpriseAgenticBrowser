@@ -24,20 +24,7 @@ export function WorkspaceSidebar() {
             )}
             style={dragRegionStyle}
         >
-            <div className="h-12 shrink-0 flex items-center justify-center">
-                <div
-                    className="text-[11px] font-semibold text-muted-foreground/70 select-none pointer-events-none"
-                    style={{ letterSpacing: '-0.02em' }}
-                >
-                    <span>9</span>
-                    <span className="font-light">x</span>
-                    <span className="font-normal" style={{ fontFamily: 'Marck Script, cursive' }}>
-                        f
-                    </span>
-                </div>
-            </div>
-
-            <div className="flex-1 flex flex-col items-center pt-2 pb-4" style={noDragRegionStyle}>
+            <div className="flex-1 flex flex-col items-center pt-3 pb-4" style={noDragRegionStyle}>
                 <div className="flex flex-col items-center gap-1">
                     {aerocoreApps.map((app) => (
                         <button
