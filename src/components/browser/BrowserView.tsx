@@ -169,7 +169,7 @@ function WebViewInstance({ tab, active }: { tab: BrowserTab; active: boolean }) 
   if (isNewTab) {
     return (
       <div className={`absolute inset-0 w-full h-full bg-background ${active ? 'flex flex-col' : 'hidden'}`}>
-        <NewTabPage tabId={tab.id} />
+        <NewTabPage />
       </div>
     );
   }

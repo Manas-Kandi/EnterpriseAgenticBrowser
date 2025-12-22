@@ -46,4 +46,8 @@ interface Window {
   telemetry?: {
     export: () => Promise<{ success: boolean; count: number; path: string }>;
   }
+
+  newtab?: {
+    getInsights: () => Promise<{ ok: boolean; markdown?: string; error?: string; details?: string }>;
+  }
 }

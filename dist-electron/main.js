@@ -6,12 +6,12 @@ import { app, webContents, BrowserWindow, ipcMain } from "electron";
 import { URL as URL$2, fileURLToPath } from "node:url";
 import path$2 from "node:path";
 import crypto$2, { randomFillSync, randomUUID } from "node:crypto";
+import fs$1 from "node:fs/promises";
 import keytar from "keytar";
 import require$$0 from "fs";
 import require$$1 from "path";
 import require$$2 from "os";
 import crypto$3 from "crypto";
-import fs$1 from "node:fs/promises";
 import { AsyncLocalStorage } from "node:async_hooks";
 import Database from "better-sqlite3";
 import fs$2 from "node:fs";
@@ -48388,6 +48388,60 @@ app.whenReady().then(() => {
   ipcMain.handle("benchmark:exportTrajectories", async (_, results) => {
     const filePath = await benchmarkService.exportTrajectories(results);
     return { success: true, path: filePath };
+  });
+  ipcMain.handle("newtab:get-insights", async () => {
+    var _a3, _b, _c;
+    if (!VITE_DEV_SERVER_URL) {
+      return { ok: false, error: "Insights are only available in dev mode" };
+    }
+    const apiKey = process.env.NVIDIA_API_KEY;
+    if (typeof apiKey !== "string" || apiKey.trim().length < 8) {
+      return { ok: false, error: "Missing NVIDIA_API_KEY in environment" };
+    }
+    try {
+      const docsDir = path$2.join(process.env.APP_ROOT ?? process.cwd(), "mock-saas", "aerocore-docs");
+      const files = (await fs$1.readdir(docsDir)).filter((f) => f.toLowerCase().endsWith(".md"));
+      const texts = await Promise.all(
+        files.map(async (f) => {
+          const full = path$2.join(docsDir, f);
+          const content = await fs$1.readFile(full, "utf8");
+          return `# ${f}
+
+${content}`;
+        })
+      );
+      const combined = texts.join("\n\n---\n\n");
+      const context = combined.length > 24e3 ? combined.slice(0, 24e3) : combined;
+      const system = "You are an assistant that produces concise, high-signal product/ops insights for an enterprise SaaS. You will be given internal mock SaaS documentation. Output must be minimal, with few colors implied, no fluff. Return Markdown only.";
+      const user = "Using the following mock SaaS docs, produce:\n1) Top insights (5 bullets max)\n2) Risks / gaps (3 bullets max)\n3) Suggested next actions (5 bullets max)\n4) A short list of key URLs/routes mentioned (if any)\n\nDocs:\n\n" + context;
+      const resp = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          model: "meta/llama-3.3-70b-instruct",
+          temperature: 0.2,
+          messages: [
+            { role: "system", content: system },
+            { role: "user", content: user }
+          ]
+        })
+      });
+      if (!resp.ok) {
+        const txt = await resp.text().catch(() => "");
+        return { ok: false, error: `LLM request failed (${resp.status})`, details: txt.slice(0, 2e3) };
+      }
+      const data = await resp.json();
+      const contentOut = (_c = (_b = (_a3 = data == null ? void 0 : data.choices) == null ? void 0 : _a3[0]) == null ? void 0 : _b.message) == null ? void 0 : _c.content;
+      if (typeof contentOut !== "string" || !contentOut.trim()) {
+        return { ok: false, error: "LLM returned empty response" };
+      }
+      return { ok: true, markdown: contentOut };
+    } catch (e) {
+      return { ok: false, error: "Failed to generate insights", details: String((e == null ? void 0 : e.message) ?? e) };
+    }
   });
   ipcMain.handle("agent:get-saved-plans", async () => {
     return planMemory.getPlans();

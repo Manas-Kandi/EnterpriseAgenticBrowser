@@ -89,6 +89,10 @@ contextBridge.exposeInMainWorld('browser', {
   },
 })
 
+contextBridge.exposeInMainWorld('newtab', {
+  getInsights: () => ipcRenderer.invoke('newtab:get-insights'),
+})
+
 contextBridge.exposeInMainWorld('telemetry', {
   export: () => ipcRenderer.invoke('telemetry:export'),
 })

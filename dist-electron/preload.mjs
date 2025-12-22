@@ -79,6 +79,9 @@ electron.contextBridge.exposeInMainWorld("browser", {
     return () => electron.ipcRenderer.off("browser:navigate-to", listener);
   }
 });
+electron.contextBridge.exposeInMainWorld("newtab", {
+  getInsights: () => electron.ipcRenderer.invoke("newtab:get-insights")
+});
 electron.contextBridge.exposeInMainWorld("telemetry", {
   export: () => electron.ipcRenderer.invoke("telemetry:export")
 });
