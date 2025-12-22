@@ -159,6 +159,11 @@ app.whenReady().then(() => {
   toolRegistry.setApprovalHandler(async (toolName, args) => {
     const runId = agentRunContext.getRunId();
     const requesterWebContentsId = agentRunContext.getRequesterWebContentsId();
+    const permissionMode = agentRunContext.getPermissionMode();
+
+    // YOLO: never prompt. If the tool reached the approval handler, auto-approve here.
+    // (Policy DENY still happens earlier inside ToolRegistry.)
+    if (permissionMode === 'yolo') return true;
     if (!requesterWebContentsId) return false;
 
     const wc = webContents.fromId(requesterWebContentsId);

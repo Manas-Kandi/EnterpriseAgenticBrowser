@@ -48688,6 +48688,8 @@ app.whenReady().then(() => {
   toolRegistry.setApprovalHandler(async (toolName, args) => {
     const runId = agentRunContext.getRunId();
     const requesterWebContentsId = agentRunContext.getRequesterWebContentsId();
+    const permissionMode = agentRunContext.getPermissionMode();
+    if (permissionMode === "yolo") return true;
     if (!requesterWebContentsId) return false;
     const wc = webContents.fromId(requesterWebContentsId);
     if (!wc || wc.isDestroyed()) return false;
