@@ -177,7 +177,7 @@ function WebViewInstance({ tab, active }: { tab: BrowserTab; active: boolean }) 
   return (
     <webview
       src={initialUrlRef.current}
-      className={`absolute inset-0 w-full h-full ${active ? 'flex' : 'hidden'}`}
+      className={`absolute inset-0 w-full h-full bg-background ${active ? 'flex' : 'hidden'}`}
       // @ts-ignore
       allowpopups="true"
       webpreferences="contextIsolation=true"
@@ -204,7 +204,7 @@ export function BrowserView() {
   }, [activeTabId, updateTab]);
 
   return (
-    <div className="flex-1 relative bg-white">
+    <div className="flex-1 relative bg-background">
       {tabs.map((tab) => (
         <WebViewInstance key={tab.id} tab={tab} active={activeTabId === tab.id} />
       ))}
