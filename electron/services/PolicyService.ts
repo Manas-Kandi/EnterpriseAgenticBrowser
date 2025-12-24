@@ -1,6 +1,11 @@
 import { TelemetryService } from './TelemetryService';
 import { AuditService } from './AuditService';
 import { v4 as uuidv4 } from 'uuid';
+import { z } from 'zod';
+import { app } from 'electron';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { vaultService } from './VaultService';
 
 export enum RiskLevel {
   LOW = 0,
@@ -38,6 +43,26 @@ export interface PolicyRule {
   match: (context: PolicyContext) => boolean;
   evaluate: (context: PolicyContext) => PolicyEvaluation;
 }
+
+type RemoteRiskLevel = 'low' | 'medium' | 'high';
+
+type RemotePolicyBundle = {
+  version: number;
+  fetchedAt: number;
+  domainAllowlist?: string[];
+  domainBlocklist?: string[];
+  domainRiskOverrides?: Record<string, RemoteRiskLevel>;
+  toolRiskOverrides?: Record<string, RemoteRiskLevel>;
+};
+
+const RemotePolicySchema = z.object({
+  version: z.number().int().min(1).default(1),
+  fetchedAt: z.number().int().optional(),
+  domainAllowlist: z.array(z.string()).optional(),
+  domainBlocklist: z.array(z.string()).optional(),
+  domainRiskOverrides: z.record(z.string(), z.enum(['low', 'medium', 'high'])).optional(),
+  toolRiskOverrides: z.record(z.string(), z.enum(['low', 'medium', 'high'])).optional(),
+});
 
 // Tool risk levels - inherent risk per tool
 const TOOL_RISK_LEVELS: Record<string, RiskLevel> = {
@@ -127,13 +152,209 @@ export class PolicyService {
   private telemetryService: TelemetryService;
   private auditService: AuditService;
 
+  private remotePolicy: RemotePolicyBundle | null = null;
+  private remotePolicyUrl: string | null = null;
+  private cacheFilePath: string;
+  private developerOverrideEnabled: boolean = false;
+
   constructor(telemetryService: TelemetryService, auditService: AuditService) {
     this.telemetryService = telemetryService;
     this.auditService = auditService;
+    this.cacheFilePath = path.join(app.getPath('userData'), 'remote_policy_cache.json');
     this.initializeDefaultRules();
   }
 
+  async init(opts?: { remotePolicyUrl?: string }) {
+    if (opts?.remotePolicyUrl) {
+      this.remotePolicyUrl = opts.remotePolicyUrl;
+    }
+
+    const envSecret = process.env.POLICY_DEV_OVERRIDE_SECRET;
+    if (typeof envSecret === 'string' && envSecret.trim()) {
+      const existing = await vaultService.getSecret('policy_dev_override_secret').catch(() => null);
+      if (!existing) {
+        await vaultService.setSecret('policy_dev_override_secret', envSecret.trim()).catch(() => undefined);
+      }
+    }
+
+    await this.loadCachedRemotePolicy();
+    if (this.remotePolicyUrl) {
+      await this.fetchRemotePolicies(this.remotePolicyUrl).catch(() => undefined);
+    }
+  }
+
+  private toRiskLevel(v: RemoteRiskLevel): RiskLevel {
+    if (v === 'low') return RiskLevel.LOW;
+    if (v === 'medium') return RiskLevel.MEDIUM;
+    return RiskLevel.HIGH;
+  }
+
+  private applyRemotePolicy(bundle: RemotePolicyBundle) {
+    this.remotePolicy = bundle;
+    const domainOverrides = bundle.domainRiskOverrides ?? {};
+    for (const [domain, lvl] of Object.entries(domainOverrides)) {
+      this.updateDomainRiskLevel(domain, this.toRiskLevel(lvl));
+    }
+    const toolOverrides = bundle.toolRiskOverrides ?? {};
+    for (const [tool, lvl] of Object.entries(toolOverrides)) {
+      this.updateToolRiskLevel(tool, this.toRiskLevel(lvl));
+    }
+  }
+
+  private async loadCachedRemotePolicy() {
+    try {
+      const raw = await fs.readFile(this.cacheFilePath, 'utf8');
+      const parsed = JSON.parse(raw);
+      const validated = RemotePolicySchema.parse(parsed);
+      const bundle: RemotePolicyBundle = {
+        version: validated.version,
+        fetchedAt: typeof validated.fetchedAt === 'number' ? validated.fetchedAt : Date.now(),
+        domainAllowlist: validated.domainAllowlist,
+        domainBlocklist: validated.domainBlocklist,
+        domainRiskOverrides: validated.domainRiskOverrides,
+        toolRiskOverrides: validated.toolRiskOverrides,
+      };
+      this.applyRemotePolicy(bundle);
+    } catch {
+    }
+  }
+
+  private async saveCachedRemotePolicy(bundle: RemotePolicyBundle) {
+    try {
+      await fs.writeFile(this.cacheFilePath, JSON.stringify(bundle, null, 2), 'utf8');
+    } catch {
+    }
+  }
+
+  async fetchRemotePolicies(url: string) {
+    this.remotePolicyUrl = url;
+    const res = await fetch(url, { method: 'GET' });
+    if (!res.ok) {
+      throw new Error(`Failed to fetch remote policy: HTTP ${res.status}`);
+    }
+    const json = await res.json();
+    const validated = RemotePolicySchema.parse(json);
+    const bundle: RemotePolicyBundle = {
+      version: validated.version,
+      fetchedAt: Date.now(),
+      domainAllowlist: validated.domainAllowlist,
+      domainBlocklist: validated.domainBlocklist,
+      domainRiskOverrides: validated.domainRiskOverrides,
+      toolRiskOverrides: validated.toolRiskOverrides,
+    };
+    this.applyRemotePolicy(bundle);
+    await this.saveCachedRemotePolicy(bundle);
+    return bundle;
+  }
+
+  getRemotePolicyStatus() {
+    const rp = this.remotePolicy;
+    return {
+      configuredUrl: this.remotePolicyUrl,
+      hasRemotePolicy: Boolean(rp),
+      version: rp?.version ?? null,
+      fetchedAt: rp?.fetchedAt ?? null,
+      allowlistCount: Array.isArray(rp?.domainAllowlist) ? rp!.domainAllowlist!.length : 0,
+      blocklistCount: Array.isArray(rp?.domainBlocklist) ? rp!.domainBlocklist!.length : 0,
+      developerOverrideEnabled: this.developerOverrideEnabled,
+    };
+  }
+
+  async setDeveloperOverride(enabled: boolean, token?: string): Promise<boolean> {
+    if (!enabled) {
+      this.developerOverrideEnabled = false;
+      return true;
+    }
+    const secret = await vaultService.getSecret('policy_dev_override_secret');
+    if (!secret) return false;
+    if (typeof token !== 'string') return false;
+    if (token !== secret) return false;
+    this.developerOverrideEnabled = true;
+    return true;
+  }
+
   private initializeDefaultRules() {
+    this.addRule({
+      name: 'developer-override',
+      description: 'Developer override',
+      priority: 2000,
+      match: () => this.developerOverrideEnabled,
+      evaluate: () => ({
+        decision: PolicyDecision.ALLOW,
+        riskLevel: RiskLevel.LOW,
+        reason: 'Developer override enabled',
+        matchedRule: 'developer-override',
+      }),
+    });
+
+    this.addRule({
+      name: 'remote-domain-blocklist',
+      description: 'Blocklisted domains',
+      priority: 1100,
+      match: (ctx) => {
+        const list = this.remotePolicy?.domainBlocklist;
+        if (!ctx.domain) return false;
+        if (!Array.isArray(list) || list.length === 0) return false;
+        return list.includes(ctx.domain);
+      },
+      evaluate: (ctx) => ({
+        decision: PolicyDecision.DENY,
+        riskLevel: RiskLevel.HIGH,
+        reason: `Domain blocked by remote policy: ${ctx.domain}`,
+        matchedRule: 'remote-domain-blocklist',
+      }),
+    });
+
+    this.addRule({
+      name: 'remote-domain-allowlist',
+      description: 'Allowlisted domains',
+      priority: 1090,
+      match: (ctx) => {
+        const list = this.remotePolicy?.domainAllowlist;
+        if (!ctx.domain) return false;
+        if (!Array.isArray(list) || list.length === 0) return false;
+        return !list.includes(ctx.domain);
+      },
+      evaluate: (ctx) => {
+        const tool = ctx.toolName;
+        const lowRiskTools = [
+          'browser_observe',
+          'browser_wait_for_selector',
+          'browser_wait_for_url',
+          'browser_wait_for_text',
+          'browser_wait_for_text_in',
+          'browser_get_text',
+          'browser_find_text',
+          'browser_screenshot',
+          'code_read_file',
+          'code_list_files',
+          'code_search',
+        ];
+        if (lowRiskTools.includes(tool)) {
+          return {
+            decision: PolicyDecision.ALLOW,
+            riskLevel: RiskLevel.LOW,
+            reason: `Domain not allowlisted but tool is read-only: ${ctx.domain}`,
+            matchedRule: 'remote-domain-allowlist',
+          };
+        }
+        if (tool === 'browser_navigate') {
+          return {
+            decision: PolicyDecision.DENY,
+            riskLevel: RiskLevel.HIGH,
+            reason: `Navigation denied to non-allowlisted domain: ${ctx.domain}`,
+            matchedRule: 'remote-domain-allowlist',
+          };
+        }
+        return {
+          decision: PolicyDecision.DENY,
+          riskLevel: RiskLevel.HIGH,
+          reason: `Tool denied on non-allowlisted domain: ${ctx.domain}`,
+          matchedRule: 'remote-domain-allowlist',
+        };
+      },
+    });
+
     // Rule 0: Observe-only mode enforcement (Highest Priority)
     this.addRule({
       name: 'observe-only-enforcement',

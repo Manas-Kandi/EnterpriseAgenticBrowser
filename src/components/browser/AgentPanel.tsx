@@ -40,6 +40,8 @@ export function AgentPanel() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [runStatus, setRunStatus] = useState<'retrying' | 'recovering' | 'fatal' | null>(null);
+  const [lastFatalMessage, setLastFatalMessage] = useState<string | null>(null);
   const [approvalQueue, setApprovalQueue] = useState<ApprovalRequest[]>([]);
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [currentModelId, setCurrentModelId] = useState<string>('');
@@ -54,6 +56,40 @@ export function AgentPanel() {
   const [showPlansModal, setShowPlansModal] = useState(false);
   const [savedPlans, setSavedPlans] = useState<Array<{id: string; ts: number; plan: string[]}>>([]);
   const [planSearch, setPlanSearch] = useState('');
+
+  useEffect(() => {
+    if (!window.chatHistory?.get) return;
+    window.chatHistory
+      .get()
+      .then((rows) => {
+        if (!Array.isArray(rows)) return;
+        const hydrated = rows
+          .filter((x) => x && typeof x === 'object')
+          .map((x: any) => ({
+            role: x.role,
+            content: x.content,
+            type: x.type,
+            metadata: x.metadata,
+          }))
+          .filter((m: any) => (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string');
+        if (hydrated.length > 0) setMessages(hydrated as any);
+      })
+      .catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    if (!window.chatHistory?.set) return;
+    const handle = window.setTimeout(() => {
+      const out = messages.map((m) => ({
+        role: m.role,
+        content: m.content,
+        type: m.type,
+        metadata: m.metadata,
+      }));
+      window.chatHistory?.set(out).catch(() => undefined);
+    }, 250);
+    return () => window.clearTimeout(handle);
+  }, [messages]);
 
   const approvalRequest = approvalQueue.length > 0 ? approvalQueue[0] : null;
 
@@ -155,6 +191,14 @@ export function AgentPanel() {
     });
     // Listen for agent steps
     const offStep = window.agent.onStep((step: any) => {
+      const phase = step?.metadata?.phase;
+      if (phase === 'tool_retry') setRunStatus('retrying');
+      if (phase === 'loop_detected') setRunStatus('recovering');
+      if (phase === 'fatal_error') {
+        setRunStatus('fatal');
+        if (typeof step?.content === 'string' && step.content) setLastFatalMessage(step.content);
+      }
+      if (phase === 'tool_end' && step?.metadata?.ok !== false) setRunStatus(null);
       // Track progress through plans
       if (step.type === 'thought' && step.metadata?.plan && Array.isArray(step.metadata.plan)) {
         // Reset plan step when a new plan is created
@@ -216,6 +260,7 @@ export function AgentPanel() {
       // Clear conversation when switching models
       await window.agent.resetConversation();
       setMessages([]);
+      await window.chatHistory?.clear?.().catch(() => undefined);
     } catch (err) {
       console.error('Failed to switch model:', err);
     }
@@ -226,6 +271,7 @@ export function AgentPanel() {
     try {
       await window.agent.resetConversation();
       setMessages([]);
+      await window.chatHistory?.clear?.().catch(() => undefined);
     } catch (err) {
       console.error('Failed to reset conversation:', err);
     }
@@ -271,6 +317,8 @@ export function AgentPanel() {
     setInput('');
     setMessages(prev => [...prev, { role: 'user', content: userMessage }]);
     setLoading(true);
+    setRunStatus(null);
+    setLastFatalMessage(null);
 
     try {
       const response = await window.agent.chat(userMessage);
@@ -338,6 +386,28 @@ export function AgentPanel() {
           </button>
         </div>
       </div>
+
+      {runStatus && (
+        <div className="px-4 pt-3">
+          <div
+            className={cn(
+              'rounded-lg border px-3 py-2 text-xs',
+              runStatus === 'fatal'
+                ? 'border-red-500/30 bg-red-500/10 text-red-200'
+                : runStatus === 'recovering'
+                  ? 'border-amber-500/30 bg-amber-500/10 text-amber-200'
+                  : 'border-blue-500/30 bg-blue-500/10 text-blue-200'
+            )}
+          >
+            <div className="font-semibold">
+              {runStatus === 'fatal' ? 'Fatal Error' : runStatus === 'recovering' ? 'Recovering' : 'Retrying'}
+            </div>
+            {runStatus === 'fatal' && lastFatalMessage && (
+              <div className="mt-1 text-[11px] opacity-90">{lastFatalMessage}</div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Benchmark Overlay */}
       {showBenchmarks && (
@@ -694,7 +764,13 @@ export function AgentPanel() {
             {loading && (
               <div className="flex items-center gap-2 text-[11px] text-muted-foreground/40">
                 <span className="w-1.5 h-1.5 rounded-full bg-primary/50 animate-pulse" />
-                <span>Processing...</span>
+                <span>
+                  {runStatus === 'retrying'
+                    ? 'Retrying...'
+                    : runStatus === 'recovering'
+                      ? 'Recovering...'
+                      : 'Processing...'}
+                </span>
               </div>
             )}
           </div>

@@ -60,6 +60,10 @@ export class ToolRegistry {
 
   private async invokeToolInternal(tool: AgentTool, arg: any): Promise<string> {
     const runId = agentRunContext.getRunId() ?? undefined;
+    try {
+      agentRunContext.recordToolCall(tool.name, arg);
+    } catch {
+    }
     const argsJson = (() => {
       try {
         return JSON.stringify(arg ?? null);

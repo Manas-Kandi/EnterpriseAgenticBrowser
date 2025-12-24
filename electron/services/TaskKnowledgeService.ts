@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { v4 as uuidv4 } from 'uuid';
 import { AgentTool, toolRegistry } from './ToolRegistry';
 import { agentRunContext } from './AgentRunContext';
+import { webAPIService } from './WebAPIService';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -51,51 +52,248 @@ export type Skill = {
   tags: string[];
 };
 
-export class TaskKnowledgeService {
-  private storageFile: string;
-  private skills: Skill[] = [];
+const SkillSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string(),
+  domain: z.string(),
+  fingerprint: z.string().optional(),
+  steps: z.array(
+    z.object({
+      action: z.enum(['navigate', 'click', 'type', 'select', 'wait']),
+      url: z.string().optional(),
+      selector: z.string().optional(),
+      value: z.string().optional(),
+      text: z.string().optional(),
+    })
+  ),
+  currentVersion: z.number(),
+  embedding: z.array(z.number()).optional(),
+  stats: z.object({
+    successes: z.number(),
+    failures: z.number(),
+    partials: z.number().optional(),
+    lastUsed: z.number(),
+    lastOutcomeAt: z.number().optional(),
+    lastOutcomeSuccess: z.boolean().optional(),
+  }),
+  feedback: z
+    .array(
+      z.object({
+        ts: z.number(),
+        label: z.enum(['worked', 'failed', 'partial']),
+        version: z.number().optional(),
+        runId: z.string().optional(),
+        domain: z.string().optional(),
+        fingerprint: z.string().optional(),
+      })
+    )
+    .optional(),
+  versions: z.array(
+    z.object({
+      version: z.number(),
+      steps: z.array(
+        z.object({
+          action: z.enum(['navigate', 'click', 'type', 'select', 'wait']),
+          url: z.string().optional(),
+          selector: z.string().optional(),
+          value: z.string().optional(),
+          text: z.string().optional(),
+        })
+      ),
+      createdAt: z.number(),
+    })
+  ),
+  tags: z.array(z.string()),
+});
 
-  constructor() {
-    this.storageFile = path.resolve(process.cwd(), 'skill_library.json');
-    this.load();
-    this.registerTools();
+export interface SkillStorageProvider {
+  getAll(): Promise<Skill[]>;
+  getAllSync?: () => Skill[];
+  putAll(skills: Skill[]): Promise<void>;
+}
+
+class LocalJsonSkillStorage implements SkillStorageProvider {
+  private storageFile: string;
+
+  constructor(storageFile: string) {
+    this.storageFile = storageFile;
   }
 
-  private load() {
+  getAllSync(): Skill[] {
     try {
       const data = fs.readFileSync(this.storageFile, 'utf8');
-      this.skills = JSON.parse(data);
+      const parsed = JSON.parse(data);
+      if (!Array.isArray(parsed)) return [];
+      const out: Skill[] = [];
+      for (const s of parsed) {
+        try {
+          out.push(SkillSchema.parse(s));
+        } catch {
+        }
+      }
+      return out;
     } catch {
-      // Try legacy file
+      return [];
+    }
+  }
+
+  async getAll(): Promise<Skill[]> {
+    try {
+      const data = await fs.promises.readFile(this.storageFile, 'utf8');
+      const parsed = JSON.parse(data);
+      if (!Array.isArray(parsed)) return [];
+      const out: Skill[] = [];
+      for (const s of parsed) {
+        try {
+          out.push(SkillSchema.parse(s));
+        } catch {
+        }
+      }
+      return out;
+    } catch {
       try {
         const legacyPath = path.resolve(process.cwd(), 'task_knowledge.json');
         if (fs.existsSync(legacyPath)) {
-          const legacyData = fs.readFileSync(legacyPath, 'utf8');
+          const legacyData = await fs.promises.readFile(legacyPath, 'utf8');
           const plans = JSON.parse(legacyData);
-          // Migrate legacy plans
-          this.skills = plans.map((p: any) => {
-            const createdAt = Date.now();
-            return {
-              id: uuidv4(),
-              name: p.goal.toLowerCase().replace(/\s+/g, '_').slice(0, 50),
-              description: p.goal,
-              domain: 'unknown',
-              steps: p.steps,
-              currentVersion: 1,
-              stats: { successes: 0, failures: 0, lastUsed: createdAt },
-              versions: [{ version: 1, steps: p.steps, createdAt }],
-              tags: p.trigger_keywords || [],
-            } as Skill;
-          });
-          this.save();
-        } else {
-          this.skills = [];
+          const migrated = Array.isArray(plans)
+            ? plans.map((p: any) => {
+                const createdAt = Date.now();
+                return {
+                  id: uuidv4(),
+                  name: String(p?.goal ?? '')
+                    .toLowerCase()
+                    .replace(/\s+/g, '_')
+                    .slice(0, 50),
+                  description: String(p?.goal ?? ''),
+                  domain: 'unknown',
+                  steps: Array.isArray(p?.steps) ? p.steps : [],
+                  currentVersion: 1,
+                  stats: { successes: 0, failures: 0, partials: 0, lastUsed: createdAt },
+                  feedback: [],
+                  versions: [{ version: 1, steps: Array.isArray(p?.steps) ? p.steps : [], createdAt }],
+                  tags: Array.isArray(p?.trigger_keywords) ? p.trigger_keywords : [],
+                } as Skill;
+              })
+            : [];
+          await this.putAll(migrated);
+          return migrated;
         }
       } catch {
-        this.skills = [];
+      }
+      return [];
+    }
+  }
+
+  async putAll(skills: Skill[]): Promise<void> {
+    await fs.promises.writeFile(this.storageFile, JSON.stringify(skills, null, 2));
+  }
+}
+
+class CloudSkillStorage implements SkillStorageProvider {
+  async getAll(): Promise<Skill[]> {
+    const rows = await webAPIService.getSkillLibrary();
+    const out: Skill[] = [];
+    for (const s of rows) {
+      try {
+        out.push(SkillSchema.parse(s));
+      } catch {
+      }
+    }
+    return out;
+  }
+
+  async putAll(skills: Skill[]): Promise<void> {
+    await webAPIService.upsertSkillLibrary(skills);
+  }
+}
+
+export class TaskKnowledgeService {
+  private storageFile: string;
+  private localStorage: SkillStorageProvider;
+  private cloudStorage: SkillStorageProvider | null;
+  private skills: Skill[] = [];
+  private cloudPushTimer: NodeJS.Timeout | null = null;
+
+  constructor() {
+    this.storageFile = path.resolve(process.cwd(), 'skill_library.json');
+    this.localStorage = new LocalJsonSkillStorage(this.storageFile);
+    this.cloudStorage = process.env.SKILL_CLOUD_BASE_URL ? new CloudSkillStorage() : null;
+
+    const maybeSync = this.localStorage.getAllSync?.();
+    if (Array.isArray(maybeSync) && maybeSync.length > 0) {
+      this.skills = maybeSync;
+    }
+
+    this.init().catch(() => undefined);
+    this.registerTools();
+  }
+
+  private async init() {
+    const local = await this.localStorage.getAll().catch(() => []);
+    this.skills = local;
+    await this.normalizeLoadedSkills();
+
+    if (this.cloudStorage) {
+      const remote = await this.cloudStorage.getAll().catch(() => []);
+      const merged = await this.mergeSkillLibraries(local, remote);
+      this.skills = merged;
+      await this.save();
+    }
+  }
+
+  private skillIdentity(s: Skill): string {
+    const fp = s.fingerprint ?? '';
+    return `${s.domain}::${fp}::${s.name}`;
+  }
+
+  private async mergeSkillLibraries(local: Skill[], remote: Skill[]): Promise<Skill[]> {
+    const byKey = new Map<string, Skill>();
+    for (const s of remote) byKey.set(this.skillIdentity(s), s);
+
+    for (const s of local) {
+      const k = this.skillIdentity(s);
+      const existing = byKey.get(k);
+      if (!existing) {
+        byKey.set(k, s);
+        continue;
+      }
+
+      const existingVer = typeof existing.currentVersion === 'number' ? existing.currentVersion : 1;
+      const localVer = typeof s.currentVersion === 'number' ? s.currentVersion : 1;
+      const base = existingVer >= localVer ? existing : s;
+      const other = base === existing ? s : existing;
+
+      const merged: Skill = {
+        ...base,
+        id: s.id || existing.id,
+        tags: Array.from(new Set([...(base.tags || []), ...(other.tags || [])])),
+        versions: Array.isArray(base.versions) && base.versions.length >= (other.versions || []).length ? base.versions : other.versions,
+        steps: base.steps && base.steps.length > 0 ? base.steps : other.steps,
+        stats: s.stats || existing.stats,
+        feedback: Array.isArray(s.feedback) ? s.feedback : Array.isArray(existing.feedback) ? existing.feedback : [],
+        embedding: Array.isArray(base.embedding) && base.embedding.length > 0 ? base.embedding : other.embedding,
+      };
+
+      byKey.set(k, merged);
+    }
+
+    const out = Array.from(byKey.values());
+    for (const s of out) {
+      if (!Array.isArray(s.embedding) || s.embedding.length === 0) {
+        (s as any).embedding = await this.computeSkillEmbedding(this.buildSkillText(s));
       }
     }
 
+    if (this.cloudStorage) {
+      this.cloudStorage.putAll(out).catch(() => undefined);
+    }
+
+    return out;
+  }
+
+  private async normalizeLoadedSkills() {
     for (const s of this.skills) {
       const v = Array.isArray((s as any)?.versions) ? (s as any).versions : [];
       if (typeof (s as any).currentVersion !== 'number') {
@@ -103,26 +301,17 @@ export class TaskKnowledgeService {
         (s as any).currentVersion = latest;
       }
       if (!s.stats || typeof s.stats !== 'object') {
-        (s as any).stats = { successes: 0, failures: 0, lastUsed: Date.now() };
+        (s as any).stats = { successes: 0, failures: 0, partials: 0, lastUsed: Date.now() };
       }
       if (typeof s.stats.successes !== 'number') (s as any).stats.successes = 0;
       if (typeof s.stats.failures !== 'number') (s as any).stats.failures = 0;
       if (typeof (s.stats as any).partials !== 'number') (s as any).stats.partials = 0;
       if (typeof s.stats.lastUsed !== 'number') (s as any).stats.lastUsed = Date.now();
       if (!Array.isArray(s.tags)) (s as any).tags = [];
-
       if (!Array.isArray((s as any).feedback)) (s as any).feedback = [];
+
       if (!Array.isArray((s as any).embedding) || (s as any).embedding.length === 0) {
-        // If no API key, compute synchronously
-        if (!process.env.OPENAI_API_KEY) {
-          (s as any).embedding = this.computeEmbedding(this.buildSkillText(s));
-        } else {
-          // Async update in background
-          this.computeApiEmbedding(this.buildSkillText(s)).then(emb => {
-            (s as any).embedding = emb;
-            this.save();
-          });
-        }
+        (s as any).embedding = await this.computeSkillEmbedding(this.buildSkillText(s));
       }
     }
   }
@@ -219,7 +408,7 @@ export class TaskKnowledgeService {
     if (this.skills.length === 0) return null;
 
     // Compute query embedding
-    const queryEmbedding = await this.computeApiEmbedding(query);
+    const queryEmbedding = await this.computeSkillEmbedding(query);
     const queryTokens = this.tokenize(query);
 
     let bestMatch: { skill: Skill; similarity: number } | null = null;
@@ -287,10 +476,28 @@ export class TaskKnowledgeService {
 
   private async save() {
     try {
-      await fs.promises.writeFile(this.storageFile, JSON.stringify(this.skills, null, 2));
+      await this.localStorage.putAll(this.skills);
+      this.scheduleCloudPush();
     } catch (err) {
       console.error('Failed to save skill library:', err);
     }
+  }
+
+  private scheduleCloudPush() {
+    if (!this.cloudStorage) return;
+    if (this.cloudPushTimer) clearTimeout(this.cloudPushTimer);
+    this.cloudPushTimer = setTimeout(() => {
+      this.cloudPushTimer = null;
+      this.cloudStorage?.putAll(this.skills).catch(() => undefined);
+    }, 750);
+  }
+
+  private async computeSkillEmbedding(text: string): Promise<number[]> {
+    const mode = String(process.env.SKILL_EMBEDDING_MODE ?? 'local').toLowerCase();
+    if (mode === 'openai') {
+      return await this.computeApiEmbedding(text);
+    }
+    return this.computeEmbedding(text);
   }
 
   findSkill(query: string, domain?: string, fingerprint?: string): Skill | null {

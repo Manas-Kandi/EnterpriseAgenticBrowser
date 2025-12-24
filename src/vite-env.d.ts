@@ -11,6 +11,8 @@ interface Window {
     chat: (message: string) => Promise<string>;
     resetConversation: () => Promise<{ success: boolean }>;
     getModels: () => Promise<Array<{ id: string; name: string; supportsThinking: boolean }>>;
+    getLlmConfig: () => Promise<{ provider: string; baseUrl: string; apiKeyAccount: string }>;
+    setLlmConfig: (cfg: any) => Promise<{ success: boolean }>;
     getCurrentModel: () => Promise<string>;
     setModel: (modelId: string) => Promise<{ success: boolean; modelId: string }>;
     setMode: (mode: 'chat' | 'read' | 'do') => Promise<{ success: boolean }>;
@@ -37,6 +39,25 @@ interface Window {
   }
   audit?: {
     getLogs: (limit?: number) => Promise<Array<{ id: string; timestamp: string; actor: string; action: string; details: unknown; status: string }>>;
+  }
+
+  chatHistory?: {
+    get: () => Promise<any[]>;
+    set: (messages: any[]) => Promise<{ success: boolean }>;
+    clear: () => Promise<{ success: boolean }>;
+  }
+
+  policy?: {
+    status: () => Promise<{ configuredUrl: string | null; hasRemotePolicy: boolean; version: number | null; fetchedAt: number | null; allowlistCount: number; blocklistCount: number; developerOverrideEnabled: boolean }>;
+    sync: (url?: string) => Promise<{ success: boolean; bundle?: any; error?: string }>;
+    setDevOverride: (enabled: boolean, token?: string) => Promise<{ success: boolean }>;
+  }
+
+  identity?: {
+    getSession: () => Promise<{ name: string; email: string; avatar?: string } | null>;
+    login: () => Promise<{ name: string; email: string; avatar?: string }>;
+    logout: () => Promise<{ success: boolean }>;
+    getAccessToken: () => Promise<string | null>;
   }
   browser?: {
     registerWebview: (tabId: string, webContentsId: number) => Promise<void>;

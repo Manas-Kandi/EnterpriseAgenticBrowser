@@ -33,10 +33,32 @@ contextBridge.exposeInMainWorld('audit', {
   getLogs: (limit?: number) => ipcRenderer.invoke('audit:get-logs', limit),
 })
 
+contextBridge.exposeInMainWorld('chatHistory', {
+  get: () => ipcRenderer.invoke('chatHistory:get'),
+  set: (messages: any[]) => ipcRenderer.invoke('chatHistory:set', messages),
+  clear: () => ipcRenderer.invoke('chatHistory:clear'),
+})
+
+contextBridge.exposeInMainWorld('policy', {
+  status: () => ipcRenderer.invoke('policy:status'),
+  sync: (url?: string) => ipcRenderer.invoke('policy:sync', url),
+  setDevOverride: (enabled: boolean, token?: string) => ipcRenderer.invoke('policy:set-dev-override', enabled, token),
+})
+
+contextBridge.exposeInMainWorld('identity', {
+  getSession: () => ipcRenderer.invoke('identity:get-session'),
+  login: () => ipcRenderer.invoke('identity:login'),
+  logout: () => ipcRenderer.invoke('identity:logout'),
+  getAccessToken: () => ipcRenderer.invoke('identity:get-access-token'),
+})
+
 contextBridge.exposeInMainWorld('agent', {
   chat: (message: string) => ipcRenderer.invoke('agent:chat', message),
   resetConversation: () => ipcRenderer.invoke('agent:reset-conversation'),
   getModels: () => ipcRenderer.invoke('agent:get-models'),
+  getLlmConfig: () => ipcRenderer.invoke('agent:get-llm-config'),
+  setLlmConfig: (cfg: { provider?: string; baseUrl?: string; apiKeyAccount?: string; modelId?: string }) =>
+    ipcRenderer.invoke('agent:set-llm-config', cfg),
   getCurrentModel: () => ipcRenderer.invoke('agent:get-current-model'),
   setModel: (modelId: string) => ipcRenderer.invoke('agent:set-model', modelId),
   setMode: (mode: 'chat' | 'read' | 'do') => ipcRenderer.invoke('agent:set-mode', mode),

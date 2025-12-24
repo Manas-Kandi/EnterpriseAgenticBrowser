@@ -1,0 +1,53 @@
+name: test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install root deps
+        run: npm ci
+
+      - name: Install mock-saas deps
+        run: npm ci
+        working-directory: mock-saas
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps
+
+      - name: Unit tests
+        run: npm run test:unit
+
+      - name: Start app + mock-saas servers
+        run: |
+          nohup npm run dev -- --host 0.0.0.0 --port 5173 > vite.log 2>&1 &
+          nohup npm run dev -- --host 0.0.0.0 --port 3000 > mock-saas.log 2>&1 &
+        working-directory: mock-saas
+
+      - name: Wait for servers
+        run: |
+          for i in $(seq 1 60); do
+            curl -sSf http://localhost:5173 >/dev/null 2>&1 && break
+            sleep 1
+          done
+          for i in $(seq 1 60); do
+            curl -sSf http://localhost:3000 >/dev/null 2>&1 && break
+            sleep 1
+          done
+
+      - name: E2E tests
+        env:
+          CI: true
+        run: npm run test:e2e

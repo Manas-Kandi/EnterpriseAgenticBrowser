@@ -9,7 +9,7 @@ import { useEffect } from 'react';
 import { useBrowserStore } from '@/lib/store';
 
 function App() {
-  const { addTab, addTabInBackground, removeTab, updateTab, activeTabId, appMode, setAppMode, tabsLayout } = useBrowserStore();
+  const { addTab, addTabInBackground, removeTab, updateTab, activeTabId, appMode, setAppMode, tabsLayout, llmSettings, setUser } = useBrowserStore();
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -35,6 +35,30 @@ function App() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [addTab, removeTab, updateTab, activeTabId]);
+
+  useEffect(() => {
+    if (!window.agent?.setLlmConfig) return;
+    window.agent
+      .setLlmConfig({
+        provider: llmSettings.provider,
+        baseUrl: llmSettings.baseUrl,
+        apiKeyAccount: llmSettings.apiKeyAccount,
+        modelId: llmSettings.model,
+      })
+      .catch(() => undefined);
+  }, [llmSettings]);
+
+  useEffect(() => {
+    if (!window.identity?.getSession) return;
+    window.identity
+      .getSession()
+      .then((profile) => {
+        setUser(profile);
+      })
+      .catch(() => {
+        setUser(null);
+      });
+  }, [setUser]);
 
   // Listen for agent-triggered tab opens (navigation guard)
   // Core UX: Agent opens exploratory tabs in background to preserve user context

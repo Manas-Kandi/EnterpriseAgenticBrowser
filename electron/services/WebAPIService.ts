@@ -1,5 +1,9 @@
 import { z } from 'zod';
 import { AgentTool, toolRegistry } from './ToolRegistry';
+import dotenv from 'dotenv';
+import { identityService } from './IdentityService';
+
+dotenv.config();
 
 /**
  * WebAPIService provides direct API access to common web services.
@@ -12,6 +16,55 @@ import { AgentTool, toolRegistry } from './ToolRegistry';
 export class WebAPIService {
   constructor() {
     this.registerTools();
+  }
+
+  private getCloudBaseUrl(): string | null {
+    const v = process.env.SKILL_CLOUD_BASE_URL;
+    if (typeof v !== 'string') return null;
+    const s = v.trim();
+    return s ? s : null;
+  }
+
+  private async getCloudHeaders(): Promise<Record<string, string>> {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    const key = process.env.SKILL_CLOUD_API_KEY;
+    if (typeof key === 'string' && key.trim()) {
+      headers['Authorization'] = `Bearer ${key.trim()}`;
+      return headers;
+    }
+    const token = await identityService.getAccessToken().catch(() => null);
+    if (typeof token === 'string' && token.trim()) {
+      headers['Authorization'] = `Bearer ${token.trim()}`;
+    }
+    return headers;
+  }
+
+  async getSkillLibrary(): Promise<any[]> {
+    const base = this.getCloudBaseUrl();
+    if (!base) return [];
+    const url = `${base.replace(/\/$/, '')}/skills`;
+    const response = await fetch(url, { method: 'GET', headers: await this.getCloudHeaders() });
+    if (!response.ok) {
+      throw new Error(`Skill library fetch failed: ${response.status} ${response.statusText}`);
+    }
+    const data = await response.json();
+    return Array.isArray(data) ? data : Array.isArray((data as any)?.skills) ? (data as any).skills : [];
+  }
+
+  async upsertSkillLibrary(skills: any[]): Promise<void> {
+    const base = this.getCloudBaseUrl();
+    if (!base) return;
+    const url = `${base.replace(/\/$/, '')}/skills/bulk`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: await this.getCloudHeaders(),
+      body: JSON.stringify({ skills: Array.isArray(skills) ? skills : [] }),
+    });
+    if (!response.ok) {
+      throw new Error(`Skill library upsert failed: ${response.status} ${response.statusText}`);
+    }
   }
 
   private registerTools() {

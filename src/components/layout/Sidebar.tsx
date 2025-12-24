@@ -35,6 +35,25 @@ export function Sidebar() {
   const [showModelSelector, setShowModelSelector] = useState(false);
 
   useEffect(() => {
+    if (window.chatHistory?.get) {
+      window.chatHistory
+        .get()
+        .then((rows) => {
+          if (!Array.isArray(rows)) return;
+          const hydrated = rows
+            .filter((x) => x && typeof x === 'object')
+            .map((x: any) => ({
+              role: x.role,
+              content: x.content,
+              type: x.type,
+              metadata: x.metadata,
+            }))
+            .filter((m: any) => (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string');
+          if (hydrated.length > 0) setMessages(hydrated as any);
+        })
+        .catch(() => undefined);
+    }
+
     if (!window.agent) return;
 
     // Load available models
@@ -79,6 +98,20 @@ export function Sidebar() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!window.chatHistory?.set) return;
+    const handle = window.setTimeout(() => {
+      const out = messages.map((m) => ({
+        role: m.role,
+        content: m.content,
+        type: m.type,
+        metadata: m.metadata,
+      }));
+      window.chatHistory?.set(out).catch(() => undefined);
+    }, 250);
+    return () => window.clearTimeout(handle);
+  }, [messages]);
+
   const handleModelChange = async (modelId: string) => {
     if (!window.agent) return;
     try {
@@ -88,6 +121,7 @@ export function Sidebar() {
       // Clear conversation when switching models
       await window.agent.resetConversation();
       setMessages([]);
+      await window.chatHistory?.clear?.().catch(() => undefined);
     } catch (err) {
       console.error('Failed to switch model:', err);
     }
@@ -98,6 +132,7 @@ export function Sidebar() {
     try {
       await window.agent.resetConversation();
       setMessages([]);
+      await window.chatHistory?.clear?.().catch(() => undefined);
     } catch (err) {
       console.error('Failed to reset conversation:', err);
     }

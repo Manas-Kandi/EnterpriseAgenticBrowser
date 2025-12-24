@@ -4,6 +4,15 @@ import { persist } from 'zustand/middleware';
 export type AgentMode = 'chat' | 'read' | 'do';
 export type AgentPermissionMode = 'yolo' | 'permissions' | 'manual';
 
+export type LLMProvider = 'nvidia' | 'openai_compatible';
+
+export interface LLMSettings {
+  provider: LLMProvider;
+  baseUrl: string;
+  model: string;
+  apiKeyAccount: string;
+}
+
 export interface BrowserTab {
   id: string;
   url: string;
@@ -73,6 +82,8 @@ interface BrowserState {
   agentMode: AgentMode;
   agentPermissionMode: AgentPermissionMode;
   dockConfig: DockConfig;
+
+  llmSettings: LLMSettings;
   
   // Actions
   addTab: (url?: string, options?: { agentCreated?: boolean }) => void;
@@ -97,6 +108,8 @@ interface BrowserState {
   setTabsLayout: (layout: TabsLayout) => void;
   setSaasModeEnabled: (enabled: boolean) => void;
 
+  setLlmSettings: (next: Partial<LLMSettings>) => void;
+
   toggleDockItem: (group: 'core' | 'aero', id: DockCoreItemId | DockAeroItemId) => void;
   moveDockItem: (group: 'core' | 'aero', id: DockCoreItemId | DockAeroItemId, direction: 'up' | 'down') => void;
   resetDockConfig: () => void;
@@ -120,6 +133,13 @@ export const useBrowserStore = create<BrowserState>()(
       agentMode: 'chat',
       agentPermissionMode: 'permissions',
       dockConfig: defaultDockConfig,
+
+      llmSettings: {
+        provider: 'nvidia',
+        baseUrl: 'https://integrate.api.nvidia.com/v1',
+        model: 'llama-3.1-70b',
+        apiKeyAccount: 'llm:nvidia:apiKey',
+      },
 
       addTab: (url = 'about:newtab', options) => set((state) => {
         const newTab = {
@@ -319,6 +339,14 @@ export const useBrowserStore = create<BrowserState>()(
       setTabsLayout: (layout) => set({ tabsLayout: layout }),
       setSaasModeEnabled: (enabled) => set({ saasModeEnabled: enabled }),
 
+      setLlmSettings: (next) =>
+        set((state) => ({
+          llmSettings: {
+            ...state.llmSettings,
+            ...(next ?? {}),
+          },
+        })),
+
       toggleDockItem: (group, id) => set((state) => {
         const cfg = state.dockConfig;
         if (group === 'core') {
@@ -382,6 +410,7 @@ export const useBrowserStore = create<BrowserState>()(
       partialize: (state) => ({
         tabs: state.tabs,
         activeTabId: state.activeTabId,
+        history: state.history,
         recentlyClosed: state.recentlyClosed,
         tabGroups: state.tabGroups,
         tabsLayout: state.tabsLayout,
@@ -391,6 +420,7 @@ export const useBrowserStore = create<BrowserState>()(
         agentMode: state.agentMode,
         agentPermissionMode: state.agentPermissionMode,
         dockConfig: state.dockConfig,
+        llmSettings: state.llmSettings,
       }),
     }
   )

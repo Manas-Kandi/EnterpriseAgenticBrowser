@@ -13,6 +13,7 @@ import { telemetryService } from './TelemetryService';
 import { classifyIntent, shouldNavigateActiveTab } from './IntentClassifier';
 import { safeParseTOON, TOON_SUMMARY_PROMPT_TEMPLATE } from '../lib/toon';
 import { safeValidateToonSummary, createToonSummary, ToonSummary } from '../lib/validateToonSummary';
+import { vaultService } from './VaultService';
 
 dotenv.config();
 
@@ -108,6 +109,15 @@ export const AVAILABLE_MODELS: ModelConfig[] = [
 export type AgentMode = 'chat' | 'read' | 'do';
 export type AgentPermissionMode = 'yolo' | 'permissions' | 'manual';
 
+export type LLMProvider = 'nvidia' | 'openai_compatible';
+
+export type LLMConfig = {
+  provider: LLMProvider;
+  baseUrl: string;
+  apiKeyAccount: string;
+  apiKey?: string | null;
+};
+
 export class AgentService {
   private model: Runnable;
   private currentModelId: string = 'llama-3.1-70b';
@@ -118,6 +128,13 @@ export class AgentService {
   private onToken?: (token: string) => void;
   private conversationHistory: BaseMessage[] = [];
   private systemPrompt: SystemMessage;
+
+  private llmConfig: LLMConfig = {
+    provider: 'nvidia',
+    baseUrl: 'https://integrate.api.nvidia.com/v1',
+    apiKeyAccount: 'llm:nvidia:apiKey',
+    apiKey: process.env.NVIDIA_API_KEY ?? null,
+  };
 
   // Limit conversation history to prevent unbounded memory growth
   // Each turn can have ~2-4 messages (user, AI, tool output, etc.)
@@ -318,6 +335,45 @@ export class AgentService {
     this.systemPrompt = new SystemMessage('');
   }
 
+  async setLLMConfig(next: Partial<LLMConfig> & { modelId?: string }) {
+    const prevProvider = this.llmConfig.provider;
+    const prevAccount = this.llmConfig.apiKeyAccount;
+
+    const merged: LLMConfig = {
+      ...this.llmConfig,
+      ...(next ?? {}),
+    };
+
+    if ((merged.provider !== prevProvider || merged.apiKeyAccount !== prevAccount) && (next as any)?.apiKey === undefined) {
+      (merged as any).apiKey = undefined;
+    }
+
+    if (merged.apiKey === undefined) {
+      try {
+        merged.apiKey = await vaultService.getSecret(merged.apiKeyAccount);
+      } catch {
+        merged.apiKey = null;
+      }
+    }
+
+    if (!merged.apiKey && merged.provider === 'nvidia') {
+      merged.apiKey = process.env.NVIDIA_API_KEY ?? null;
+    }
+
+    this.llmConfig = merged;
+
+    if (typeof (next as any)?.modelId === 'string' && (next as any).modelId.trim()) {
+      this.currentModelId = (next as any).modelId.trim();
+    }
+
+    this.model = this.createModel(this.currentModelId);
+  }
+
+  getLLMConfig(): Omit<LLMConfig, 'apiKey'> {
+    const { apiKey, ...rest } = this.llmConfig;
+    return rest;
+  }
+
   /**
    * Toggle the use of the specialized actions policy model
    */
@@ -368,27 +424,54 @@ export class AgentService {
   }
 
   private createModel(modelId: string): Runnable {
-    const apiKey = process.env.NVIDIA_API_KEY;
+    const provider = this.llmConfig.provider;
+    const apiKey = this.llmConfig.apiKey ?? null;
     if (!apiKey) {
-      console.warn('NVIDIA_API_KEY is not set in environment variables');
+      console.warn(`[AgentService] No API key configured for provider=${provider} (account=${this.llmConfig.apiKeyAccount})`);
     }
 
-    const config = AVAILABLE_MODELS.find(m => m.id === modelId) || AVAILABLE_MODELS[0];
-    console.log(`[AgentService] Creating model: ${config.name} (${config.modelName})`);
+    const baseURL = this.llmConfig.baseUrl;
+
+    const resolved = (() => {
+      if (provider === 'nvidia') {
+        const cfg = AVAILABLE_MODELS.find((m) => m.id === modelId) || AVAILABLE_MODELS[0];
+        return {
+          id: cfg.id,
+          name: cfg.name,
+          modelName: cfg.modelName,
+          temperature: cfg.temperature,
+          maxTokens: cfg.maxTokens,
+          supportsThinking: cfg.supportsThinking,
+          extraBody: cfg.extraBody,
+        };
+      }
+
+      return {
+        id: modelId,
+        name: modelId,
+        modelName: modelId,
+        temperature: 0.1,
+        maxTokens: 4096,
+        supportsThinking: false,
+        extraBody: undefined as any,
+      };
+    })();
+
+    console.log(`[AgentService] Creating model: ${resolved.name} (${resolved.modelName}) provider=${provider}`);
 
     const modelKwargs: Record<string, unknown> = {
-      response_format: { type: "json_object" },
-      ...config.extraBody,
+      response_format: { type: 'json_object' },
+      ...(resolved.extraBody ?? {}),
     };
 
     return new ChatOpenAI({
       configuration: {
-        baseURL: "https://integrate.api.nvidia.com/v1",
-        apiKey: apiKey,
+        baseURL,
+        apiKey: provider === 'openai_compatible' ? (apiKey ?? 'local') : (apiKey ?? undefined),
       },
-      modelName: config.modelName,
-      temperature: config.temperature,
-      maxTokens: config.maxTokens,
+      modelName: resolved.modelName,
+      temperature: resolved.temperature,
+      maxTokens: resolved.maxTokens,
       streaming: false,
       modelKwargs,
     });
@@ -398,14 +481,21 @@ export class AgentService {
    * Switch to a different model
    */
   setModel(modelId: string) {
-    const config = AVAILABLE_MODELS.find(m => m.id === modelId);
-    if (!config) {
-      console.error(`[AgentService] Unknown model: ${modelId}`);
+    if (this.llmConfig.provider === 'nvidia') {
+      const config = AVAILABLE_MODELS.find((m) => m.id === modelId);
+      if (!config) {
+        console.error(`[AgentService] Unknown model: ${modelId}`);
+        return;
+      }
+      this.currentModelId = modelId;
+      this.model = this.createModel(modelId);
+      console.log(`[AgentService] Switched to model: ${config.name}`);
       return;
     }
+
     this.currentModelId = modelId;
     this.model = this.createModel(modelId);
-    console.log(`[AgentService] Switched to model: ${config.name}`);
+    console.log(`[AgentService] Switched to model: ${modelId}`);
   }
 
   /**
@@ -657,6 +747,10 @@ You can answer questions about what's on the page, explain content, summarize in
     let parseFailures = 0;
     let lastVerified: string | null = null;
     let messages: BaseMessage[] = [];
+    let pendingErrorForReflection: string | null = null;
+    let loopAlertCount = 0;
+
+    const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
     // Intent classification for context preservation
     // Core UX Principle: User attention defines agent scope
@@ -707,6 +801,11 @@ API-FIRST (MUCH FASTER):
 <browser_primitives>
 - Always call browser_observe before clicking/typing/selecting to get fresh selectors.
 - If a selector matches multiple elements, disambiguate using index, matchText, or withinSelector.
+- From browser_observe, prefer selectors in this order:
+  1) A CSS selector candidate with matches=1
+  2) An XPath selector candidate with matches=1 (pass as selector starting with "xpath=")
+  3) browser_click_text when the visible text is unique
+- Note: browser_click/browser_type/browser_select/browser_get_text accept XPath selectors when prefixed with "xpath=".
 - Prefer browser_click_text when the visible text is unique.
 - After any meaningful state change (navigation, submit, save), re-observe or wait for a confirming signal (text/selector).
 </browser_primitives>
@@ -720,6 +819,11 @@ Verification means one of:
 
 If verification is missing, take the next step to verify (observe or wait) instead of guessing.
 </verification>
+
+<recovery>
+If you receive a System message starting with "Previous error:", you must incorporate that error into your next tool choice and args. Avoid repeating the same failing tool call.
+If a loop is detected, change strategy (different selector, re-observe, wait, or ask the user for clarification).
+</recovery>
 
 <mock_saas_selectors>
 When on localhost:3000, prefer stable data-testid selectors:
@@ -813,6 +917,36 @@ ${tools.map((t: any) => `- ${t.name}: ${t.description}`).join('\n')}
 
       // ReAct Loop (Max 15 turns)
       for (let i = 0; i < 15; i++) {
+        const loopAlert = agentRunContext.consumeLoopAlert();
+        if (loopAlert) {
+          loopAlertCount += 1;
+          const loopMsg = `Loop detected: ${loopAlert.kind} ${loopAlert.key} repeated ${loopAlert.count} times.`;
+          this.emitStep('observation', loopMsg, {
+            phase: 'loop_detected',
+            state: 'recovering',
+            alert: loopAlert,
+          });
+          pendingErrorForReflection = loopMsg;
+          if (loopAlertCount >= 2) {
+            this.emitStep('observation', `Fatal Error: ${loopMsg}`, {
+              phase: 'fatal_error',
+              state: 'fatal',
+              alert: loopAlert,
+            });
+            await this.logFailureTrace(userMessage, messages, loopMsg);
+            return 'I detected a repeated loop while trying to complete this task. Please confirm the desired outcome or provide additional guidance so I can proceed safely.';
+          }
+        }
+
+        if (pendingErrorForReflection) {
+          messages.push(
+            new SystemMessage(
+              `Previous error: ${pendingErrorForReflection}\nReflect on the failure and choose a different tool/args or add verification steps. Avoid repeating identical calls.`
+            )
+          );
+          pendingErrorForReflection = null;
+        }
+
         const runId = agentRunContext.getRunId() ?? undefined;
         const llmCallId = uuidv4();
         const llmStartedAt = Date.now();
@@ -911,6 +1045,7 @@ ${tools.map((t: any) => `- ${t.name}: ${t.description}`).join('\n')}
             // ignore telemetry failures
           }
           this.emitStep('observation', `Request timed out.Try a simpler request or switch to a faster model.`);
+          this.emitStep('observation', `Fatal Error: LLM timed out`, { phase: 'fatal_error', state: 'fatal' });
           return "The request timed out. Try breaking it into smaller steps or use a faster model.";
         }
 
@@ -1012,6 +1147,7 @@ To finish: {"thought":"brief completion summary","tool":"final_response","args":
   // Fail faster - 3 parse failures max
   if (parseFailures >= 3) {
     const failMsg = "I had trouble completing this task because I couldn't generate valid JSON commands. Try a simpler request or switch to a more reliable model (e.g., Llama 3.3 70B).";
+    this.emitStep('observation', `Fatal Error: ${failMsg}`, { phase: 'fatal_error', state: 'fatal' });
     await this.logFailureTrace(userMessage, messages, "Max parse failures reached (3)");
     return failMsg;
   }
@@ -1160,8 +1296,69 @@ if (tool) {
   });
 
   try {
-    // Execute tool
-    const result = await tool.invoke((action as any).args);
+    const maxAttempts = 3;
+    let result: any = null;
+    let ok = false;
+    let lastErrStr = '';
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      if (attempt > 0) {
+        this.emitStep('observation', `Retrying ${tool.name} (${attempt + 1}/${maxAttempts})`, {
+          phase: 'tool_retry',
+          state: 'retrying',
+          tool: tool.name,
+          toolCallId,
+          attempt: attempt + 1,
+          maxAttempts,
+        });
+        await sleep(400 * Math.pow(2, attempt - 1));
+      }
+
+      try {
+        result = await tool.invoke((action as any).args);
+        const resultStr = String(result ?? '');
+        const isFailureStr =
+          resultStr.startsWith('Tool execution failed:') ||
+          resultStr.startsWith('Error:');
+        const isTerminalDenial =
+          resultStr.includes('User denied execution') ||
+          resultStr.includes('Approval timed out') ||
+          resultStr.includes('Operation denied by policy');
+
+        if (!isFailureStr) {
+          ok = true;
+          break;
+        }
+
+        lastErrStr = resultStr;
+        if (isTerminalDenial) {
+          break;
+        }
+      } catch (e: any) {
+        lastErrStr = String(e?.message ?? e);
+      }
+    }
+
+    if (!ok) {
+      const toolDurationMs = Date.now() - toolStartedAt;
+      const errMsg = lastErrStr || 'Tool failed.';
+      this.emitStep('observation', `Tool Execution Error: ${errMsg}`, {
+        tool: tool.name,
+        toolCallId,
+        phase: 'tool_end',
+        ok: false,
+        durationMs: toolDurationMs,
+        errorMessage: errMsg,
+      });
+      pendingErrorForReflection = errMsg;
+      const aiMsg = new AIMessage(this.redactSecrets(content));
+      const errorMsg = new SystemMessage(`Tool Execution Error: ${errMsg}`);
+      messages.push(aiMsg);
+      messages.push(errorMsg);
+      this.conversationHistory.push(aiMsg);
+      this.conversationHistory.push(errorMsg);
+      continue;
+    }
+
     const toolDurationMs = Date.now() - toolStartedAt;
     this.emitStep('observation', `Tool Output: ${result}`, {
       tool: tool.name,
@@ -1284,18 +1481,19 @@ if (tool) {
     this.conversationHistory.push(aiMsg);
     this.conversationHistory.push(toolOutputMsg);
   } catch (err: any) {
-    console.error(`Tool execution failed: ${err}`);
     const toolDurationMs = Date.now() - toolStartedAt;
-    this.emitStep('observation', `Tool Execution Error: ${err.message}`, {
+    const errMsg = String(err?.message ?? err);
+    this.emitStep('observation', `Tool Execution Error: ${errMsg}`, {
       tool: tool.name,
       toolCallId,
       phase: 'tool_end',
       ok: false,
       durationMs: toolDurationMs,
-      errorMessage: String(err?.message ?? err),
+      errorMessage: errMsg,
     });
+    pendingErrorForReflection = errMsg;
     const aiMsg = new AIMessage(this.redactSecrets(content));
-    const errorMsg = new SystemMessage(`Tool Execution Error: ${err.message}`);
+    const errorMsg = new SystemMessage(`Tool Execution Error: ${errMsg}`);
     messages.push(aiMsg);
     messages.push(errorMsg);
     this.conversationHistory.push(aiMsg);
@@ -1313,6 +1511,7 @@ if (tool) {
       }
 
 const maxStepsMsg = "I could not complete the task within the maximum number of steps. Try simplifying the request or check the browser is in the expected state.";
+this.emitStep('observation', `Fatal Error: ${maxStepsMsg}`, { phase: 'fatal_error', state: 'fatal' });
 await this.logFailureTrace(userMessage, messages, "Max ReAct steps reached (15)");
 return maxStepsMsg;
 

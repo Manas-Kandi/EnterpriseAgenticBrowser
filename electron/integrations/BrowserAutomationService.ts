@@ -171,7 +171,27 @@ export class BrowserAutomationService {
     const startedAt = Date.now();
     while (Date.now() - startedAt < timeoutMs) {
       const found = await target.executeJavaScript(
-        `Boolean(document.querySelector(${JSON.stringify(selector)}))`,
+        `(() => {
+          const sel = ${JSON.stringify(selector)};
+          const s = String(sel ?? '').trim();
+          const isXpath = s.startsWith('xpath=') || s.startsWith('//') || s.startsWith('/') || s.startsWith('(');
+          if (isXpath) {
+            const xp = s.startsWith('xpath=') ? s.slice(6) : s;
+            try {
+              const node = document.evaluate(
+                xp,
+                document,
+                null,
+                XPathResult.FIRST_ORDERED_NODE_TYPE,
+                null
+              ).singleNodeValue;
+              return Boolean(node);
+            } catch {
+              return false;
+            }
+          }
+          return Boolean(document.querySelector(sel));
+        })()`,
         true
       );
       if (found) return;
@@ -182,7 +202,27 @@ export class BrowserAutomationService {
 
   private async querySelectorCount(target: WebContents, selector: string): Promise<number> {
     const count = await target.executeJavaScript(
-      `document.querySelectorAll(${JSON.stringify(selector)}).length`,
+      `(() => {
+        const sel = ${JSON.stringify(selector)};
+        const s = String(sel ?? '').trim();
+        const isXpath = s.startsWith('xpath=') || s.startsWith('//') || s.startsWith('/') || s.startsWith('(');
+        if (isXpath) {
+          const xp = s.startsWith('xpath=') ? s.slice(6) : s;
+          try {
+            const snap = document.evaluate(
+              xp,
+              document,
+              null,
+              XPathResult.ORDERED_NODE_SNAPSHOT_TYPE,
+              null
+            );
+            return snap.snapshotLength || 0;
+          } catch {
+            return 0;
+          }
+        }
+        return document.querySelectorAll(sel).length;
+      })()`,
       true
     );
     return Number(count) || 0;
@@ -319,20 +359,123 @@ export class BrowserAutomationService {
                   return parts.join(' > ');
                 };
 
+                const isXPathSelector = (sel) => {
+                  const s = String(sel ?? '').trim();
+                  return s.startsWith('xpath=') || s.startsWith('//') || s.startsWith('/') || s.startsWith('(');
+                };
+
+                const xpathLiteral = (value) => {
+                  const v = String(value ?? '');
+                  if (!v.includes("'")) return "'" + v + "'";
+                  if (!v.includes('"')) return '"' + v + '"';
+                  return (
+                    'concat(' +
+                    v
+                      .split("'")
+                      .map((p) => "'" + p + "'")
+                      .join(", \"'\", ") +
+                    ')'
+                  );
+                };
+
+                const countXPath = (xp) => {
+                  try {
+                    const snap = document.evaluate(
+                      xp,
+                      document,
+                      null,
+                      XPathResult.ORDERED_NODE_SNAPSHOT_TYPE,
+                      null
+                    );
+                    return snap.snapshotLength || 0;
+                  } catch {
+                    return 0;
+                  }
+                };
+
+                const xpathFor = (el) => {
+                  if (!el || el.nodeType !== 1) return '';
+                  const tag = (el.tagName || '').toLowerCase();
+                  const id = el.id;
+                  if (id) return '//*[@id=' + xpathLiteral(id) + ']';
+
+                  const testId =
+                    el.getAttribute &&
+                    (el.getAttribute('data-testid') || el.getAttribute('data-test-id'));
+                  if (testId) return '//*[@data-testid=' + xpathLiteral(testId) + ']';
+
+                  const name = el.getAttribute && el.getAttribute('name');
+                  if (name) return '//' + tag + '[@name=' + xpathLiteral(name) + ']';
+
+                  const ariaLabel = el.getAttribute && el.getAttribute('aria-label');
+                  if (ariaLabel) return '//' + tag + '[@aria-label=' + xpathLiteral(ariaLabel) + ']';
+
+                  const placeholder = el.getAttribute && el.getAttribute('placeholder');
+                  if (placeholder) return '//' + tag + '[@placeholder=' + xpathLiteral(placeholder) + ']';
+
+                  // Fallback: short-ish absolute path with nth-of-type
+                  const parts = [];
+                  let cur = el;
+                  let guard = 0;
+                  while (cur && cur.nodeType === 1 && guard++ < 7) {
+                    const t = (cur.tagName || '').toLowerCase();
+                    const parent = cur.parentElement;
+                    if (!parent) {
+                      parts.unshift(t);
+                      break;
+                    }
+                    const siblings = Array.from(parent.children).filter((sib) => sib.tagName === cur.tagName);
+                    if (siblings.length > 1) {
+                      const idx = siblings.indexOf(cur) + 1;
+                      parts.unshift(t + '[' + idx + ']');
+                    } else {
+                      parts.unshift(t);
+                    }
+                    cur = parent;
+                  }
+                  return '/' + parts.join('/');
+                };
+
                 const bestSelector = (el) => {
                   if (!el || el.nodeType !== 1) return '';
+                  const unique = (sel) => {
+                    try {
+                      if (!sel) return false;
+                      return document.querySelectorAll(sel).length === 1;
+                    } catch {
+                      return false;
+                    }
+                  };
+
                   if (el.id) return '#' + el.id;
                   const testId = el.getAttribute && (el.getAttribute('data-testid') || el.getAttribute('data-test-id'));
                   if (testId) return '[data-testid=' + attrSelectorValue(testId) + ']';
                   const name = el.getAttribute && el.getAttribute('name');
-                  if (name) return el.tagName.toLowerCase() + '[name=' + attrSelectorValue(name) + ']';
+                  if (name) {
+                    const sel = el.tagName.toLowerCase() + '[name=' + attrSelectorValue(name) + ']';
+                    if (unique(sel)) return sel;
+                  }
                   const ariaLabel = el.getAttribute && el.getAttribute('aria-label');
-                  if (ariaLabel) return el.tagName.toLowerCase() + '[aria-label=' + attrSelectorValue(ariaLabel) + ']';
+                  if (ariaLabel) {
+                    const sel = el.tagName.toLowerCase() + '[aria-label=' + attrSelectorValue(ariaLabel) + ']';
+                    if (unique(sel)) return sel;
+                  }
                   const placeholder = el.getAttribute && el.getAttribute('placeholder');
-                  if (placeholder) return el.tagName.toLowerCase() + '[placeholder=' + attrSelectorValue(placeholder) + ']';
+                  if (placeholder) {
+                    const sel = el.tagName.toLowerCase() + '[placeholder=' + attrSelectorValue(placeholder) + ']';
+                    if (unique(sel)) return sel;
+                  }
+                  const href = el.tagName.toLowerCase() === 'a' ? (el.getAttribute && el.getAttribute('href')) : '';
+                  if (href) {
+                    const sel = 'a[href=' + attrSelectorValue(href) + ']';
+                    if (unique(sel)) return sel;
+                  }
                   if (el.className && typeof el.className === 'string') {
                     const classes = el.className.split(' ').filter((c) => c.trim()).slice(0, 3).join('.');
-                    if (classes) return el.tagName.toLowerCase() + '.' + classes;
+                    if (classes) {
+                      const sel = el.tagName.toLowerCase() + '.' + classes;
+                      if (unique(sel)) return sel;
+                    }
                   }
                   const path = cssPath(el);
                   return path || el.tagName.toLowerCase();
@@ -369,6 +512,8 @@ export class BrowserAutomationService {
                   const disabled = 'disabled' in el ? Boolean(el.disabled) : el.getAttribute('aria-disabled') === 'true';
                   const selector = bestSelector(el);
                   const matches = selector ? document.querySelectorAll(selector).length : 0;
+                  const xpath = xpathFor(el);
+                  const xpathMatches = xpath ? countXPath(xpath) : 0;
                   const value = 'value' in el ? String(el.value ?? '') : '';
                   const href = tag === 'a' ? (el.getAttribute('href') || '') : '';
                   const ariaLabel = el.getAttribute('aria-label') || '';
@@ -377,7 +522,27 @@ export class BrowserAutomationService {
                   if (seen.has(key)) continue;
                   seen.add(key);
 
-                  out.push({ tag, text, placeholder, type, role, name, disabled, value, href, ariaLabel, selector, matches });
+                  const selectorCandidates = [];
+                  if (selector) selectorCandidates.push({ kind: 'css', value: selector, matches });
+                  if (xpath) selectorCandidates.push({ kind: 'xpath', value: 'xpath=' + xpath, matches: xpathMatches });
+                  if (text) selectorCandidates.push({ kind: 'text', value: text, matches: candidates.length });
+
+                  out.push({
+                    tag,
+                    text,
+                    placeholder,
+                    type,
+                    role,
+                    name,
+                    disabled,
+                    value,
+                    href,
+                    ariaLabel,
+                    selector,
+                    matches,
+                    xpath,
+                    selectorCandidates,
+                  });
                   if (out.length >= limit) break;
                 }
 
@@ -752,7 +917,7 @@ export class BrowserAutomationService {
 
     // Tool: Click
     const clickSchema = z.object({
-      selector: z.string().describe('CSS selector of the element to click'),
+      selector: z.string().describe('CSS selector (or XPath prefixed with "xpath=") of the element to click'),
       withinSelector: z
         .string()
         .optional()
@@ -777,7 +942,51 @@ export class BrowserAutomationService {
             const result = await target.executeJavaScript(
               `(() => {
                 // Helper to find elements including shadow DOM
+                const isXPathSelector = (sel) => {
+                  const s = String(sel ?? '').trim();
+                  return s.startsWith('xpath=') || s.startsWith('//') || s.startsWith('/') || s.startsWith('(');
+                };
+
+                const normalizeXPath = (sel) => {
+                  const s = String(sel ?? '').trim();
+                  return s.startsWith('xpath=') ? s.slice(6) : s;
+                };
+
+                const findByXPath = (xp) => {
+                  const out = [];
+                  try {
+                    const snap = document.evaluate(
+                      xp,
+                      document,
+                      null,
+                      XPathResult.ORDERED_NODE_SNAPSHOT_TYPE,
+                      null
+                    );
+                    for (let i = 0; i < snap.snapshotLength; i++) {
+                      const node = snap.snapshotItem(i);
+                      if (node && node.nodeType === 1) out.push(node);
+                    }
+                  } catch {
+                    // ignore
+                  }
+                  return out;
+                };
+
                 const findElements = (root, sel) => {
+                  if (isXPathSelector(sel)) {
+                    const xp = normalizeXPath(sel);
+                    const nodes = findByXPath(xp);
+                    if (root && root !== document) {
+                      return nodes.filter((n) => {
+                        try {
+                          return root.contains(n);
+                        } catch {
+                          return false;
+                        }
+                      });
+                    }
+                    return nodes;
+                  }
                   const results = [];
                   const queryDeep = (root) => {
                     const els = Array.from(root.querySelectorAll(sel));
@@ -949,7 +1158,7 @@ export class BrowserAutomationService {
       name: 'browser_type',
       description: 'Type text into an input field.',
       schema: z.object({
-        selector: z.string().describe('CSS selector of the input'),
+        selector: z.string().describe('CSS selector (or XPath prefixed with "xpath=") of the input'),
         text: z.string().describe('Text to type'),
       }),
       execute: async ({ selector, text }: { selector: string; text: string }) => {
@@ -962,7 +1171,13 @@ export class BrowserAutomationService {
             await this.waitForSelector(target, selector, 5000);
             const typedValue = await target.executeJavaScript(
               `(() => {
-                const el = document.querySelector(${JSON.stringify(selector)});
+                const sel = ${JSON.stringify(selector)};
+                const s = String(sel ?? '').trim();
+                const isXpath = s.startsWith('xpath=') || s.startsWith('//') || s.startsWith('/') || s.startsWith('(');
+                const xp = s.startsWith('xpath=') ? s.slice(6) : s;
+                const el = isXpath
+                  ? (document.evaluate(xp, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue)
+                  : document.querySelector(sel);
                 if (!el) throw new Error('Element not found');
                 const isDisabled = ('disabled' in el && Boolean(el.disabled)) || el.getAttribute?.('aria-disabled') === 'true';
                 if (isDisabled) throw new Error('Element is disabled');
@@ -1012,7 +1227,7 @@ export class BrowserAutomationService {
         name: 'browser_get_text',
         description: 'Get the text content of an element.',
         schema: z.object({
-            selector: z.string().describe('CSS selector')
+            selector: z.string().describe('CSS selector (or XPath prefixed with "xpath=")')
         }),
         execute: async ({ selector }: { selector: string }) => {
             try {
@@ -1020,7 +1235,13 @@ export class BrowserAutomationService {
                 await this.waitForSelector(target, selector, 5000);
                 const text = await target.executeJavaScript(
                   `(() => {
-                    const el = document.querySelector(${JSON.stringify(selector)});
+                    const sel = ${JSON.stringify(selector)};
+                    const s = String(sel ?? '').trim();
+                    const isXpath = s.startsWith('xpath=') || s.startsWith('//') || s.startsWith('/') || s.startsWith('(');
+                    const xp = s.startsWith('xpath=') ? s.slice(6) : s;
+                    const el = isXpath
+                      ? (document.evaluate(xp, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue)
+                      : document.querySelector(sel);
                     return el ? (el.textContent || '') : null;
                   })()`,
                   true
@@ -1190,7 +1411,7 @@ export class BrowserAutomationService {
       name: 'browser_select',
       description: 'Set the value of a <select> element.',
       schema: z.object({
-        selector: z.string().describe('CSS selector of the select element'),
+        selector: z.string().describe('CSS selector (or XPath prefixed with "xpath=") of the select element'),
         value: z.string().describe('Option value to set'),
       }),
       execute: async ({ selector, value }: { selector: string; value: string }) => {
@@ -1203,7 +1424,13 @@ export class BrowserAutomationService {
           await this.waitForSelector(target, selector, 5000);
           const selected = await target.executeJavaScript(
             `(() => {
-              const el = document.querySelector(${JSON.stringify(selector)});
+              const sel = ${JSON.stringify(selector)};
+              const s = String(sel ?? '').trim();
+              const isXpath = s.startsWith('xpath=') || s.startsWith('//') || s.startsWith('/') || s.startsWith('(');
+              const xp = s.startsWith('xpath=') ? s.slice(6) : s;
+              const el = isXpath
+                ? (document.evaluate(xp, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue)
+                : document.querySelector(sel);
               if (!el) throw new Error('Element not found');
               const tag = el.tagName?.toLowerCase?.();
               if (tag !== 'select') throw new Error('Element is not a <select>');

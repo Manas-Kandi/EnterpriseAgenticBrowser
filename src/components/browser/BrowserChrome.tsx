@@ -1,13 +1,15 @@
 import { useBrowserStore } from '@/lib/store';
-import { X, Plus, RotateCw, ArrowLeft, ArrowRight, Globe, MoreVertical, Terminal, History as HistoryIcon, Pin, Copy, Trash, RefreshCcw, ChevronRight, ChevronDown, LogIn, LogOut } from 'lucide-react';
+import { X, Plus, RotateCw, ArrowLeft, ArrowRight, Globe, MoreVertical, Terminal, History as HistoryIcon, Pin, Copy, Trash, RefreshCcw, ChevronRight, ChevronDown, LogIn, LogOut, Settings } from 'lucide-react';
 import { useMemo, useState, useEffect, useRef, useLayoutEffect } from 'react';
 import { cn, getFaviconUrl } from '@/lib/utils';
 import { Omnibox } from './Omnibox';
+import { SettingsModal } from '@/components/settings/SettingsModal';
 
 export function BrowserChrome() {
   const { tabs, activeTabId, addTab, removeTab, setActiveTab, updateTab, setAppMode, reorderTabs, reopenLastClosedTab, tabGroups, createOrMergeGroupFromDrag, toggleGroupCollapsed, renameGroup, setGroupColor, tabsLayout, setTabsLayout, saasModeEnabled, setSaasModeEnabled, setSidebarPanel, user, setUser } = useBrowserStore();
   const activeTab = tabs.find(t => t.id === activeTabId);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const tabsViewportRef = useRef<HTMLDivElement>(null);
   const [tabOverflow, setTabOverflow] = useState({ left: false, right: false });
@@ -19,12 +21,27 @@ export function BrowserChrome() {
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [draggedTabId, setDraggedTabId] = useState<string | null>(null);
 
-  const handleLogin = () => {
-    // Placeholder auth behavior (matches prior sidebar behavior)
-    setTimeout(() => {
-      setUser({ name: 'Demo User', email: 'user@example.com', avatar: undefined });
-    }, 2000);
-    setIsMenuOpen(false);
+  const handleLogin = async () => {
+    if (!window.identity?.login) return;
+    try {
+      const profile = await window.identity.login();
+      setUser(profile);
+    } catch (e) {
+      console.error('Login failed:', e);
+    } finally {
+      setIsMenuOpen(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await window.identity?.logout?.();
+    } catch (e) {
+      console.error('Logout failed:', e);
+    } finally {
+      setUser(null);
+      setIsMenuOpen(false);
+    }
   };
 
   const tabRefs = useRef(new Map<string, HTMLDivElement>());
@@ -189,6 +206,7 @@ export function BrowserChrome() {
 
 
   return (
+    <>
     <div className="flex flex-col bg-background relative z-10">
       {/* Unified Tab Bar - Chrome/Arc style */}
       <div 
@@ -583,11 +601,21 @@ export function BrowserChrome() {
               >
                 <HistoryIcon size={12} /> SaaS Mode: {saasModeEnabled ? 'On' : 'Off'}
               </button>
+
+              <button
+                onClick={() => {
+                  setIsMenuOpen(false);
+                  setIsSettingsOpen(true);
+                }}
+                className="w-full text-left px-3 py-1.5 text-xs hover:bg-secondary/50 flex items-center gap-2 text-foreground"
+              >
+                <Settings size={12} /> Settings
+              </button>
               <div className="h-px bg-border/30 my-1" />
 
               {user ? (
                 <button 
-                  onClick={() => { setUser(null); setIsMenuOpen(false); }}
+                  onClick={handleLogout}
                   className="w-full text-left px-3 py-1.5 text-xs hover:bg-secondary/50 flex items-center gap-2 text-foreground"
                 >
                   <LogOut size={12} /> Sign Out
@@ -657,5 +685,7 @@ export function BrowserChrome() {
         </div>
       )}
     </div>
+    <SettingsModal open={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
+    </>
   );
 }

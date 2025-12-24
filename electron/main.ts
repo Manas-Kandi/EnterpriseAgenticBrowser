@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain, webContents } from 'electron'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import crypto from 'node:crypto'
+import fs from 'node:fs/promises'
 import { v4 as uuidv4 } from 'uuid'
 import { vaultService } from './services/VaultService'
 import { agentService, AVAILABLE_MODELS } from './services/AgentService'
@@ -15,6 +16,7 @@ import { PlanMemory } from './services/PlanMemory'
 import { PolicyService } from './services/PolicyService'
 import { benchmarkService, BenchmarkResult } from './services/BenchmarkService'
 import { DummyAeroCoreDataSource, NewTabDashboardService } from './services/NewTabDashboardService'
+import { identityService } from './services/IdentityService'
 import './services/CodeReaderService'
 import './integrations/mock/MockJiraConnector'; // Initialize Mock Jira
 import './integrations/mock/MockConfluenceConnector'; // Initialize Mock Confluence
@@ -50,6 +52,8 @@ let win: BrowserWindow | null
 const newTabDashboardService = new NewTabDashboardService(new DummyAeroCoreDataSource());
 let newTabDashboardTimer: NodeJS.Timeout | null = null;
 
+let auditMaintenanceTimer: NodeJS.Timeout | null = null;
+
 type PendingApproval = {
   requestId: string;
   runId: string | null;
@@ -62,6 +66,41 @@ type PendingApproval = {
 
 const pendingApprovals = new Map<string, PendingApproval>();
 const APPROVAL_TIMEOUT_MS = 30_000;
+
+let chatHistoryKey: Buffer | null = null;
+
+async function loadOrGenerateChatHistoryKey() {
+  if (chatHistoryKey) return chatHistoryKey;
+  let keyHex = await vaultService.getSecret('chat_history_key');
+  if (!keyHex) {
+    keyHex = crypto.randomBytes(32).toString('hex');
+    await vaultService.setSecret('chat_history_key', keyHex);
+  }
+  chatHistoryKey = Buffer.from(keyHex, 'hex');
+  return chatHistoryKey;
+}
+
+async function encryptChatHistory(text: string): Promise<string> {
+  const key = await loadOrGenerateChatHistoryKey();
+  const iv = crypto.randomBytes(16);
+  const cipher = crypto.createCipheriv('aes-256-cbc', key, iv);
+  let encrypted = cipher.update(text);
+  encrypted = Buffer.concat([encrypted, cipher.final()]);
+  return iv.toString('hex') + ':' + encrypted.toString('hex');
+}
+
+async function decryptChatHistory(payload: string): Promise<string> {
+  const key = await loadOrGenerateChatHistoryKey();
+  const parts = String(payload ?? '').split(':');
+  const ivHex = parts.shift() ?? '';
+  const dataHex = parts.join(':');
+  const iv = Buffer.from(ivHex, 'hex');
+  const encryptedText = Buffer.from(dataHex, 'hex');
+  const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
+  let decrypted = decipher.update(encryptedText);
+  decrypted = Buffer.concat([decrypted, decipher.final()]);
+  return decrypted.toString();
+}
 
 function createWindow() {
   win = new BrowserWindow({
@@ -114,6 +153,48 @@ app.whenReady().then(() => {
   const policyService = new PolicyService(telemetryService, auditService);
   toolRegistry.setPolicyService(policyService);
 
+  policyService
+    .init({ remotePolicyUrl: process.env.POLICY_REMOTE_URL || undefined })
+    .catch(() => undefined);
+
+  ipcMain.handle('policy:status', async () => {
+    return policyService.getRemotePolicyStatus();
+  });
+
+  ipcMain.handle('policy:sync', async (_event, url?: string) => {
+    const targetUrl = typeof url === 'string' && url.trim() ? url.trim() : (process.env.POLICY_REMOTE_URL || '');
+    if (!targetUrl) return { success: false, error: 'No policy URL provided' };
+    try {
+      const bundle = await policyService.fetchRemotePolicies(targetUrl);
+      return { success: true, bundle };
+    } catch (e: any) {
+      return { success: false, error: String(e?.message ?? e) };
+    }
+  });
+
+  ipcMain.handle('policy:set-dev-override', async (_event, enabled: boolean, token?: string) => {
+    const ok = await policyService.setDeveloperOverride(Boolean(enabled), token);
+    return { success: ok };
+  });
+
+  ipcMain.handle('identity:get-session', async () => {
+    return await identityService.getSession();
+  });
+
+  ipcMain.handle('identity:login', async () => {
+    const profile = await identityService.loginWithPopup();
+    return profile;
+  });
+
+  ipcMain.handle('identity:logout', async () => {
+    await identityService.clearSession();
+    return { success: true };
+  });
+
+  ipcMain.handle('identity:get-access-token', async () => {
+    return await identityService.getAccessToken();
+  });
+
   // New Tab live dashboard (dummy data + scripted reasoning).
   // Intended to be swappable with real SaaS inputs later via DashboardDataSource.
   newTabDashboardService
@@ -140,6 +221,38 @@ app.whenReady().then(() => {
 
   ipcMain.handle('newtab:dashboard-snapshot', async () => {
     return newTabDashboardService.getSnapshot();
+  });
+
+  ipcMain.handle('chatHistory:get', async () => {
+    const filePath = path.join(app.getPath('userData'), 'chat_history.json.enc');
+    try {
+      const raw = await fs.readFile(filePath, 'utf8');
+      const json = await decryptChatHistory(raw);
+      const parsed = JSON.parse(json);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  });
+
+  ipcMain.handle('chatHistory:set', async (_event, messages: unknown) => {
+    const filePath = path.join(app.getPath('userData'), 'chat_history.json.enc');
+    const arr = Array.isArray(messages) ? messages : [];
+    const capped = arr.slice(-200);
+    const json = JSON.stringify(capped);
+    const enc = await encryptChatHistory(json);
+    await fs.writeFile(filePath, enc, 'utf8');
+    return { success: true };
+  });
+
+  ipcMain.handle('chatHistory:clear', async () => {
+    const filePath = path.join(app.getPath('userData'), 'chat_history.json.enc');
+    try {
+      await fs.unlink(filePath);
+    } catch {
+      // ignore
+    }
+    return { success: true };
   });
 
   ipcMain.on('agent:approval-response', (event, payload: any) => {
@@ -233,6 +346,45 @@ app.whenReady().then(() => {
       return { ...row, details };
     });
   });
+
+  ipcMain.handle('audit:verify-chain', async (_event, limit?: number) => {
+    const n = typeof limit === 'number' ? limit : undefined;
+    return auditService.verifyHashChain(n);
+  });
+
+  ipcMain.handle('audit:ship-now', async (_event, limit?: number) => {
+    const n = typeof limit === 'number' ? limit : 200;
+    return await auditService.shipPendingLogs(n);
+  });
+
+  ipcMain.handle('audit:rotate-now', async (_event, retentionDays?: number) => {
+    const n = typeof retentionDays === 'number' ? retentionDays : 30;
+    return await auditService.rotateLogs(n);
+  });
+
+  if (auditMaintenanceTimer) clearInterval(auditMaintenanceTimer);
+  const shipIntervalMs = (() => {
+    const raw = process.env.AUDIT_SHIP_INTERVAL_MS;
+    const n = raw ? Number(raw) : NaN;
+    if (Number.isFinite(n) && n > 5000) return n;
+    return 60_000;
+  })();
+  const retentionDays = (() => {
+    const raw = process.env.AUDIT_RETENTION_DAYS;
+    const n = raw ? Number(raw) : NaN;
+    if (Number.isFinite(n) && n > 0) return n;
+    return 30;
+  })();
+  auditMaintenanceTimer = setInterval(async () => {
+    try {
+      await auditService.shipPendingLogs(200);
+    } catch {
+    }
+    try {
+      await auditService.rotateLogs(retentionDays);
+    } catch {
+    }
+  }, shipIntervalMs);
 
   ipcMain.handle('agent:feedback', async (_event, payload: unknown) => {
     const p = payload as {
@@ -479,6 +631,15 @@ ipcMain.handle('agent:chat', async (event, message) => {
   // Agent model management handlers
   ipcMain.handle('agent:get-models', async () => {
     return AVAILABLE_MODELS;
+  });
+
+  ipcMain.handle('agent:get-llm-config', async () => {
+    return agentService.getLLMConfig();
+  });
+
+  ipcMain.handle('agent:set-llm-config', async (_event, cfg: any) => {
+    await agentService.setLLMConfig(cfg ?? {});
+    return { success: true };
   });
 
   ipcMain.handle('agent:get-current-model', async () => {

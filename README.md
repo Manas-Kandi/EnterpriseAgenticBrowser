@@ -1,99 +1,155 @@
-# Enterprise Agentic Browser (SuiteOS)
+# Enterprise Agentic Browser
 
-## Overview
-The **Enterprise Agentic Browser** is a white-label browser platform designed for multi-product SaaS vendors (e.g., Atlassian, Salesforce, Adobe). It functions as a unifying "Operating System" for a vendor's fragmented portfolio, transforming a collection of siloed apps into a cohesive, intelligent suite.
+An Electron-based agentic browser with:
 
-By sitting at the browser level, the application has native access to session contexts, auth tokens, and workflows, allowing AI agents to orchestrate complex multi-step tasks that would otherwise require manual context switching.
+- A local-first agent runtime (LangChain + tool registry)
+- Secure secrets via OS keychain (Keytar)
+- Session persistence (tabs, groups, chat history)
+- Enterprise-ready controls (policy sync, audit + SIEM export, IdP login)
 
-## Vision
-**The "Google Chrome" for Enterprise Suites.**
-Just as Chrome unifies Google's ecosystem (Docs, Drive, Gmail), this browser allows other enterprise vendors to ship a native integration layer to their customers. It solves the fragmentation problem where a vendor's acquired products (e.g., Jira, Confluence, Trello) struggle to talk to each other.
+This repo currently includes a "personal" build mode and a "mock enterprise" environment (Mock SaaS) used for deterministic testing.
 
-## Key Features
-- **Suite Unification:** A shared agentic layer that weaves together workflows across a specific vendor's distinct products.
-- **Vendor-Specific Context:** The agent is pre-trained on the specific domain knowledge and APIs of the vendor's suite.
-- **Local-First Intelligence:** Built on Electron, ensuring data privacy and local execution of sensitive workflows.
-- **Hybrid Automation Engine:** Utilizes robust public APIs for speed and falls back to DOM-based web automation (Playwright) for capabilities missing from APIs.
-- **Enterprise Security:** Secure credential storage, detailed audit logging, and granular permission scopes.
+## Architecture (high level)
 
-## Tech Stack
-- **Core:** Electron, React, TypeScript, Node.js
-- **Agent Framework:** LangChain, OpenAI GPT-4 / Anthropic Claude 3.5 Sonnet
-- **Automation:** Playwright (Headless/Headed), Composio (optional)
-- **State Management:** TanStack Query, Zustand
-- **Styling:** Tailwind CSS, shadcn/ui (Radix Primitives)
-- **Security:** keytar (System Keychain integration), SQLite (Encrypted Audit Logs)
+- **Renderer (React + Zustand)**
+  - UI shell (`src/`)
+  - Persisted non-sensitive state (tabs, groups, preferences)
+  - Settings UI for LLM provider config
+- **Main process (Electron + Node)**
+  - Agent runtime (`electron/services/AgentService.ts`)
+  - Tool execution + policy enforcement (`electron/services/ToolRegistry.ts`, `electron/services/PolicyService.ts`)
+  - Secure storage (`electron/services/VaultService.ts`)
+  - Encrypted auditing + SIEM shipper (`electron/services/AuditService.ts`)
+  - Session persistence (encrypted chat history file)
+  - Identity / OIDC PKCE login (`electron/services/IdentityService.ts`)
 
-## Getting Started
+## Key features
+
+### User-configurable LLM settings
+
+- Configure provider/base URL/model in-app (Settings modal)
+- API keys are stored in the system keychain (not in renderer storage)
+
+### Robust browser automation
+
+- `browser_observe` returns multiple selector candidates
+- XPath selectors supported (`xpath=...`)
+
+### Session persistence
+
+- Tabs, tab groups, history, preferences are persisted via Zustand
+- Chat history is stored encrypted on disk and restored on startup
+
+### Remote policy synchronization
+
+- Remote policy bundle can be fetched and cached locally
+- Domain allow/block lists and risk overrides
+- Developer override gated by keychain secret
+
+### Shared skill library (cloud-backed)
+
+- Storage abstraction for skill persistence
+- Optional cloud sync for skill sharing across users
+
+### Enterprise identity (OIDC)
+
+- Authorization Code Flow + PKCE via dedicated login window
+- Tokens stored in keychain
+
+### Auditing + SIEM export
+
+- Encrypted log storage in SQLite
+- Hash chain integrity
+- Optional encrypted HTTP shipper
+
+## Getting started
 
 ### Prerequisites
-- Node.js (v18+)
-- npm or yarn
-- Git
 
-### Installation
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/Manas-Kandi/EnterpriseAgenticBrowser.git
-   cd EnterpriseAgenticBrowser
-   ```
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
-3. Setup Environment Variables:
-   Copy `.env.example` to `.env` and add your API keys (OpenAI/Anthropic).
+- Node.js 18+
+- npm
 
-### Development
+### Install
+
+```bash
+npm install
+```
+
+### Run (dev)
+
 ```bash
 npm run dev
 ```
-This runs the Electron main process and the React renderer in development mode with hot reloading.
 
-## Agent Context Management
+### Mock SaaS (for E2E)
 
-The browser includes an intelligent context management system that optimizes long-running agent conversations.
+Mock SaaS runs on `http://localhost:3000`.
 
-### TOON Summaries
-Conversations are automatically compressed using the **TOON format** (Tree-Oriented Object Notation) to reduce token usage while preserving context:
-
-- **Adaptive Summarization**: After 30 messages, the oldest 15 are compressed into a structured summary
-- **Token Reduction**: Achieves 15-25% reduction in token footprint
-- **Schema Validation**: Summaries are validated with Zod to ensure consistency
-
-### Warm-Start Execution
-The agent learns from successful task executions and can replay them instantly:
-
-- **Skill Library**: Successful plans are saved with embeddings for similarity search
-- **Fast Lookup**: Similar tasks (≥80% similarity) skip the planning phase entirely
-- **Graceful Fallback**: Failed warm-starts automatically fall back to normal planning
-
-### Feature Flags
-Control these features via the `agentFeatureFlags` store:
-
-```typescript
-import { useAgentFeatureFlags } from '@/lib/agentFeatureFlags';
-
-const { useTOONSummary, useWarmStart, debugTOON } = useAgentFeatureFlags();
+```bash
+npm install
+npm run dev
 ```
 
-For detailed schema documentation, see [docs/toon-summary.md](docs/toon-summary.md).
+Run those commands inside `mock-saas/`.
+
+## Configuration
+
+### LLM settings
+
+In-app:
+
+- Open the menu (top right)
+- Settings
+- Configure provider/base URL/model
+- Paste API key (stored via Keytar)
+
+### Remote policy sync
+
+Optional env vars:
+
+- `POLICY_REMOTE_URL` (remote policy JSON)
+- `POLICY_DEV_OVERRIDE_SECRET` (seeds dev override token into keychain)
+
+### Cloud skill library
+
+Optional env vars:
+
+- `SKILL_CLOUD_BASE_URL`
+- `SKILL_CLOUD_API_KEY` (optional; otherwise Bearer token from OIDC)
+- `SKILL_EMBEDDING_MODE=local|openai`
+
+### OIDC identity (enterprise)
+
+Env vars:
+
+- `OIDC_ISSUER_URL`
+- `OIDC_CLIENT_ID`
+- `OIDC_REDIRECT_URI` (defaults to `enterprisebrowser://auth/callback`)
+- `OIDC_SCOPE` (defaults to `openid profile email`)
+
+### SIEM shipper
+
+Optional env vars:
+
+- `AUDIT_SHIPPER_URL`
+- `AUDIT_SHIPPER_API_KEY`
+- `AUDIT_SHIP_INTERVAL_MS`
+- `AUDIT_RETENTION_DAYS`
 
 ## Testing
 
 ```bash
-# Run all tests
-pnpm test
-
-# Unit tests only
-pnpm test:unit
-
-# E2E tests (requires app running)
-pnpm test:e2e
-
-# With coverage
-pnpm test:coverage
+npm run test:unit
+npm run test:e2e
 ```
 
-## License
-Proprietary - Internal Enterprise Use Only
+E2E tests expect:
+
+- App dev server on `http://localhost:5173`
+- Mock SaaS on `http://localhost:3000`
+
+## Docs
+
+- Design system: `design.md`
+- TOON summaries: `docs/toon-summary.md`
+- Architecture diagrams: `docs/design.md`
