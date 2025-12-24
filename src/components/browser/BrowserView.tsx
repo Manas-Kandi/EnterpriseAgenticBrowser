@@ -9,6 +9,12 @@ function WebViewInstance({ tab, active }: { tab: BrowserTab; active: boolean }) 
   const domReadyRef = useRef(false);
   const initialUrlRef = useRef(tab.url); // Track initial URL to prevent reload loops
   const lastNavigatedUrlRef = useRef(tab.url); // Track last URL we navigated to
+  const latestTabRef = useRef(tab);
+
+  // Keep a fresh reference to the tab state for event listeners
+  useEffect(() => {
+    latestTabRef.current = tab;
+  }, [tab]);
 
   // Check if this is a "New Tab" page
   const isNewTab = !tab.url || tab.url === 'about:blank' || tab.url === 'about:newtab';
@@ -24,10 +30,10 @@ function WebViewInstance({ tab, active }: { tab: BrowserTab; active: boolean }) 
         const currentWebviewUrl = el.getURL?.() || '';
         if (tab.url !== currentWebviewUrl) {
           lastNavigatedUrlRef.current = tab.url;
-          el.loadURL(tab.url);
+          el.loadURL(tab.url).catch(() => {});
         }
       } catch (e) {
-        // Webview not ready yet
+        // Ignore navigation errors
       }
     }
   }, [tab.url, isNewTab]);
@@ -80,9 +86,10 @@ function WebViewInstance({ tab, active }: { tab: BrowserTab; active: boolean }) 
     // Agent Registration Logic
     const register = () => {
       try {
+        const currentTab = latestTabRef.current;
         const webContentsId = el.getWebContentsId?.();
-        if (typeof webContentsId === 'number') {
-          window.browser?.registerWebview(tab.id, webContentsId);
+        if (typeof webContentsId === 'number' && currentTab) {
+          window.browser?.registerWebview(currentTab.id, webContentsId);
         }
       } catch {
         // Ignore
@@ -92,6 +99,9 @@ function WebViewInstance({ tab, active }: { tab: BrowserTab; active: boolean }) 
     el.addEventListener('dom-ready', register);
     el.addEventListener('dom-ready', () => {
       domReadyRef.current = true;
+      const currentTab = latestTabRef.current;
+      if (!currentTab) return;
+
       // Inject hyper-minimal scrollbar CSS
       el.insertCSS(`
         ::-webkit-scrollbar {
@@ -113,7 +123,7 @@ function WebViewInstance({ tab, active }: { tab: BrowserTab; active: boolean }) 
       // SaaS Mode: hide internal AeroCore sidebar to avoid duplicate navigation rails
       try {
         if (saasModeEnabled) {
-          const url = el.getURL?.() || tab.url || '';
+          const url = el.getURL?.() || currentTab.url || '';
           if (url.includes('/aerocore/')) {
             el.insertCSS(`
               [data-aerocore-sidebar] { display: none !important; }
@@ -127,16 +137,30 @@ function WebViewInstance({ tab, active }: { tab: BrowserTab; active: boolean }) 
     el.addEventListener('did-navigate', register); // Re-register on nav just in case
     register();
 
+    // Handle Load Failures
+    el.addEventListener('did-fail-load', (e: any) => {
+      // errorCode -3 is ERR_ABORTED, which happens on redirects or stop(). Ignore it.
+      if (e.errorCode !== -3) {
+        console.warn('Webview failed load:', e);
+      }
+      if (latestTabRef.current) {
+        updateTab(latestTabRef.current.id, { loading: false });
+      }
+    });
+
     // History State Logic
     const updateHistory = () => {
       try {
+        const currentTab = latestTabRef.current;
+        if (!currentTab) return;
+
         const url = el.getURL();
-        const title = el.getTitle() || tab.title || url;
+        const title = el.getTitle() || currentTab.title || url;
 
         // Update our tracking ref to prevent reload loops
         lastNavigatedUrlRef.current = url;
 
-        updateTab(tab.id, {
+        updateTab(currentTab.id, {
           canGoBack: el.canGoBack(),
           canGoForward: el.canGoForward(),
           url: url
@@ -154,15 +178,21 @@ function WebViewInstance({ tab, active }: { tab: BrowserTab; active: boolean }) 
 
     // Title update listener
     el.addEventListener('page-title-updated', (e: any) => {
-      updateTab(tab.id, { title: e.title });
+      if (latestTabRef.current) {
+        updateTab(latestTabRef.current.id, { title: e.title });
+      }
     });
 
     // Loading state listeners
     el.addEventListener('did-start-loading', () => {
-      updateTab(tab.id, { loading: true });
+      if (latestTabRef.current) {
+        updateTab(latestTabRef.current.id, { loading: true });
+      }
     });
     el.addEventListener('did-stop-loading', () => {
-      updateTab(tab.id, { loading: false });
+      if (latestTabRef.current) {
+        updateTab(latestTabRef.current.id, { loading: false });
+      }
     });
   };
 

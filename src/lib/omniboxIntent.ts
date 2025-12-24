@@ -156,7 +156,7 @@ export function detectOmniboxIntent(input: string): OmniboxIntent {
     type: 'search',
     confidence: 0.6,
     label: `Search: ${trimmed.slice(0, 40)}${trimmed.length > 40 ? '…' : ''}`,
-    value: `https://google.com/search?q=${encodeURIComponent(trimmed)}`,
+    value: `https://duckduckgo.com/?q=${encodeURIComponent(trimmed)}`,
     icon: 'search',
   };
 }

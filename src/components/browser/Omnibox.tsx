@@ -78,8 +78,8 @@ export function Omnibox({ className }: OmniboxProps) {
         type: 'search',
         icon: 'search',
         title: `Search for "${trimmed}"`,
-        subtitle: 'Google',
-        url: `https://google.com/search?q=${encodeURIComponent(trimmed)}`,
+        subtitle: 'DuckDuckGo',
+        url: `https://duckduckgo.com/?q=${encodeURIComponent(trimmed)}`,
         action: 'search',
       });
     }
@@ -100,7 +100,7 @@ export function Omnibox({ className }: OmniboxProps) {
     if (trimmed.length > 1) {
       const historyMatches = [
         { title: 'GitHub', url: 'https://github.com' },
-        { title: 'Google', url: 'https://google.com' },
+        { title: 'DuckDuckGo', url: 'https://duckduckgo.com' },
         { title: 'YouTube', url: 'https://youtube.com' },
       ].filter(h => 
         h.title.toLowerCase().includes(trimmed.toLowerCase()) ||

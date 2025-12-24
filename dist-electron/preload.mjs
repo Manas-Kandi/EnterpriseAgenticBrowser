@@ -28,10 +28,28 @@ electron.contextBridge.exposeInMainWorld("vault", {
 electron.contextBridge.exposeInMainWorld("audit", {
   getLogs: (limit) => electron.ipcRenderer.invoke("audit:get-logs", limit)
 });
+electron.contextBridge.exposeInMainWorld("chatHistory", {
+  get: () => electron.ipcRenderer.invoke("chatHistory:get"),
+  set: (messages) => electron.ipcRenderer.invoke("chatHistory:set", messages),
+  clear: () => electron.ipcRenderer.invoke("chatHistory:clear")
+});
+electron.contextBridge.exposeInMainWorld("policy", {
+  status: () => electron.ipcRenderer.invoke("policy:status"),
+  sync: (url) => electron.ipcRenderer.invoke("policy:sync", url),
+  setDevOverride: (enabled, token) => electron.ipcRenderer.invoke("policy:set-dev-override", enabled, token)
+});
+electron.contextBridge.exposeInMainWorld("identity", {
+  getSession: () => electron.ipcRenderer.invoke("identity:get-session"),
+  login: () => electron.ipcRenderer.invoke("identity:login"),
+  logout: () => electron.ipcRenderer.invoke("identity:logout"),
+  getAccessToken: () => electron.ipcRenderer.invoke("identity:get-access-token")
+});
 electron.contextBridge.exposeInMainWorld("agent", {
   chat: (message) => electron.ipcRenderer.invoke("agent:chat", message),
   resetConversation: () => electron.ipcRenderer.invoke("agent:reset-conversation"),
   getModels: () => electron.ipcRenderer.invoke("agent:get-models"),
+  getLlmConfig: () => electron.ipcRenderer.invoke("agent:get-llm-config"),
+  setLlmConfig: (cfg) => electron.ipcRenderer.invoke("agent:set-llm-config", cfg),
   getCurrentModel: () => electron.ipcRenderer.invoke("agent:get-current-model"),
   setModel: (modelId) => electron.ipcRenderer.invoke("agent:set-model", modelId),
   setMode: (mode) => electron.ipcRenderer.invoke("agent:set-mode", mode),

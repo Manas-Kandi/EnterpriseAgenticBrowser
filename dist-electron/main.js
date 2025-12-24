@@ -2,16 +2,16 @@ var __defProp = Object.defineProperty;
 var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
 var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
 var _a2;
-import { app, webContents, BrowserWindow, ipcMain } from "electron";
+import { app, BrowserWindow, webContents, ipcMain } from "electron";
 import { URL as URL$2, fileURLToPath } from "node:url";
 import path$2 from "node:path";
 import crypto$2, { randomFillSync, randomUUID } from "node:crypto";
+import fs$1 from "node:fs/promises";
 import keytar from "keytar";
 import require$$0 from "fs";
 import require$$1 from "path";
 import require$$2 from "os";
 import crypto$3 from "crypto";
-import fs$1 from "node:fs/promises";
 import { AsyncLocalStorage } from "node:async_hooks";
 import Database from "better-sqlite3";
 import fs$2 from "node:fs";
@@ -41962,6 +41962,12 @@ class AgentRunContext {
     __publicField(this, "storage", new AsyncLocalStorage());
   }
   run(store, fn) {
+    if (!store.loop) {
+      store.loop = {
+        urlCounts: /* @__PURE__ */ new Map(),
+        toolSigCounts: /* @__PURE__ */ new Map()
+      };
+    }
     return this.storage.run(store, fn);
   }
   getRunId() {
@@ -41980,7 +41986,48 @@ class AgentRunContext {
     const store = this.storage.getStore();
     if (store) {
       store.browserContext = context;
+      const url = typeof (context == null ? void 0 : context.url) === "string" ? context.url : void 0;
+      if (url) this.recordUrlVisit(url);
     }
+  }
+  recordUrlVisit(url) {
+    const store = this.storage.getStore();
+    if (!(store == null ? void 0 : store.loop)) return;
+    const key = String(url);
+    const next = (store.loop.urlCounts.get(key) ?? 0) + 1;
+    store.loop.urlCounts.set(key, next);
+    if (next > 3) {
+      store.loop.alert = { kind: "url", key, count: next };
+    }
+  }
+  recordToolCall(toolName, args) {
+    const store = this.storage.getStore();
+    if (!(store == null ? void 0 : store.loop)) return;
+    const argsJson = (() => {
+      try {
+        return JSON.stringify(args ?? null);
+      } catch {
+        return "[unserializable_args]";
+      }
+    })();
+    const argsHash = crypto$2.createHash("sha256").update(argsJson).digest("hex");
+    const sig = `${toolName}:${argsHash}`;
+    const next = (store.loop.toolSigCounts.get(sig) ?? 0) + 1;
+    store.loop.toolSigCounts.set(sig, next);
+    if (next > 3) {
+      store.loop.alert = { kind: "tool", key: sig, count: next };
+    }
+    if (toolName === "browser_navigate" && typeof (args == null ? void 0 : args.url) === "string") {
+      this.recordUrlVisit(args.url);
+    }
+  }
+  consumeLoopAlert() {
+    var _a3;
+    const store = this.storage.getStore();
+    if (!((_a3 = store == null ? void 0 : store.loop) == null ? void 0 : _a3.alert)) return null;
+    const v = store.loop.alert;
+    store.loop.alert = void 0;
+    return v;
   }
   getObserveOnly() {
     var _a3;
@@ -42068,15 +42115,41 @@ class TelemetryService {
   }
 }
 const telemetryService = new TelemetryService();
+class HttpLogShipper {
+  constructor(url, apiKey) {
+    __publicField(this, "url");
+    __publicField(this, "apiKey");
+    this.url = url;
+    this.apiKey = apiKey;
+  }
+  async ship(payload) {
+    const headers = {
+      "Content-Type": "application/json"
+    };
+    if (this.apiKey) headers["Authorization"] = `Bearer ${this.apiKey}`;
+    const res = await fetch(this.url, {
+      method: "POST",
+      headers,
+      body: payload
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`Audit ship failed: ${res.status} ${text}`);
+    }
+  }
+}
 class AuditService {
   constructor() {
     __publicField(this, "db");
     __publicField(this, "encryptionKey", null);
+    __publicField(this, "shipperKey", null);
+    __publicField(this, "ready");
+    __publicField(this, "shipper", null);
     __publicField(this, "DB_FILENAME", "audit_logs.db");
     const userDataPath = app.getPath("userData");
     const dbPath = require$$1.join(userDataPath, this.DB_FILENAME);
     this.db = new Database(dbPath);
-    this.init();
+    this.ready = this.init();
   }
   async init() {
     this.db.exec(`
@@ -42086,10 +42159,36 @@ class AuditService {
         actor TEXT NOT NULL,
         action TEXT NOT NULL,
         details TEXT,
-        status TEXT NOT NULL
+        status TEXT NOT NULL,
+        prev_hash TEXT,
+        hash TEXT,
+        shipped_at TEXT
       )
     `);
+    this.ensureColumn("prev_hash", "TEXT");
+    this.ensureColumn("hash", "TEXT");
+    this.ensureColumn("shipped_at", "TEXT");
     await this.loadOrGenerateKey();
+    await this.loadOrGenerateShipperKey();
+    this.backfillHashChain();
+    this.configureFromEnv();
+  }
+  ensureColumn(name, type) {
+    try {
+      const cols = this.db.prepare("PRAGMA table_info(audit_logs)").all();
+      const exists = cols.some((c) => c && String(c.name) === name);
+      if (!exists) {
+        this.db.exec(`ALTER TABLE audit_logs ADD COLUMN ${name} ${type}`);
+      }
+    } catch {
+    }
+  }
+  configureFromEnv() {
+    const url = process.env.AUDIT_SHIPPER_URL;
+    if (typeof url === "string" && url.trim()) {
+      const apiKey = typeof process.env.AUDIT_SHIPPER_API_KEY === "string" ? process.env.AUDIT_SHIPPER_API_KEY.trim() : void 0;
+      this.shipper = new HttpLogShipper(url.trim(), apiKey && apiKey.length > 0 ? apiKey : void 0);
+    }
   }
   async loadOrGenerateKey() {
     let keyHex = await vaultService.getSecret("audit_db_key");
@@ -42099,6 +42198,56 @@ class AuditService {
     }
     this.encryptionKey = Buffer.from(keyHex, "hex");
   }
+  async loadOrGenerateShipperKey() {
+    let keyHex = await vaultService.getSecret("audit_shipper_key");
+    if (!keyHex) {
+      keyHex = crypto$3.randomBytes(32).toString("hex");
+      await vaultService.setSecret("audit_shipper_key", keyHex);
+    }
+    this.shipperKey = Buffer.from(keyHex, "hex");
+  }
+  computeHash(prevHash, row) {
+    const h = crypto$3.createHash("sha256");
+    h.update(prevHash);
+    h.update("|");
+    h.update(row.id);
+    h.update("|");
+    h.update(row.timestamp);
+    h.update("|");
+    h.update(row.actor);
+    h.update("|");
+    h.update(row.action);
+    h.update("|");
+    h.update(row.details);
+    h.update("|");
+    h.update(row.status);
+    return h.digest("hex");
+  }
+  backfillHashChain() {
+    try {
+      const rows = this.db.prepare("SELECT rowid, id, timestamp, actor, action, details, status, prev_hash, hash FROM audit_logs ORDER BY rowid ASC").all();
+      let prev = "";
+      for (const r of rows) {
+        const existing = typeof r.hash === "string" && r.hash.length > 0 ? r.hash : null;
+        if (existing) {
+          prev = existing;
+          continue;
+        }
+        const prevHash = prev;
+        const nextHash = this.computeHash(prevHash, {
+          id: r.id,
+          timestamp: r.timestamp,
+          actor: String(r.actor),
+          action: String(r.action),
+          details: String(r.details ?? ""),
+          status: String(r.status)
+        });
+        this.db.prepare("UPDATE audit_logs SET prev_hash = ?, hash = ? WHERE id = ?").run(prevHash || null, nextHash, r.id);
+        prev = nextHash;
+      }
+    } catch {
+    }
+  }
   encrypt(text) {
     if (!this.encryptionKey) return text;
     const iv = crypto$3.randomBytes(16);
@@ -42106,6 +42255,14 @@ class AuditService {
     let encrypted = cipher.update(text);
     encrypted = Buffer.concat([encrypted, cipher.final()]);
     return iv.toString("hex") + ":" + encrypted.toString("hex");
+  }
+  encryptForShipping(text) {
+    if (!this.shipperKey) return text;
+    const iv = crypto$3.randomBytes(12);
+    const cipher = crypto$3.createCipheriv("aes-256-gcm", this.shipperKey, iv);
+    const enc = Buffer.concat([cipher.update(text, "utf8"), cipher.final()]);
+    const tag = cipher.getAuthTag();
+    return iv.toString("hex") + ":" + tag.toString("hex") + ":" + enc.toString("hex");
   }
   decrypt(text) {
     if (!this.encryptionKey) return text;
@@ -42123,16 +42280,27 @@ class AuditService {
     }
   }
   async log(entry) {
+    await this.ready;
     if (!this.encryptionKey) await this.loadOrGenerateKey();
     const id = v4$1();
     const timestamp = (/* @__PURE__ */ new Date()).toISOString();
     const detailsStr = JSON.stringify(entry.details);
     const encryptedDetails = this.encrypt(detailsStr);
+    const last = this.db.prepare("SELECT hash FROM audit_logs ORDER BY rowid DESC LIMIT 1").get();
+    const prevHash = typeof (last == null ? void 0 : last.hash) === "string" ? last.hash : "";
+    const rowHash = this.computeHash(prevHash || "", {
+      id,
+      timestamp,
+      actor: entry.actor,
+      action: entry.action,
+      details: encryptedDetails,
+      status: entry.status
+    });
     const stmt = this.db.prepare(`
-      INSERT INTO audit_logs (id, timestamp, actor, action, details, status)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO audit_logs (id, timestamp, actor, action, details, status, prev_hash, hash, shipped_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)
     `);
-    stmt.run(id, timestamp, entry.actor, entry.action, encryptedDetails, entry.status);
+    stmt.run(id, timestamp, entry.actor, entry.action, encryptedDetails, entry.status, prevHash || null, rowHash);
     return id;
   }
   getLogs(limit2 = 100) {
@@ -42141,8 +42309,85 @@ class AuditService {
     return rows.map((row) => ({
       ...row,
       details: this.decrypt(row.details)
-      // Attempt to decrypt on read
     }));
+  }
+  verifyHashChain(limit2) {
+    try {
+      const sql = typeof limit2 === "number" ? "SELECT rowid, id, timestamp, actor, action, details, status, prev_hash, hash FROM audit_logs ORDER BY rowid ASC LIMIT ?" : "SELECT rowid, id, timestamp, actor, action, details, status, prev_hash, hash FROM audit_logs ORDER BY rowid ASC";
+      const rows = typeof limit2 === "number" ? this.db.prepare(sql).all(limit2) : this.db.prepare(sql).all();
+      let prev = "";
+      for (const r of rows) {
+        const expectedPrev = prev;
+        const storedPrev = typeof r.prev_hash === "string" ? r.prev_hash : "";
+        if ((storedPrev || "") !== (expectedPrev || "")) {
+          return { ok: false, brokenAtId: r.id };
+        }
+        const computed = this.computeHash(expectedPrev || "", {
+          id: r.id,
+          timestamp: r.timestamp,
+          actor: String(r.actor),
+          action: String(r.action),
+          details: String(r.details ?? ""),
+          status: String(r.status)
+        });
+        if (String(r.hash ?? "") !== computed) {
+          return { ok: false, brokenAtId: r.id };
+        }
+        prev = computed;
+      }
+      return { ok: true };
+    } catch {
+      return { ok: false };
+    }
+  }
+  async shipPendingLogs(limit2 = 200) {
+    await this.ready;
+    if (!this.shipper) return { shipped: 0 };
+    const rows = this.db.prepare(
+      "SELECT rowid, id, timestamp, actor, action, details, status, prev_hash, hash FROM audit_logs WHERE shipped_at IS NULL ORDER BY rowid ASC LIMIT ?"
+    ).all(limit2);
+    if (!rows.length) return { shipped: 0 };
+    const batch = rows.map((r) => {
+      const decrypted = this.decrypt(String(r.details ?? ""));
+      const parsed = (() => {
+        try {
+          return JSON.parse(decrypted);
+        } catch {
+          return decrypted;
+        }
+      })();
+      return {
+        id: r.id,
+        timestamp: r.timestamp,
+        actor: r.actor,
+        action: r.action,
+        status: r.status,
+        details: parsed,
+        prev_hash: r.prev_hash ?? null,
+        hash: r.hash ?? null
+      };
+    });
+    const payload = {
+      sentAt: (/* @__PURE__ */ new Date()).toISOString(),
+      count: batch.length,
+      payload: this.encryptForShipping(JSON.stringify(batch))
+    };
+    await this.shipper.ship(JSON.stringify(payload));
+    const shippedAt = (/* @__PURE__ */ new Date()).toISOString();
+    const update = this.db.prepare("UPDATE audit_logs SET shipped_at = ? WHERE id = ?");
+    const tx = this.db.transaction((ids) => {
+      for (const id of ids) update.run(shippedAt, id);
+    });
+    tx(rows.map((r) => r.id));
+    return { shipped: rows.length };
+  }
+  async rotateLogs(retentionDays = 30) {
+    await this.ready;
+    const days = typeof retentionDays === "number" && Number.isFinite(retentionDays) ? retentionDays : 30;
+    const cutoff = new Date(Date.now() - Math.max(1, days) * 24 * 60 * 60 * 1e3).toISOString();
+    const stmt = this.db.prepare("DELETE FROM audit_logs WHERE timestamp < ? AND shipped_at IS NOT NULL");
+    const info = stmt.run(cutoff);
+    return { deleted: Number(info.changes) || 0 };
   }
 }
 const auditService = new AuditService();
@@ -42152,6 +42397,14 @@ var PolicyDecision = /* @__PURE__ */ ((PolicyDecision2) => {
   PolicyDecision2["NEEDS_APPROVAL"] = "needs_approval";
   return PolicyDecision2;
 })(PolicyDecision || {});
+const RemotePolicySchema = object({
+  version: number().int().min(1).default(1),
+  fetchedAt: number().int().optional(),
+  domainAllowlist: array(string()).optional(),
+  domainBlocklist: array(string()).optional(),
+  domainRiskOverrides: record(string(), _enum(["low", "medium", "high"])).optional(),
+  toolRiskOverrides: record(string(), _enum(["low", "medium", "high"])).optional()
+});
 const TOOL_RISK_LEVELS = {
   // Browser observation tools - LOW risk
   "browser_observe": 0,
@@ -42229,11 +42482,195 @@ class PolicyService {
     __publicField(this, "rules", []);
     __publicField(this, "telemetryService");
     __publicField(this, "auditService");
+    __publicField(this, "remotePolicy", null);
+    __publicField(this, "remotePolicyUrl", null);
+    __publicField(this, "cacheFilePath");
+    __publicField(this, "developerOverrideEnabled", false);
     this.telemetryService = telemetryService2;
     this.auditService = auditService2;
+    this.cacheFilePath = path$2.join(app.getPath("userData"), "remote_policy_cache.json");
     this.initializeDefaultRules();
   }
+  async init(opts) {
+    if (opts == null ? void 0 : opts.remotePolicyUrl) {
+      this.remotePolicyUrl = opts.remotePolicyUrl;
+    }
+    const envSecret = process.env.POLICY_DEV_OVERRIDE_SECRET;
+    if (typeof envSecret === "string" && envSecret.trim()) {
+      const existing = await vaultService.getSecret("policy_dev_override_secret").catch(() => null);
+      if (!existing) {
+        await vaultService.setSecret("policy_dev_override_secret", envSecret.trim()).catch(() => void 0);
+      }
+    }
+    await this.loadCachedRemotePolicy();
+    if (this.remotePolicyUrl) {
+      await this.fetchRemotePolicies(this.remotePolicyUrl).catch(() => void 0);
+    }
+  }
+  toRiskLevel(v) {
+    if (v === "low") return 0;
+    if (v === "medium") return 1;
+    return 2;
+  }
+  applyRemotePolicy(bundle) {
+    this.remotePolicy = bundle;
+    const domainOverrides = bundle.domainRiskOverrides ?? {};
+    for (const [domain, lvl] of Object.entries(domainOverrides)) {
+      this.updateDomainRiskLevel(domain, this.toRiskLevel(lvl));
+    }
+    const toolOverrides = bundle.toolRiskOverrides ?? {};
+    for (const [tool2, lvl] of Object.entries(toolOverrides)) {
+      this.updateToolRiskLevel(tool2, this.toRiskLevel(lvl));
+    }
+  }
+  async loadCachedRemotePolicy() {
+    try {
+      const raw = await fs$1.readFile(this.cacheFilePath, "utf8");
+      const parsed = JSON.parse(raw);
+      const validated = RemotePolicySchema.parse(parsed);
+      const bundle = {
+        version: validated.version,
+        fetchedAt: typeof validated.fetchedAt === "number" ? validated.fetchedAt : Date.now(),
+        domainAllowlist: validated.domainAllowlist,
+        domainBlocklist: validated.domainBlocklist,
+        domainRiskOverrides: validated.domainRiskOverrides,
+        toolRiskOverrides: validated.toolRiskOverrides
+      };
+      this.applyRemotePolicy(bundle);
+    } catch {
+    }
+  }
+  async saveCachedRemotePolicy(bundle) {
+    try {
+      await fs$1.writeFile(this.cacheFilePath, JSON.stringify(bundle, null, 2), "utf8");
+    } catch {
+    }
+  }
+  async fetchRemotePolicies(url) {
+    this.remotePolicyUrl = url;
+    const res = await fetch(url, { method: "GET" });
+    if (!res.ok) {
+      throw new Error(`Failed to fetch remote policy: HTTP ${res.status}`);
+    }
+    const json = await res.json();
+    const validated = RemotePolicySchema.parse(json);
+    const bundle = {
+      version: validated.version,
+      fetchedAt: Date.now(),
+      domainAllowlist: validated.domainAllowlist,
+      domainBlocklist: validated.domainBlocklist,
+      domainRiskOverrides: validated.domainRiskOverrides,
+      toolRiskOverrides: validated.toolRiskOverrides
+    };
+    this.applyRemotePolicy(bundle);
+    await this.saveCachedRemotePolicy(bundle);
+    return bundle;
+  }
+  getRemotePolicyStatus() {
+    const rp = this.remotePolicy;
+    return {
+      configuredUrl: this.remotePolicyUrl,
+      hasRemotePolicy: Boolean(rp),
+      version: (rp == null ? void 0 : rp.version) ?? null,
+      fetchedAt: (rp == null ? void 0 : rp.fetchedAt) ?? null,
+      allowlistCount: Array.isArray(rp == null ? void 0 : rp.domainAllowlist) ? rp.domainAllowlist.length : 0,
+      blocklistCount: Array.isArray(rp == null ? void 0 : rp.domainBlocklist) ? rp.domainBlocklist.length : 0,
+      developerOverrideEnabled: this.developerOverrideEnabled
+    };
+  }
+  async setDeveloperOverride(enabled, token) {
+    if (!enabled) {
+      this.developerOverrideEnabled = false;
+      return true;
+    }
+    const secret = await vaultService.getSecret("policy_dev_override_secret");
+    if (!secret) return false;
+    if (typeof token !== "string") return false;
+    if (token !== secret) return false;
+    this.developerOverrideEnabled = true;
+    return true;
+  }
   initializeDefaultRules() {
+    this.addRule({
+      name: "developer-override",
+      description: "Developer override",
+      priority: 2e3,
+      match: () => this.developerOverrideEnabled,
+      evaluate: () => ({
+        decision: "allow",
+        riskLevel: 0,
+        reason: "Developer override enabled",
+        matchedRule: "developer-override"
+      })
+    });
+    this.addRule({
+      name: "remote-domain-blocklist",
+      description: "Blocklisted domains",
+      priority: 1100,
+      match: (ctx) => {
+        var _a3;
+        const list = (_a3 = this.remotePolicy) == null ? void 0 : _a3.domainBlocklist;
+        if (!ctx.domain) return false;
+        if (!Array.isArray(list) || list.length === 0) return false;
+        return list.includes(ctx.domain);
+      },
+      evaluate: (ctx) => ({
+        decision: "deny",
+        riskLevel: 2,
+        reason: `Domain blocked by remote policy: ${ctx.domain}`,
+        matchedRule: "remote-domain-blocklist"
+      })
+    });
+    this.addRule({
+      name: "remote-domain-allowlist",
+      description: "Allowlisted domains",
+      priority: 1090,
+      match: (ctx) => {
+        var _a3;
+        const list = (_a3 = this.remotePolicy) == null ? void 0 : _a3.domainAllowlist;
+        if (!ctx.domain) return false;
+        if (!Array.isArray(list) || list.length === 0) return false;
+        return !list.includes(ctx.domain);
+      },
+      evaluate: (ctx) => {
+        const tool2 = ctx.toolName;
+        const lowRiskTools = [
+          "browser_observe",
+          "browser_wait_for_selector",
+          "browser_wait_for_url",
+          "browser_wait_for_text",
+          "browser_wait_for_text_in",
+          "browser_get_text",
+          "browser_find_text",
+          "browser_screenshot",
+          "code_read_file",
+          "code_list_files",
+          "code_search"
+        ];
+        if (lowRiskTools.includes(tool2)) {
+          return {
+            decision: "allow",
+            riskLevel: 0,
+            reason: `Domain not allowlisted but tool is read-only: ${ctx.domain}`,
+            matchedRule: "remote-domain-allowlist"
+          };
+        }
+        if (tool2 === "browser_navigate") {
+          return {
+            decision: "deny",
+            riskLevel: 2,
+            reason: `Navigation denied to non-allowlisted domain: ${ctx.domain}`,
+            matchedRule: "remote-domain-allowlist"
+          };
+        }
+        return {
+          decision: "deny",
+          riskLevel: 2,
+          reason: `Tool denied on non-allowlisted domain: ${ctx.domain}`,
+          matchedRule: "remote-domain-allowlist"
+        };
+      }
+    });
     this.addRule({
       name: "observe-only-enforcement",
       description: "Block state-modifying tools in observe-only mode",
@@ -42591,6 +43028,10 @@ class ToolRegistry {
   async invokeToolInternal(tool2, arg) {
     var _a3;
     const runId = agentRunContext.getRunId() ?? void 0;
+    try {
+      agentRunContext.recordToolCall(tool2.name, arg);
+    } catch {
+    }
     const argsJson = (() => {
       try {
         return JSON.stringify(arg ?? null);
@@ -42969,47 +43410,954 @@ class ToolRegistry {
 }
 const toolRegistry = new ToolRegistry();
 dotenv.config();
-class TaskKnowledgeService {
+function base64UrlEncode(buf) {
+  return buf.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+function sha256Base64Url(input) {
+  return base64UrlEncode(crypto$2.createHash("sha256").update(input).digest());
+}
+function randomBase64Url(bytes) {
+  return base64UrlEncode(crypto$2.randomBytes(bytes));
+}
+function parseUrlParams(u) {
+  const url = new URL(u);
+  const params = Object.fromEntries(url.searchParams.entries());
+  return { url, params };
+}
+function toExpiresAt(expiresIn) {
+  if (typeof expiresIn !== "number" || !Number.isFinite(expiresIn) || expiresIn <= 0) return void 0;
+  return Date.now() + expiresIn * 1e3;
+}
+class IdentityService {
   constructor() {
-    __publicField(this, "storageFile");
-    __publicField(this, "skills", []);
-    this.storageFile = path$2.resolve(process.cwd(), "skill_library.json");
-    this.load();
+    __publicField(this, "discovery", null);
+  }
+  get issuerUrl() {
+    const v = process.env.OIDC_ISSUER_URL;
+    if (typeof v !== "string" || !v.trim()) throw new Error("OIDC_ISSUER_URL not configured");
+    return v.trim().replace(/\/$/, "");
+  }
+  get clientId() {
+    const v = process.env.OIDC_CLIENT_ID;
+    if (typeof v !== "string" || !v.trim()) throw new Error("OIDC_CLIENT_ID not configured");
+    return v.trim();
+  }
+  get redirectUri() {
+    const v = process.env.OIDC_REDIRECT_URI;
+    if (typeof v !== "string" || !v.trim()) return "enterprisebrowser://auth/callback";
+    return v.trim();
+  }
+  get scope() {
+    const v = process.env.OIDC_SCOPE;
+    return typeof v === "string" && v.trim() ? v.trim() : "openid profile email";
+  }
+  async getDiscovery() {
+    if (this.discovery) return this.discovery;
+    const url = `${this.issuerUrl}/.well-known/openid-configuration`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`OIDC discovery failed: ${res.status}`);
+    const json = await res.json();
+    const discovery = {
+      authorization_endpoint: String(json.authorization_endpoint || ""),
+      token_endpoint: String(json.token_endpoint || ""),
+      userinfo_endpoint: typeof json.userinfo_endpoint === "string" ? json.userinfo_endpoint : void 0
+    };
+    if (!discovery.authorization_endpoint || !discovery.token_endpoint) {
+      throw new Error("OIDC discovery missing endpoints");
+    }
+    this.discovery = discovery;
+    return discovery;
+  }
+  async exchangeCodeForToken(code2, codeVerifier) {
+    const d = await this.getDiscovery();
+    const body = new URLSearchParams({
+      grant_type: "authorization_code",
+      code: code2,
+      redirect_uri: this.redirectUri,
+      client_id: this.clientId,
+      code_verifier: codeVerifier
+    });
+    const res = await fetch(d.token_endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`OIDC token exchange failed: ${res.status} ${text}`);
+    }
+    return await res.json();
+  }
+  async refreshToken(refreshToken) {
+    const d = await this.getDiscovery();
+    const body = new URLSearchParams({
+      grant_type: "refresh_token",
+      refresh_token: refreshToken,
+      client_id: this.clientId
+    });
+    const res = await fetch(d.token_endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`OIDC refresh failed: ${res.status} ${text}`);
+    }
+    return await res.json();
+  }
+  async fetchUserInfo(accessToken) {
+    const d = await this.getDiscovery();
+    if (!d.userinfo_endpoint) return null;
+    const res = await fetch(d.userinfo_endpoint, {
+      headers: { Authorization: `Bearer ${accessToken}` }
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  }
+  toProfile(ui) {
+    const name = ((ui == null ? void 0 : ui.name) || (ui == null ? void 0 : ui.preferred_username) || "User").toString();
+    const email2 = ((ui == null ? void 0 : ui.email) || "unknown@example.com").toString();
+    const avatar = (ui == null ? void 0 : ui.picture) ? String(ui.picture) : void 0;
+    if (name && email2) return { name, email: email2, avatar };
+    return { name: "User", email: "unknown@example.com", avatar };
+  }
+  async storeSession(session) {
+    await vaultService.setSecret("oidc:access_token", session.accessToken);
+    if (session.refreshToken) await vaultService.setSecret("oidc:refresh_token", session.refreshToken);
+    if (session.idToken) await vaultService.setSecret("oidc:id_token", session.idToken);
+    if (typeof session.expiresAt === "number") await vaultService.setSecret("oidc:expires_at", String(session.expiresAt));
+    await vaultService.setSecret("oidc:user_profile", JSON.stringify(session.profile));
+  }
+  async clearSession() {
+    await vaultService.deleteSecret("oidc:access_token").catch(() => void 0);
+    await vaultService.deleteSecret("oidc:refresh_token").catch(() => void 0);
+    await vaultService.deleteSecret("oidc:id_token").catch(() => void 0);
+    await vaultService.deleteSecret("oidc:expires_at").catch(() => void 0);
+    await vaultService.deleteSecret("oidc:user_profile").catch(() => void 0);
+  }
+  async getSession() {
+    const profileRaw = await vaultService.getSecret("oidc:user_profile").catch(() => null);
+    const access = await vaultService.getSecret("oidc:access_token").catch(() => null);
+    if (!profileRaw || !access) return null;
+    const expiresRaw = await vaultService.getSecret("oidc:expires_at").catch(() => null);
+    const expiresAt = expiresRaw ? Number(expiresRaw) : void 0;
+    if (expiresAt && Date.now() > expiresAt - 3e4) {
+      const rt = await vaultService.getSecret("oidc:refresh_token").catch(() => null);
+      if (rt) {
+        const refreshed = await this.refreshToken(rt);
+        const newAccess = refreshed.access_token;
+        const newRt = refreshed.refresh_token || rt;
+        const newExp = toExpiresAt(refreshed.expires_in);
+        const ui = await this.fetchUserInfo(newAccess).catch(() => null);
+        const profile = this.toProfile(ui);
+        await this.storeSession({
+          profile,
+          accessToken: newAccess,
+          refreshToken: newRt,
+          expiresAt: newExp,
+          idToken: refreshed.id_token
+        });
+        return profile;
+      }
+      return null;
+    }
+    try {
+      const parsed = JSON.parse(profileRaw);
+      const name = String((parsed == null ? void 0 : parsed.name) ?? "User");
+      const email2 = String((parsed == null ? void 0 : parsed.email) ?? "unknown@example.com");
+      const avatar = (parsed == null ? void 0 : parsed.avatar) ? String(parsed.avatar) : void 0;
+      return { name, email: email2, avatar };
+    } catch {
+      return null;
+    }
+  }
+  async loginWithPopup() {
+    const d = await this.getDiscovery();
+    const state = randomBase64Url(16);
+    const nonce = randomBase64Url(16);
+    const codeVerifier = randomBase64Url(32);
+    const codeChallenge = sha256Base64Url(codeVerifier);
+    const authUrl = new URL(d.authorization_endpoint);
+    authUrl.searchParams.set("response_type", "code");
+    authUrl.searchParams.set("client_id", this.clientId);
+    authUrl.searchParams.set("redirect_uri", this.redirectUri);
+    authUrl.searchParams.set("scope", this.scope);
+    authUrl.searchParams.set("state", state);
+    authUrl.searchParams.set("nonce", nonce);
+    authUrl.searchParams.set("code_challenge", codeChallenge);
+    authUrl.searchParams.set("code_challenge_method", "S256");
+    const loginWin = new BrowserWindow({
+      width: 960,
+      height: 720,
+      show: true,
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+        sandbox: true
+      }
+    });
+    const cleanupSessionHooks = (() => {
+      const ses = loginWin.webContents.session;
+      const filter = { urls: ["*://*/*", "enterprisebrowser://*/*"] };
+      const onBeforeRequest = (_details, cb) => {
+        cb({});
+      };
+      ses.webRequest.onBeforeRequest(filter, onBeforeRequest);
+      return () => {
+        var _a3, _b;
+        try {
+          (_b = (_a3 = ses.webRequest).off) == null ? void 0 : _b.call(_a3, "onBeforeRequest", onBeforeRequest);
+        } catch {
+        }
+      };
+    })();
+    const waitForRedirect = new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error("Login timed out")), 18e4);
+      const finish = (u) => {
+        clearTimeout(timeout);
+        resolve(u);
+      };
+      const fail = (err) => {
+        clearTimeout(timeout);
+        reject(err);
+      };
+      const handleUrl = (u) => {
+        if (!u) return;
+        const ru = this.redirectUri;
+        if (u.startsWith(ru)) {
+          finish(u);
+        }
+      };
+      loginWin.webContents.on("will-redirect", (_e, url) => handleUrl(url));
+      loginWin.webContents.on("will-navigate", (_e, url) => handleUrl(url));
+      loginWin.webContents.on("did-fail-load", (_e, _code, desc) => {
+        if (String(desc || "").toLowerCase().includes("aborted")) return;
+      });
+      loginWin.on("closed", () => fail(new Error("Login window closed")));
+    });
+    await loginWin.loadURL(authUrl.toString());
+    let finalUrl;
+    try {
+      finalUrl = await waitForRedirect;
+    } finally {
+      cleanupSessionHooks();
+      if (!loginWin.isDestroyed()) loginWin.close();
+    }
+    const { params } = parseUrlParams(finalUrl);
+    if (params.state !== state) throw new Error("OIDC state mismatch");
+    const code2 = params.code;
+    if (typeof code2 !== "string" || !code2) throw new Error("OIDC missing code");
+    const tokens = await this.exchangeCodeForToken(code2, codeVerifier);
+    const accessToken = tokens.access_token;
+    const expiresAt = toExpiresAt(tokens.expires_in);
+    const ui = await this.fetchUserInfo(accessToken).catch(() => null);
+    const profile = this.toProfile(ui);
+    await this.storeSession({
+      profile,
+      accessToken,
+      refreshToken: tokens.refresh_token,
+      expiresAt,
+      idToken: tokens.id_token
+    });
+    return profile;
+  }
+  async getAccessToken() {
+    const access = await vaultService.getSecret("oidc:access_token").catch(() => null);
+    if (!access) return null;
+    const expiresRaw = await vaultService.getSecret("oidc:expires_at").catch(() => null);
+    const expiresAt = expiresRaw ? Number(expiresRaw) : void 0;
+    if (expiresAt && Date.now() > expiresAt - 3e4) {
+      const rt = await vaultService.getSecret("oidc:refresh_token").catch(() => null);
+      if (!rt) return null;
+      const refreshed = await this.refreshToken(rt);
+      const newAccess = refreshed.access_token;
+      const newRt = refreshed.refresh_token || rt;
+      const newExp = toExpiresAt(refreshed.expires_in);
+      const profile = await this.getSession();
+      if (profile) {
+        await this.storeSession({
+          profile,
+          accessToken: newAccess,
+          refreshToken: newRt,
+          expiresAt: newExp,
+          idToken: refreshed.id_token
+        });
+      } else {
+        await vaultService.setSecret("oidc:access_token", newAccess);
+        await vaultService.setSecret("oidc:refresh_token", newRt);
+        if (typeof newExp === "number") await vaultService.setSecret("oidc:expires_at", String(newExp));
+      }
+      return newAccess;
+    }
+    return access;
+  }
+}
+const identityService = new IdentityService();
+dotenv.config();
+class WebAPIService {
+  constructor() {
     this.registerTools();
   }
-  load() {
-    var _a3;
+  getCloudBaseUrl() {
+    const v = process.env.SKILL_CLOUD_BASE_URL;
+    if (typeof v !== "string") return null;
+    const s = v.trim();
+    return s ? s : null;
+  }
+  async getCloudHeaders() {
+    const headers = {
+      "Content-Type": "application/json"
+    };
+    const key = process.env.SKILL_CLOUD_API_KEY;
+    if (typeof key === "string" && key.trim()) {
+      headers["Authorization"] = `Bearer ${key.trim()}`;
+      return headers;
+    }
+    const token = await identityService.getAccessToken().catch(() => null);
+    if (typeof token === "string" && token.trim()) {
+      headers["Authorization"] = `Bearer ${token.trim()}`;
+    }
+    return headers;
+  }
+  async getSkillLibrary() {
+    const base = this.getCloudBaseUrl();
+    if (!base) return [];
+    const url = `${base.replace(/\/$/, "")}/skills`;
+    const response = await fetch(url, { method: "GET", headers: await this.getCloudHeaders() });
+    if (!response.ok) {
+      throw new Error(`Skill library fetch failed: ${response.status} ${response.statusText}`);
+    }
+    const data = await response.json();
+    return Array.isArray(data) ? data : Array.isArray(data == null ? void 0 : data.skills) ? data.skills : [];
+  }
+  async upsertSkillLibrary(skills) {
+    const base = this.getCloudBaseUrl();
+    if (!base) return;
+    const url = `${base.replace(/\/$/, "")}/skills/bulk`;
+    const response = await fetch(url, {
+      method: "POST",
+      headers: await this.getCloudHeaders(),
+      body: JSON.stringify({ skills: Array.isArray(skills) ? skills : [] })
+    });
+    if (!response.ok) {
+      throw new Error(`Skill library upsert failed: ${response.status} ${response.statusText}`);
+    }
+  }
+  registerTools() {
+    const githubSearchSchema = object({
+      query: string().describe('Search query (e.g., "langchain", "react")'),
+      type: _enum(["repositories", "users", "code"]).optional().describe("Type of search (default: repositories)"),
+      sort: _enum(["stars", "forks", "updated", "best-match"]).optional().describe("Sort by (default: best-match)"),
+      limit: number().optional().describe("Number of results to return (default: 5, max: 10)")
+    });
+    const githubSearchTool = {
+      name: "api_github_search",
+      description: "Search GitHub repositories, users, or code via API. MUCH faster than browser automation. Returns repo names, stars, descriptions. Use this instead of navigating to github.com for search tasks.",
+      schema: githubSearchSchema,
+      execute: async ({ query, type = "repositories", sort = "stars", limit: limit2 = 5 }) => {
+        try {
+          const searchType = type === "repositories" ? "repositories" : type === "users" ? "users" : "code";
+          const url = `https://api.github.com/search/${searchType}?q=${encodeURIComponent(query)}&sort=${sort}&order=desc&per_page=${Math.min(limit2, 10)}`;
+          const response = await fetch(url, {
+            headers: {
+              "Accept": "application/vnd.github.v3+json",
+              "User-Agent": "EnterpriseBrowser/1.0"
+            }
+          });
+          if (!response.ok) {
+            if (response.status === 403) {
+              return JSON.stringify({ error: "Rate limited. Try browser_navigate to https://github.com/search?q=" + encodeURIComponent(query) + "&type=repositories&s=stars&o=desc instead." });
+            }
+            return JSON.stringify({ error: `GitHub API error: ${response.status} ${response.statusText}` });
+          }
+          const data = await response.json();
+          if (searchType === "repositories") {
+            const results = data.items.slice(0, limit2).map((repo) => {
+              var _a3;
+              return {
+                name: repo.full_name,
+                stars: repo.stargazers_count,
+                forks: repo.forks_count,
+                description: ((_a3 = repo.description) == null ? void 0 : _a3.slice(0, 100)) || "",
+                url: repo.html_url,
+                language: repo.language
+              };
+            });
+            return JSON.stringify({ total_count: data.total_count, results }, null, 2);
+          } else if (searchType === "users") {
+            const results = data.items.slice(0, limit2).map((user) => ({
+              login: user.login,
+              url: user.html_url,
+              type: user.type
+            }));
+            return JSON.stringify({ total_count: data.total_count, results }, null, 2);
+          }
+          return JSON.stringify({ total_count: data.total_count, items: data.items.slice(0, limit2) }, null, 2);
+        } catch (e) {
+          return JSON.stringify({ error: `Failed to search GitHub: ${e.message}` });
+        }
+      }
+    };
+    const githubGetRepoSchema = object({
+      owner: string().describe('Repository owner/organization (e.g., "vercel")'),
+      repo: string().describe('Repository name (e.g., "next.js")')
+    });
+    const githubGetRepoTool = {
+      name: "api_github_get_repo",
+      description: "Get GitHub repository metadata via API (description, stars, forks, topics, language, homepage, updated time). Use this for summarizing a specific repo.",
+      schema: githubGetRepoSchema,
+      execute: async ({ owner, repo }) => {
+        var _a3;
+        try {
+          const url = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
+          const response = await fetch(url, {
+            headers: {
+              "Accept": "application/vnd.github.v3+json",
+              "User-Agent": "EnterpriseBrowser/1.0"
+            }
+          });
+          if (!response.ok) {
+            if (response.status === 403) {
+              return JSON.stringify({ error: "Rate limited. Try browser_navigate to https://github.com/" + owner + "/" + repo + " instead." });
+            }
+            return JSON.stringify({ error: `GitHub API error: ${response.status} ${response.statusText}` });
+          }
+          const data = await response.json();
+          const result = {
+            full_name: data.full_name,
+            url: data.html_url,
+            description: data.description || "",
+            homepage: data.homepage || "",
+            topics: Array.isArray(data.topics) ? data.topics : [],
+            language: data.language || "",
+            stars: data.stargazers_count,
+            forks: data.forks_count,
+            open_issues: data.open_issues_count,
+            archived: Boolean(data.archived),
+            updated_at: data.updated_at,
+            created_at: data.created_at,
+            license: ((_a3 = data.license) == null ? void 0 : _a3.spdx_id) || ""
+          };
+          return JSON.stringify(result, null, 2);
+        } catch (e) {
+          return JSON.stringify({ error: `Failed to fetch repo: ${e.message}` });
+        }
+      }
+    };
+    const githubGetReadmeSchema = object({
+      owner: string().describe('Repository owner/organization (e.g., "vercel")'),
+      repo: string().describe('Repository name (e.g., "next.js")'),
+      ref: string().optional().describe('Optional git ref/branch/tag (e.g., "main")'),
+      maxChars: number().optional().describe("Maximum characters of README to return (default: 6000)")
+    });
+    const githubGetReadmeTool = {
+      name: "api_github_get_readme",
+      description: "Fetch a GitHub repository README via API and return its text (truncated). Use this to summarize what a project does without relying on browser scraping.",
+      schema: githubGetReadmeSchema,
+      execute: async ({ owner, repo, ref, maxChars = 6e3 }) => {
+        try {
+          const qs = ref ? `?ref=${encodeURIComponent(ref)}` : "";
+          const url = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/readme${qs}`;
+          const response = await fetch(url, {
+            headers: {
+              "Accept": "application/vnd.github.v3+json",
+              "User-Agent": "EnterpriseBrowser/1.0"
+            }
+          });
+          if (!response.ok) {
+            if (response.status === 404) {
+              return JSON.stringify({ error: "README not found for this repository." });
+            }
+            if (response.status === 403) {
+              return JSON.stringify({ error: "Rate limited. Try browser_navigate to https://github.com/" + owner + "/" + repo + " instead." });
+            }
+            return JSON.stringify({ error: `GitHub API error: ${response.status} ${response.statusText}` });
+          }
+          const data = await response.json();
+          const contentBase64 = typeof (data == null ? void 0 : data.content) === "string" ? data.content : "";
+          const encoding = typeof (data == null ? void 0 : data.encoding) === "string" ? data.encoding : "";
+          if (!contentBase64 || encoding !== "base64") {
+            return JSON.stringify({ error: "Unexpected README response format from GitHub API." });
+          }
+          const text = Buffer.from(contentBase64, "base64").toString("utf8");
+          const truncated = text.slice(0, Math.max(0, Math.min(maxChars, 2e4)));
+          return JSON.stringify(
+            {
+              owner,
+              repo,
+              name: (data == null ? void 0 : data.name) || "README",
+              path: (data == null ? void 0 : data.path) || "",
+              html_url: (data == null ? void 0 : data.html_url) || "",
+              text: truncated,
+              truncated: truncated.length < text.length
+            },
+            null,
+            2
+          );
+        } catch (e) {
+          return JSON.stringify({ error: `Failed to fetch README: ${e.message}` });
+        }
+      }
+    };
+    const hnTopStoriesSchema = object({
+      limit: number().optional().describe("Number of stories to return (default: 5, max: 30)")
+    });
+    const hnTopStoriesTool = {
+      name: "api_hackernews_top",
+      description: "Get top stories from Hacker News via API. Returns titles, scores, URLs. Use this instead of navigating to news.ycombinator.com.",
+      schema: hnTopStoriesSchema,
+      execute: async ({ limit: limit2 = 5 }) => {
+        try {
+          const idsResponse = await fetch("https://hacker-news.firebaseio.com/v0/topstories.json");
+          if (!idsResponse.ok) {
+            return JSON.stringify({ error: "Failed to fetch HN top stories" });
+          }
+          const ids = await idsResponse.json();
+          const storyLimit = Math.min(limit2, 30);
+          const stories = await Promise.all(
+            ids.slice(0, storyLimit).map(async (id) => {
+              const storyResponse = await fetch(`https://hacker-news.firebaseio.com/v0/item/${id}.json`);
+              return storyResponse.json();
+            })
+          );
+          const results = stories.map((story) => ({
+            title: story.title,
+            score: story.score,
+            url: story.url || `https://news.ycombinator.com/item?id=${story.id}`,
+            by: story.by,
+            comments: story.descendants || 0
+          }));
+          return JSON.stringify({ results }, null, 2);
+        } catch (e) {
+          return JSON.stringify({ error: `Failed to fetch HN stories: ${e.message}` });
+        }
+      }
+    };
+    const wikiTodaySchema = object({});
+    const wikiTodayTool = {
+      name: "api_wikipedia_featured",
+      description: "Get today's featured article from Wikipedia via API. Use this instead of navigating to wikipedia.org.",
+      schema: wikiTodaySchema,
+      execute: async () => {
+        var _a3, _b, _c, _d, _e, _f;
+        try {
+          const today = /* @__PURE__ */ new Date();
+          const year = today.getFullYear();
+          const month = String(today.getMonth() + 1).padStart(2, "0");
+          const day = String(today.getDate()).padStart(2, "0");
+          const url = `https://api.wikimedia.org/feed/v1/wikipedia/en/featured/${year}/${month}/${day}`;
+          const response = await fetch(url, {
+            headers: {
+              "User-Agent": "EnterpriseBrowser/1.0"
+            }
+          });
+          if (!response.ok) {
+            return JSON.stringify({ error: `Wikipedia API error: ${response.status}` });
+          }
+          const data = await response.json();
+          const result = {
+            title: ((_a3 = data.tfa) == null ? void 0 : _a3.title) || "Unknown",
+            extract: ((_c = (_b = data.tfa) == null ? void 0 : _b.extract) == null ? void 0 : _c.slice(0, 500)) || "",
+            url: ((_f = (_e = (_d = data.tfa) == null ? void 0 : _d.content_urls) == null ? void 0 : _e.desktop) == null ? void 0 : _f.page) || ""
+          };
+          return JSON.stringify(result, null, 2);
+        } catch (e) {
+          return JSON.stringify({ error: `Failed to fetch Wikipedia featured: ${e.message}` });
+        }
+      }
+    };
+    const httpGetSchema = object({
+      url: string().describe("URL to fetch"),
+      headers: record(string(), string()).optional().describe("Optional headers")
+    });
+    const httpGetTool = {
+      name: "api_http_get",
+      description: "Make a simple HTTP GET request to any URL. Returns the response body. Useful for APIs that return JSON.",
+      schema: httpGetSchema,
+      execute: async ({ url, headers = {} }) => {
+        try {
+          const response = await fetch(url, {
+            headers: {
+              "User-Agent": "EnterpriseBrowser/1.0",
+              ...headers
+            }
+          });
+          if (!response.ok) {
+            return JSON.stringify({ error: `HTTP ${response.status}: ${response.statusText}` });
+          }
+          const contentType = response.headers.get("content-type") || "";
+          if (contentType.includes("application/json")) {
+            const data = await response.json();
+            return JSON.stringify(data, null, 2);
+          }
+          const text = await response.text();
+          return text.slice(0, 5e3);
+        } catch (e) {
+          return JSON.stringify({ error: `HTTP request failed: ${e.message}` });
+        }
+      }
+    };
+    const cryptoPriceSchema = object({
+      coin: string().describe('Cryptocurrency name or symbol (e.g., "bitcoin", "ethereum", "btc", "eth")')
+    });
+    const cryptoPriceTool = {
+      name: "api_crypto_price",
+      description: "Get current cryptocurrency price via CoinGecko API. Use this instead of navigating to coinmarketcap.com or other crypto sites. Returns price in USD, 24h change, and market cap.",
+      schema: cryptoPriceSchema,
+      execute: async ({ coin }) => {
+        var _a3;
+        try {
+          const coinMap = {
+            "btc": "bitcoin",
+            "eth": "ethereum",
+            "sol": "solana",
+            "doge": "dogecoin",
+            "xrp": "ripple",
+            "ada": "cardano",
+            "dot": "polkadot",
+            "matic": "polygon",
+            "link": "chainlink",
+            "avax": "avalanche-2"
+          };
+          const coinId = coinMap[coin.toLowerCase()] || coin.toLowerCase();
+          const url = `https://api.coingecko.com/api/v3/simple/price?ids=${coinId}&vs_currencies=usd&include_24hr_change=true&include_market_cap=true`;
+          const response = await fetch(url, {
+            headers: {
+              "User-Agent": "EnterpriseBrowser/1.0"
+            }
+          });
+          if (!response.ok) {
+            return JSON.stringify({ error: `CoinGecko API error: ${response.status}` });
+          }
+          const data = await response.json();
+          if (!data[coinId]) {
+            return JSON.stringify({ error: `Coin '${coin}' not found. Try the full name (e.g., 'bitcoin' instead of 'btc').` });
+          }
+          const coinData = data[coinId];
+          const result = {
+            coin: coinId,
+            price_usd: coinData.usd,
+            change_24h_percent: ((_a3 = coinData.usd_24h_change) == null ? void 0 : _a3.toFixed(2)) + "%",
+            market_cap_usd: coinData.usd_market_cap
+          };
+          return JSON.stringify(result, null, 2);
+        } catch (e) {
+          return JSON.stringify({ error: `Failed to fetch crypto price: ${e.message}` });
+        }
+      }
+    };
+    const weatherSchema = object({
+      latitude: number().describe("Latitude of the location"),
+      longitude: number().describe("Longitude of the location"),
+      city: string().optional().describe("City name for display purposes")
+    });
+    const weatherTool = {
+      name: "api_weather",
+      description: "Get current weather for a specific latitude and longitude via Open-Meteo API. Use lookup_city_coordinates first if you only have a city name.",
+      schema: weatherSchema,
+      execute: async ({ latitude, longitude, city }) => {
+        try {
+          const url = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,rain,showers,snowfall,weather_code,wind_speed_10m&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch`;
+          const response = await fetch(url);
+          if (!response.ok) return JSON.stringify({ error: `Weather API error: ${response.status}` });
+          const data = await response.json();
+          const current = data.current;
+          return JSON.stringify({
+            location: city || `${latitude}, ${longitude}`,
+            temperature: `${current.temperature_2m}°F`,
+            feels_like: `${current.apparent_temperature}°F`,
+            humidity: `${current.relative_humidity_2m}%`,
+            wind_speed: `${current.wind_speed_10m} mph`,
+            condition_code: current.weather_code,
+            units: data.current_units
+          }, null, 2);
+        } catch (e) {
+          return JSON.stringify({ error: `Failed to fetch weather: ${e.message}` });
+        }
+      }
+    };
+    const webSearchSchema = object({
+      query: string().describe("Search query")
+    });
+    const webSearchTool = {
+      name: "api_web_search",
+      description: "Search the web via DuckDuckGo Instant Answer API. Returns a summary, related topics, and links. Useful for quick facts or finding official websites.",
+      schema: webSearchSchema,
+      execute: async ({ query }) => {
+        var _a3;
+        try {
+          const url = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
+          const response = await fetch(url, {
+            headers: { "User-Agent": "EnterpriseBrowser/1.0" }
+          });
+          if (!response.ok) return JSON.stringify({ error: `Search API error: ${response.status}` });
+          const data = await response.json();
+          return JSON.stringify({
+            abstract: data.AbstractText,
+            source: data.AbstractSource,
+            url: data.AbstractURL,
+            related: (_a3 = data.RelatedTopics) == null ? void 0 : _a3.slice(0, 5).map((topic) => ({
+              text: topic.Text,
+              url: topic.FirstURL
+            }))
+          }, null, 2);
+        } catch (e) {
+          return JSON.stringify({ error: `Failed to search: ${e.message}` });
+        }
+      }
+    };
+    const cityCoordSchema = object({
+      city: string().describe('City name (e.g., "San Francisco", "Tokyo")')
+    });
+    const cityCoordTool = {
+      name: "lookup_city_coordinates",
+      description: "Get latitude and longitude for a city name. Use this before calling api_weather.",
+      schema: cityCoordSchema,
+      execute: async ({ city }) => {
+        try {
+          const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=en&format=json`;
+          const response = await fetch(url);
+          if (!response.ok) return JSON.stringify({ error: `Geocoding API error: ${response.status}` });
+          const data = await response.json();
+          if (!data.results || data.results.length === 0) {
+            return JSON.stringify({ error: `City '${city}' not found.` });
+          }
+          const result = data.results[0];
+          return JSON.stringify({
+            city: result.name,
+            country: result.country,
+            latitude: result.latitude,
+            longitude: result.longitude,
+            timezone: result.timezone
+          }, null, 2);
+        } catch (e) {
+          return JSON.stringify({ error: `Failed to lookup city: ${e.message}` });
+        }
+      }
+    };
+    toolRegistry.register(githubSearchTool);
+    toolRegistry.register(githubGetRepoTool);
+    toolRegistry.register(githubGetReadmeTool);
+    toolRegistry.register(hnTopStoriesTool);
+    toolRegistry.register(wikiTodayTool);
+    toolRegistry.register(httpGetTool);
+    toolRegistry.register(cryptoPriceTool);
+    toolRegistry.register(weatherTool);
+    toolRegistry.register(webSearchTool);
+    toolRegistry.register(cityCoordTool);
+  }
+}
+const webAPIService = new WebAPIService();
+dotenv.config();
+const SkillSchema = object({
+  id: string(),
+  name: string(),
+  description: string(),
+  domain: string(),
+  fingerprint: string().optional(),
+  steps: array(
+    object({
+      action: _enum(["navigate", "click", "type", "select", "wait"]),
+      url: string().optional(),
+      selector: string().optional(),
+      value: string().optional(),
+      text: string().optional()
+    })
+  ),
+  currentVersion: number(),
+  embedding: array(number()).optional(),
+  stats: object({
+    successes: number(),
+    failures: number(),
+    partials: number().optional(),
+    lastUsed: number(),
+    lastOutcomeAt: number().optional(),
+    lastOutcomeSuccess: boolean().optional()
+  }),
+  feedback: array(
+    object({
+      ts: number(),
+      label: _enum(["worked", "failed", "partial"]),
+      version: number().optional(),
+      runId: string().optional(),
+      domain: string().optional(),
+      fingerprint: string().optional()
+    })
+  ).optional(),
+  versions: array(
+    object({
+      version: number(),
+      steps: array(
+        object({
+          action: _enum(["navigate", "click", "type", "select", "wait"]),
+          url: string().optional(),
+          selector: string().optional(),
+          value: string().optional(),
+          text: string().optional()
+        })
+      ),
+      createdAt: number()
+    })
+  ),
+  tags: array(string())
+});
+class LocalJsonSkillStorage {
+  constructor(storageFile) {
+    __publicField(this, "storageFile");
+    this.storageFile = storageFile;
+  }
+  getAllSync() {
     try {
       const data = fs$2.readFileSync(this.storageFile, "utf8");
-      this.skills = JSON.parse(data);
+      const parsed = JSON.parse(data);
+      if (!Array.isArray(parsed)) return [];
+      const out = [];
+      for (const s of parsed) {
+        try {
+          out.push(SkillSchema.parse(s));
+        } catch {
+        }
+      }
+      return out;
+    } catch {
+      return [];
+    }
+  }
+  async getAll() {
+    try {
+      const data = await fs$2.promises.readFile(this.storageFile, "utf8");
+      const parsed = JSON.parse(data);
+      if (!Array.isArray(parsed)) return [];
+      const out = [];
+      for (const s of parsed) {
+        try {
+          out.push(SkillSchema.parse(s));
+        } catch {
+        }
+      }
+      return out;
     } catch {
       try {
         const legacyPath = path$2.resolve(process.cwd(), "task_knowledge.json");
         if (fs$2.existsSync(legacyPath)) {
-          const legacyData = fs$2.readFileSync(legacyPath, "utf8");
+          const legacyData = await fs$2.promises.readFile(legacyPath, "utf8");
           const plans = JSON.parse(legacyData);
-          this.skills = plans.map((p) => {
+          const migrated = Array.isArray(plans) ? plans.map((p) => {
             const createdAt = Date.now();
             return {
               id: v4$1(),
-              name: p.goal.toLowerCase().replace(/\s+/g, "_").slice(0, 50),
-              description: p.goal,
+              name: String((p == null ? void 0 : p.goal) ?? "").toLowerCase().replace(/\s+/g, "_").slice(0, 50),
+              description: String((p == null ? void 0 : p.goal) ?? ""),
               domain: "unknown",
-              steps: p.steps,
+              steps: Array.isArray(p == null ? void 0 : p.steps) ? p.steps : [],
               currentVersion: 1,
-              stats: { successes: 0, failures: 0, lastUsed: createdAt },
-              versions: [{ version: 1, steps: p.steps, createdAt }],
-              tags: p.trigger_keywords || []
+              stats: { successes: 0, failures: 0, partials: 0, lastUsed: createdAt },
+              feedback: [],
+              versions: [{ version: 1, steps: Array.isArray(p == null ? void 0 : p.steps) ? p.steps : [], createdAt }],
+              tags: Array.isArray(p == null ? void 0 : p.trigger_keywords) ? p.trigger_keywords : []
             };
-          });
-          this.save();
-        } else {
-          this.skills = [];
+          }) : [];
+          await this.putAll(migrated);
+          return migrated;
         }
       } catch {
-        this.skills = [];
+      }
+      return [];
+    }
+  }
+  async putAll(skills) {
+    await fs$2.promises.writeFile(this.storageFile, JSON.stringify(skills, null, 2));
+  }
+}
+class CloudSkillStorage {
+  async getAll() {
+    const rows = await webAPIService.getSkillLibrary();
+    const out = [];
+    for (const s of rows) {
+      try {
+        out.push(SkillSchema.parse(s));
+      } catch {
       }
     }
+    return out;
+  }
+  async putAll(skills) {
+    await webAPIService.upsertSkillLibrary(skills);
+  }
+}
+class TaskKnowledgeService {
+  constructor() {
+    __publicField(this, "storageFile");
+    __publicField(this, "localStorage");
+    __publicField(this, "cloudStorage");
+    __publicField(this, "skills", []);
+    __publicField(this, "cloudPushTimer", null);
+    var _a3, _b;
+    this.storageFile = path$2.resolve(process.cwd(), "skill_library.json");
+    this.localStorage = new LocalJsonSkillStorage(this.storageFile);
+    this.cloudStorage = process.env.SKILL_CLOUD_BASE_URL ? new CloudSkillStorage() : null;
+    const maybeSync = (_b = (_a3 = this.localStorage).getAllSync) == null ? void 0 : _b.call(_a3);
+    if (Array.isArray(maybeSync) && maybeSync.length > 0) {
+      this.skills = maybeSync;
+    }
+    this.init().catch(() => void 0);
+    this.registerTools();
+  }
+  async init() {
+    const local = await this.localStorage.getAll().catch(() => []);
+    this.skills = local;
+    await this.normalizeLoadedSkills();
+    if (this.cloudStorage) {
+      const remote = await this.cloudStorage.getAll().catch(() => []);
+      const merged = await this.mergeSkillLibraries(local, remote);
+      this.skills = merged;
+      await this.save();
+    }
+  }
+  skillIdentity(s) {
+    const fp = s.fingerprint ?? "";
+    return `${s.domain}::${fp}::${s.name}`;
+  }
+  async mergeSkillLibraries(local, remote) {
+    const byKey = /* @__PURE__ */ new Map();
+    for (const s of remote) byKey.set(this.skillIdentity(s), s);
+    for (const s of local) {
+      const k = this.skillIdentity(s);
+      const existing = byKey.get(k);
+      if (!existing) {
+        byKey.set(k, s);
+        continue;
+      }
+      const existingVer = typeof existing.currentVersion === "number" ? existing.currentVersion : 1;
+      const localVer = typeof s.currentVersion === "number" ? s.currentVersion : 1;
+      const base = existingVer >= localVer ? existing : s;
+      const other = base === existing ? s : existing;
+      const merged = {
+        ...base,
+        id: s.id || existing.id,
+        tags: Array.from(/* @__PURE__ */ new Set([...base.tags || [], ...other.tags || []])),
+        versions: Array.isArray(base.versions) && base.versions.length >= (other.versions || []).length ? base.versions : other.versions,
+        steps: base.steps && base.steps.length > 0 ? base.steps : other.steps,
+        stats: s.stats || existing.stats,
+        feedback: Array.isArray(s.feedback) ? s.feedback : Array.isArray(existing.feedback) ? existing.feedback : [],
+        embedding: Array.isArray(base.embedding) && base.embedding.length > 0 ? base.embedding : other.embedding
+      };
+      byKey.set(k, merged);
+    }
+    const out = Array.from(byKey.values());
+    for (const s of out) {
+      if (!Array.isArray(s.embedding) || s.embedding.length === 0) {
+        s.embedding = await this.computeSkillEmbedding(this.buildSkillText(s));
+      }
+    }
+    if (this.cloudStorage) {
+      this.cloudStorage.putAll(out).catch(() => void 0);
+    }
+    return out;
+  }
+  async normalizeLoadedSkills() {
+    var _a3;
     for (const s of this.skills) {
       const v = Array.isArray(s == null ? void 0 : s.versions) ? s.versions : [];
       if (typeof s.currentVersion !== "number") {
@@ -43017,7 +44365,7 @@ class TaskKnowledgeService {
         s.currentVersion = latest;
       }
       if (!s.stats || typeof s.stats !== "object") {
-        s.stats = { successes: 0, failures: 0, lastUsed: Date.now() };
+        s.stats = { successes: 0, failures: 0, partials: 0, lastUsed: Date.now() };
       }
       if (typeof s.stats.successes !== "number") s.stats.successes = 0;
       if (typeof s.stats.failures !== "number") s.stats.failures = 0;
@@ -43026,14 +44374,7 @@ class TaskKnowledgeService {
       if (!Array.isArray(s.tags)) s.tags = [];
       if (!Array.isArray(s.feedback)) s.feedback = [];
       if (!Array.isArray(s.embedding) || s.embedding.length === 0) {
-        if (!process.env.OPENAI_API_KEY) {
-          s.embedding = this.computeEmbedding(this.buildSkillText(s));
-        } else {
-          this.computeApiEmbedding(this.buildSkillText(s)).then((emb) => {
-            s.embedding = emb;
-            this.save();
-          });
-        }
+        s.embedding = await this.computeSkillEmbedding(this.buildSkillText(s));
       }
     }
   }
@@ -43115,7 +44456,7 @@ class TaskKnowledgeService {
    */
   async findNearest(query, threshold = 0.8) {
     if (this.skills.length === 0) return null;
-    const queryEmbedding = await this.computeApiEmbedding(query);
+    const queryEmbedding = await this.computeSkillEmbedding(query);
     const queryTokens = this.tokenize(query);
     let bestMatch = null;
     for (const skill of this.skills) {
@@ -43165,10 +44506,27 @@ class TaskKnowledgeService {
   }
   async save() {
     try {
-      await fs$2.promises.writeFile(this.storageFile, JSON.stringify(this.skills, null, 2));
+      await this.localStorage.putAll(this.skills);
+      this.scheduleCloudPush();
     } catch (err) {
       console.error("Failed to save skill library:", err);
     }
+  }
+  scheduleCloudPush() {
+    if (!this.cloudStorage) return;
+    if (this.cloudPushTimer) clearTimeout(this.cloudPushTimer);
+    this.cloudPushTimer = setTimeout(() => {
+      var _a3;
+      this.cloudPushTimer = null;
+      (_a3 = this.cloudStorage) == null ? void 0 : _a3.putAll(this.skills).catch(() => void 0);
+    }, 750);
+  }
+  async computeSkillEmbedding(text) {
+    const mode = String(process.env.SKILL_EMBEDDING_MODE ?? "local").toLowerCase();
+    if (mode === "openai") {
+      return await this.computeApiEmbedding(text);
+    }
+    return this.computeEmbedding(text);
   }
   findSkill(query, domain, fingerprint) {
     const q = query.toLowerCase();
@@ -44565,6 +45923,12 @@ const _AgentService = class _AgentService {
     __publicField(this, "onToken");
     __publicField(this, "conversationHistory", []);
     __publicField(this, "systemPrompt");
+    __publicField(this, "llmConfig", {
+      provider: "nvidia",
+      baseUrl: "https://integrate.api.nvidia.com/v1",
+      apiKeyAccount: "llm:nvidia:apiKey",
+      apiKey: process.env.NVIDIA_API_KEY ?? null
+    });
     // Store TOON summaries as SystemMessages with special name
     __publicField(this, "summaries", []);
     this.model = this.createModel("llama-3.1-70b");
@@ -44717,6 +46081,36 @@ const _AgentService = class _AgentService {
     }
     return null;
   }
+  async setLLMConfig(next) {
+    const prevProvider = this.llmConfig.provider;
+    const prevAccount = this.llmConfig.apiKeyAccount;
+    const merged = {
+      ...this.llmConfig,
+      ...next ?? {}
+    };
+    if ((merged.provider !== prevProvider || merged.apiKeyAccount !== prevAccount) && (next == null ? void 0 : next.apiKey) === void 0) {
+      merged.apiKey = void 0;
+    }
+    if (merged.apiKey === void 0) {
+      try {
+        merged.apiKey = await vaultService.getSecret(merged.apiKeyAccount);
+      } catch {
+        merged.apiKey = null;
+      }
+    }
+    if (!merged.apiKey && merged.provider === "nvidia") {
+      merged.apiKey = process.env.NVIDIA_API_KEY ?? null;
+    }
+    this.llmConfig = merged;
+    if (typeof (next == null ? void 0 : next.modelId) === "string" && next.modelId.trim()) {
+      this.currentModelId = next.modelId.trim();
+    }
+    this.model = this.createModel(this.currentModelId);
+  }
+  getLLMConfig() {
+    const { apiKey, ...rest } = this.llmConfig;
+    return rest;
+  }
   /**
    * Toggle the use of the specialized actions policy model
    */
@@ -44759,24 +46153,48 @@ const _AgentService = class _AgentService {
     return this.permissionMode === "manual";
   }
   createModel(modelId) {
-    const apiKey = process.env.NVIDIA_API_KEY;
+    const provider = this.llmConfig.provider;
+    const apiKey = this.llmConfig.apiKey ?? null;
     if (!apiKey) {
-      console.warn("NVIDIA_API_KEY is not set in environment variables");
+      console.warn(`[AgentService] No API key configured for provider=${provider} (account=${this.llmConfig.apiKeyAccount})`);
     }
-    const config2 = AVAILABLE_MODELS.find((m) => m.id === modelId) || AVAILABLE_MODELS[0];
-    console.log(`[AgentService] Creating model: ${config2.name} (${config2.modelName})`);
+    const baseURL = this.llmConfig.baseUrl;
+    const resolved = (() => {
+      if (provider === "nvidia") {
+        const cfg = AVAILABLE_MODELS.find((m) => m.id === modelId) || AVAILABLE_MODELS[0];
+        return {
+          id: cfg.id,
+          name: cfg.name,
+          modelName: cfg.modelName,
+          temperature: cfg.temperature,
+          maxTokens: cfg.maxTokens,
+          supportsThinking: cfg.supportsThinking,
+          extraBody: cfg.extraBody
+        };
+      }
+      return {
+        id: modelId,
+        name: modelId,
+        modelName: modelId,
+        temperature: 0.1,
+        maxTokens: 4096,
+        supportsThinking: false,
+        extraBody: void 0
+      };
+    })();
+    console.log(`[AgentService] Creating model: ${resolved.name} (${resolved.modelName}) provider=${provider}`);
     const modelKwargs = {
       response_format: { type: "json_object" },
-      ...config2.extraBody
+      ...resolved.extraBody ?? {}
     };
     return new ChatOpenAI({
       configuration: {
-        baseURL: "https://integrate.api.nvidia.com/v1",
-        apiKey
+        baseURL,
+        apiKey: provider === "openai_compatible" ? apiKey ?? "local" : apiKey ?? void 0
       },
-      modelName: config2.modelName,
-      temperature: config2.temperature,
-      maxTokens: config2.maxTokens,
+      modelName: resolved.modelName,
+      temperature: resolved.temperature,
+      maxTokens: resolved.maxTokens,
       streaming: false,
       modelKwargs
     });
@@ -44785,14 +46203,20 @@ const _AgentService = class _AgentService {
    * Switch to a different model
    */
   setModel(modelId) {
-    const config2 = AVAILABLE_MODELS.find((m) => m.id === modelId);
-    if (!config2) {
-      console.error(`[AgentService] Unknown model: ${modelId}`);
+    if (this.llmConfig.provider === "nvidia") {
+      const config2 = AVAILABLE_MODELS.find((m) => m.id === modelId);
+      if (!config2) {
+        console.error(`[AgentService] Unknown model: ${modelId}`);
+        return;
+      }
+      this.currentModelId = modelId;
+      this.model = this.createModel(modelId);
+      console.log(`[AgentService] Switched to model: ${config2.name}`);
       return;
     }
     this.currentModelId = modelId;
     this.model = this.createModel(modelId);
-    console.log(`[AgentService] Switched to model: ${config2.name}`);
+    console.log(`[AgentService] Switched to model: ${modelId}`);
   }
   /**
    * Get current model ID
@@ -44986,6 +46410,9 @@ You can answer questions about what's on the page, explain content, summarize in
     let parseFailures = 0;
     let lastVerified = null;
     let messages = [];
+    let pendingErrorForReflection = null;
+    let loopAlertCount = 0;
+    const sleep2 = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     const intentClassification = classifyIntent(userMessage);
     this.emitStep("thought", `Intent: ${intentClassification.type} (${Math.round(intentClassification.confidence * 100)}% confidence) - ${intentClassification.reason}`, {
       phase: "intent_classification",
@@ -45030,6 +46457,11 @@ API-FIRST (MUCH FASTER):
 <browser_primitives>
 - Always call browser_observe before clicking/typing/selecting to get fresh selectors.
 - If a selector matches multiple elements, disambiguate using index, matchText, or withinSelector.
+- From browser_observe, prefer selectors in this order:
+  1) A CSS selector candidate with matches=1
+  2) An XPath selector candidate with matches=1 (pass as selector starting with "xpath=")
+  3) browser_click_text when the visible text is unique
+- Note: browser_click/browser_type/browser_select/browser_get_text accept XPath selectors when prefixed with "xpath=".
 - Prefer browser_click_text when the visible text is unique.
 - After any meaningful state change (navigation, submit, save), re-observe or wait for a confirming signal (text/selector).
 </browser_primitives>
@@ -45043,6 +46475,11 @@ Verification means one of:
 
 If verification is missing, take the next step to verify (observe or wait) instead of guessing.
 </verification>
+
+<recovery>
+If you receive a System message starting with "Previous error:", you must incorporate that error into your next tool choice and args. Avoid repeating the same failing tool call.
+If a loop is detected, change strategy (different selector, re-observe, wait, or ask the user for clarification).
+</recovery>
 
 <mock_saas_selectors>
 When on localhost:3000, prefer stable data-testid selectors:
@@ -45114,6 +46551,35 @@ User request: ${safeUserMessage} `);
 ${plan.map((p, idx) => `${idx + 1}. ${p}`).join("\n")} `, { phase: "planning", plan });
       }
       for (let i = 0; i < 15; i++) {
+        const loopAlert = agentRunContext.consumeLoopAlert();
+        if (loopAlert) {
+          loopAlertCount += 1;
+          const loopMsg = `Loop detected: ${loopAlert.kind} ${loopAlert.key} repeated ${loopAlert.count} times.`;
+          this.emitStep("observation", loopMsg, {
+            phase: "loop_detected",
+            state: "recovering",
+            alert: loopAlert
+          });
+          pendingErrorForReflection = loopMsg;
+          if (loopAlertCount >= 2) {
+            this.emitStep("observation", `Fatal Error: ${loopMsg}`, {
+              phase: "fatal_error",
+              state: "fatal",
+              alert: loopAlert
+            });
+            await this.logFailureTrace(userMessage, messages, loopMsg);
+            return "I detected a repeated loop while trying to complete this task. Please confirm the desired outcome or provide additional guidance so I can proceed safely.";
+          }
+        }
+        if (pendingErrorForReflection) {
+          messages.push(
+            new SystemMessage(
+              `Previous error: ${pendingErrorForReflection}
+Reflect on the failure and choose a different tool/args or add verification steps. Avoid repeating identical calls.`
+            )
+          );
+          pendingErrorForReflection = null;
+        }
         const runId = agentRunContext.getRunId() ?? void 0;
         const llmCallId = v4$1();
         const llmStartedAt = Date.now();
@@ -45203,6 +46669,7 @@ ${plan.map((p, idx) => `${idx + 1}. ${p}`).join("\n")} `, { phase: "planning", p
           } catch {
           }
           this.emitStep("observation", `Request timed out.Try a simpler request or switch to a faster model.`);
+          this.emitStep("observation", `Fatal Error: LLM timed out`, { phase: "fatal_error", state: "fatal" });
           return "The request timed out. Try breaking it into smaller steps or use a faster model.";
         }
         if (progressTimer) clearInterval(progressTimer);
@@ -45277,6 +46744,7 @@ To finish: {"thought":"brief completion summary","tool":"final_response","args":
           }
           if (parseFailures >= 3) {
             const failMsg = "I had trouble completing this task because I couldn't generate valid JSON commands. Try a simpler request or switch to a more reliable model (e.g., Llama 3.3 70B).";
+            this.emitStep("observation", `Fatal Error: ${failMsg}`, { phase: "fatal_error", state: "fatal" });
             await this.logFailureTrace(userMessage, messages, "Max parse failures reached (3)");
             return failMsg;
           }
@@ -45384,7 +46852,59 @@ ${result}`);
             phase: "tool_start"
           });
           try {
-            const result = await tool2.invoke(action.args);
+            const maxAttempts = 3;
+            let result = null;
+            let ok = false;
+            let lastErrStr = "";
+            for (let attempt = 0; attempt < maxAttempts; attempt++) {
+              if (attempt > 0) {
+                this.emitStep("observation", `Retrying ${tool2.name} (${attempt + 1}/${maxAttempts})`, {
+                  phase: "tool_retry",
+                  state: "retrying",
+                  tool: tool2.name,
+                  toolCallId,
+                  attempt: attempt + 1,
+                  maxAttempts
+                });
+                await sleep2(400 * Math.pow(2, attempt - 1));
+              }
+              try {
+                result = await tool2.invoke(action.args);
+                const resultStr2 = String(result ?? "");
+                const isFailureStr = resultStr2.startsWith("Tool execution failed:") || resultStr2.startsWith("Error:");
+                const isTerminalDenial = resultStr2.includes("User denied execution") || resultStr2.includes("Approval timed out") || resultStr2.includes("Operation denied by policy");
+                if (!isFailureStr) {
+                  ok = true;
+                  break;
+                }
+                lastErrStr = resultStr2;
+                if (isTerminalDenial) {
+                  break;
+                }
+              } catch (e) {
+                lastErrStr = String((e == null ? void 0 : e.message) ?? e);
+              }
+            }
+            if (!ok) {
+              const toolDurationMs2 = Date.now() - toolStartedAt;
+              const errMsg = lastErrStr || "Tool failed.";
+              this.emitStep("observation", `Tool Execution Error: ${errMsg}`, {
+                tool: tool2.name,
+                toolCallId,
+                phase: "tool_end",
+                ok: false,
+                durationMs: toolDurationMs2,
+                errorMessage: errMsg
+              });
+              pendingErrorForReflection = errMsg;
+              const aiMsg2 = new AIMessage(this.redactSecrets(content));
+              const errorMsg = new SystemMessage(`Tool Execution Error: ${errMsg}`);
+              messages.push(aiMsg2);
+              messages.push(errorMsg);
+              this.conversationHistory.push(aiMsg2);
+              this.conversationHistory.push(errorMsg);
+              continue;
+            }
             const toolDurationMs = Date.now() - toolStartedAt;
             this.emitStep("observation", `Tool Output: ${result}`, {
               tool: tool2.name,
@@ -45462,18 +46982,19 @@ ${safeResult}`);
             this.conversationHistory.push(aiMsg);
             this.conversationHistory.push(toolOutputMsg);
           } catch (err) {
-            console.error(`Tool execution failed: ${err}`);
             const toolDurationMs = Date.now() - toolStartedAt;
-            this.emitStep("observation", `Tool Execution Error: ${err.message}`, {
+            const errMsg = String((err == null ? void 0 : err.message) ?? err);
+            this.emitStep("observation", `Tool Execution Error: ${errMsg}`, {
               tool: tool2.name,
               toolCallId,
               phase: "tool_end",
               ok: false,
               durationMs: toolDurationMs,
-              errorMessage: String((err == null ? void 0 : err.message) ?? err)
+              errorMessage: errMsg
             });
+            pendingErrorForReflection = errMsg;
             const aiMsg = new AIMessage(this.redactSecrets(content));
-            const errorMsg = new SystemMessage(`Tool Execution Error: ${err.message}`);
+            const errorMsg = new SystemMessage(`Tool Execution Error: ${errMsg}`);
             messages.push(aiMsg);
             messages.push(errorMsg);
             this.conversationHistory.push(aiMsg);
@@ -45490,6 +47011,7 @@ ${safeResult}`);
         }
       }
       const maxStepsMsg = "I could not complete the task within the maximum number of steps. Try simplifying the request or check the browser is in the expected state.";
+      this.emitStep("observation", `Fatal Error: ${maxStepsMsg}`, { phase: "fatal_error", state: "fatal" });
       await this.logFailureTrace(userMessage, messages, "Max ReAct steps reached (15)");
       return maxStepsMsg;
     } catch (error) {
@@ -45791,7 +47313,27 @@ class BrowserAutomationService {
     const startedAt = Date.now();
     while (Date.now() - startedAt < timeoutMs) {
       const found = await target.executeJavaScript(
-        `Boolean(document.querySelector(${JSON.stringify(selector)}))`,
+        `(() => {
+          const sel = ${JSON.stringify(selector)};
+          const s = String(sel ?? '').trim();
+          const isXpath = s.startsWith('xpath=') || s.startsWith('//') || s.startsWith('/') || s.startsWith('(');
+          if (isXpath) {
+            const xp = s.startsWith('xpath=') ? s.slice(6) : s;
+            try {
+              const node = document.evaluate(
+                xp,
+                document,
+                null,
+                XPathResult.FIRST_ORDERED_NODE_TYPE,
+                null
+              ).singleNodeValue;
+              return Boolean(node);
+            } catch {
+              return false;
+            }
+          }
+          return Boolean(document.querySelector(sel));
+        })()`,
         true
       );
       if (found) return;
@@ -45801,7 +47343,27 @@ class BrowserAutomationService {
   }
   async querySelectorCount(target, selector) {
     const count = await target.executeJavaScript(
-      `document.querySelectorAll(${JSON.stringify(selector)}).length`,
+      `(() => {
+        const sel = ${JSON.stringify(selector)};
+        const s = String(sel ?? '').trim();
+        const isXpath = s.startsWith('xpath=') || s.startsWith('//') || s.startsWith('/') || s.startsWith('(');
+        if (isXpath) {
+          const xp = s.startsWith('xpath=') ? s.slice(6) : s;
+          try {
+            const snap = document.evaluate(
+              xp,
+              document,
+              null,
+              XPathResult.ORDERED_NODE_SNAPSHOT_TYPE,
+              null
+            );
+            return snap.snapshotLength || 0;
+          } catch {
+            return 0;
+          }
+        }
+        return document.querySelectorAll(sel).length;
+      })()`,
       true
     );
     return Number(count) || 0;
@@ -45924,20 +47486,123 @@ class BrowserAutomationService {
                   return parts.join(' > ');
                 };
 
+                const isXPathSelector = (sel) => {
+                  const s = String(sel ?? '').trim();
+                  return s.startsWith('xpath=') || s.startsWith('//') || s.startsWith('/') || s.startsWith('(');
+                };
+
+                const xpathLiteral = (value) => {
+                  const v = String(value ?? '');
+                  if (!v.includes("'")) return "'" + v + "'";
+                  if (!v.includes('"')) return '"' + v + '"';
+                  return (
+                    'concat(' +
+                    v
+                      .split("'")
+                      .map((p) => "'" + p + "'")
+                      .join(", "'", ") +
+                    ')'
+                  );
+                };
+
+                const countXPath = (xp) => {
+                  try {
+                    const snap = document.evaluate(
+                      xp,
+                      document,
+                      null,
+                      XPathResult.ORDERED_NODE_SNAPSHOT_TYPE,
+                      null
+                    );
+                    return snap.snapshotLength || 0;
+                  } catch {
+                    return 0;
+                  }
+                };
+
+                const xpathFor = (el) => {
+                  if (!el || el.nodeType !== 1) return '';
+                  const tag = (el.tagName || '').toLowerCase();
+                  const id = el.id;
+                  if (id) return '//*[@id=' + xpathLiteral(id) + ']';
+
+                  const testId =
+                    el.getAttribute &&
+                    (el.getAttribute('data-testid') || el.getAttribute('data-test-id'));
+                  if (testId) return '//*[@data-testid=' + xpathLiteral(testId) + ']';
+
+                  const name = el.getAttribute && el.getAttribute('name');
+                  if (name) return '//' + tag + '[@name=' + xpathLiteral(name) + ']';
+
+                  const ariaLabel = el.getAttribute && el.getAttribute('aria-label');
+                  if (ariaLabel) return '//' + tag + '[@aria-label=' + xpathLiteral(ariaLabel) + ']';
+
+                  const placeholder = el.getAttribute && el.getAttribute('placeholder');
+                  if (placeholder) return '//' + tag + '[@placeholder=' + xpathLiteral(placeholder) + ']';
+
+                  // Fallback: short-ish absolute path with nth-of-type
+                  const parts = [];
+                  let cur = el;
+                  let guard = 0;
+                  while (cur && cur.nodeType === 1 && guard++ < 7) {
+                    const t = (cur.tagName || '').toLowerCase();
+                    const parent = cur.parentElement;
+                    if (!parent) {
+                      parts.unshift(t);
+                      break;
+                    }
+                    const siblings = Array.from(parent.children).filter((sib) => sib.tagName === cur.tagName);
+                    if (siblings.length > 1) {
+                      const idx = siblings.indexOf(cur) + 1;
+                      parts.unshift(t + '[' + idx + ']');
+                    } else {
+                      parts.unshift(t);
+                    }
+                    cur = parent;
+                  }
+                  return '/' + parts.join('/');
+                };
+
                 const bestSelector = (el) => {
                   if (!el || el.nodeType !== 1) return '';
+                  const unique = (sel) => {
+                    try {
+                      if (!sel) return false;
+                      return document.querySelectorAll(sel).length === 1;
+                    } catch {
+                      return false;
+                    }
+                  };
+
                   if (el.id) return '#' + el.id;
                   const testId = el.getAttribute && (el.getAttribute('data-testid') || el.getAttribute('data-test-id'));
                   if (testId) return '[data-testid=' + attrSelectorValue(testId) + ']';
                   const name = el.getAttribute && el.getAttribute('name');
-                  if (name) return el.tagName.toLowerCase() + '[name=' + attrSelectorValue(name) + ']';
+                  if (name) {
+                    const sel = el.tagName.toLowerCase() + '[name=' + attrSelectorValue(name) + ']';
+                    if (unique(sel)) return sel;
+                  }
                   const ariaLabel = el.getAttribute && el.getAttribute('aria-label');
-                  if (ariaLabel) return el.tagName.toLowerCase() + '[aria-label=' + attrSelectorValue(ariaLabel) + ']';
+                  if (ariaLabel) {
+                    const sel = el.tagName.toLowerCase() + '[aria-label=' + attrSelectorValue(ariaLabel) + ']';
+                    if (unique(sel)) return sel;
+                  }
                   const placeholder = el.getAttribute && el.getAttribute('placeholder');
-                  if (placeholder) return el.tagName.toLowerCase() + '[placeholder=' + attrSelectorValue(placeholder) + ']';
+                  if (placeholder) {
+                    const sel = el.tagName.toLowerCase() + '[placeholder=' + attrSelectorValue(placeholder) + ']';
+                    if (unique(sel)) return sel;
+                  }
+                  const href = el.tagName.toLowerCase() === 'a' ? (el.getAttribute && el.getAttribute('href')) : '';
+                  if (href) {
+                    const sel = 'a[href=' + attrSelectorValue(href) + ']';
+                    if (unique(sel)) return sel;
+                  }
                   if (el.className && typeof el.className === 'string') {
                     const classes = el.className.split(' ').filter((c) => c.trim()).slice(0, 3).join('.');
-                    if (classes) return el.tagName.toLowerCase() + '.' + classes;
+                    if (classes) {
+                      const sel = el.tagName.toLowerCase() + '.' + classes;
+                      if (unique(sel)) return sel;
+                    }
                   }
                   const path = cssPath(el);
                   return path || el.tagName.toLowerCase();
@@ -45974,6 +47639,8 @@ class BrowserAutomationService {
                   const disabled = 'disabled' in el ? Boolean(el.disabled) : el.getAttribute('aria-disabled') === 'true';
                   const selector = bestSelector(el);
                   const matches = selector ? document.querySelectorAll(selector).length : 0;
+                  const xpath = xpathFor(el);
+                  const xpathMatches = xpath ? countXPath(xpath) : 0;
                   const value = 'value' in el ? String(el.value ?? '') : '';
                   const href = tag === 'a' ? (el.getAttribute('href') || '') : '';
                   const ariaLabel = el.getAttribute('aria-label') || '';
@@ -45982,7 +47649,27 @@ class BrowserAutomationService {
                   if (seen.has(key)) continue;
                   seen.add(key);
 
-                  out.push({ tag, text, placeholder, type, role, name, disabled, value, href, ariaLabel, selector, matches });
+                  const selectorCandidates = [];
+                  if (selector) selectorCandidates.push({ kind: 'css', value: selector, matches });
+                  if (xpath) selectorCandidates.push({ kind: 'xpath', value: 'xpath=' + xpath, matches: xpathMatches });
+                  if (text) selectorCandidates.push({ kind: 'text', value: text, matches: candidates.length });
+
+                  out.push({
+                    tag,
+                    text,
+                    placeholder,
+                    type,
+                    role,
+                    name,
+                    disabled,
+                    value,
+                    href,
+                    ariaLabel,
+                    selector,
+                    matches,
+                    xpath,
+                    selectorCandidates,
+                  });
                   if (out.length >= limit) break;
                 }
 
@@ -46322,7 +48009,7 @@ class BrowserAutomationService {
       }
     };
     const clickSchema = object({
-      selector: string().describe("CSS selector of the element to click"),
+      selector: string().describe('CSS selector (or XPath prefixed with "xpath=") of the element to click'),
       withinSelector: string().optional().describe("Optional container selector to scope the search (must match exactly 1 element)"),
       index: number().optional().describe("Index of element if multiple match (0-based)"),
       matchText: string().optional().describe("Text content to match if multiple elements found")
@@ -46341,7 +48028,51 @@ class BrowserAutomationService {
           const result = await target.executeJavaScript(
             `(() => {
                 // Helper to find elements including shadow DOM
+                const isXPathSelector = (sel) => {
+                  const s = String(sel ?? '').trim();
+                  return s.startsWith('xpath=') || s.startsWith('//') || s.startsWith('/') || s.startsWith('(');
+                };
+
+                const normalizeXPath = (sel) => {
+                  const s = String(sel ?? '').trim();
+                  return s.startsWith('xpath=') ? s.slice(6) : s;
+                };
+
+                const findByXPath = (xp) => {
+                  const out = [];
+                  try {
+                    const snap = document.evaluate(
+                      xp,
+                      document,
+                      null,
+                      XPathResult.ORDERED_NODE_SNAPSHOT_TYPE,
+                      null
+                    );
+                    for (let i = 0; i < snap.snapshotLength; i++) {
+                      const node = snap.snapshotItem(i);
+                      if (node && node.nodeType === 1) out.push(node);
+                    }
+                  } catch {
+                    // ignore
+                  }
+                  return out;
+                };
+
                 const findElements = (root, sel) => {
+                  if (isXPathSelector(sel)) {
+                    const xp = normalizeXPath(sel);
+                    const nodes = findByXPath(xp);
+                    if (root && root !== document) {
+                      return nodes.filter((n) => {
+                        try {
+                          return root.contains(n);
+                        } catch {
+                          return false;
+                        }
+                      });
+                    }
+                    return nodes;
+                  }
                   const results = [];
                   const queryDeep = (root) => {
                     const els = Array.from(root.querySelectorAll(sel));
@@ -46492,7 +48223,7 @@ ${rootsPreview}` : "");
       name: "browser_type",
       description: "Type text into an input field.",
       schema: object({
-        selector: string().describe("CSS selector of the input"),
+        selector: string().describe('CSS selector (or XPath prefixed with "xpath=") of the input'),
         text: string().describe("Text to type")
       }),
       execute: async ({ selector, text }) => {
@@ -46505,7 +48236,13 @@ ${rootsPreview}` : "");
           await this.waitForSelector(target, selector, 5e3);
           const typedValue = await target.executeJavaScript(
             `(() => {
-                const el = document.querySelector(${JSON.stringify(selector)});
+                const sel = ${JSON.stringify(selector)};
+                const s = String(sel ?? '').trim();
+                const isXpath = s.startsWith('xpath=') || s.startsWith('//') || s.startsWith('/') || s.startsWith('(');
+                const xp = s.startsWith('xpath=') ? s.slice(6) : s;
+                const el = isXpath
+                  ? (document.evaluate(xp, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue)
+                  : document.querySelector(sel);
                 if (!el) throw new Error('Element not found');
                 const isDisabled = ('disabled' in el && Boolean(el.disabled)) || el.getAttribute?.('aria-disabled') === 'true';
                 if (isDisabled) throw new Error('Element is disabled');
@@ -46553,7 +48290,7 @@ ${rootsPreview}` : "");
       name: "browser_get_text",
       description: "Get the text content of an element.",
       schema: object({
-        selector: string().describe("CSS selector")
+        selector: string().describe('CSS selector (or XPath prefixed with "xpath=")')
       }),
       execute: async ({ selector }) => {
         try {
@@ -46561,7 +48298,13 @@ ${rootsPreview}` : "");
           await this.waitForSelector(target, selector, 5e3);
           const text = await target.executeJavaScript(
             `(() => {
-                    const el = document.querySelector(${JSON.stringify(selector)});
+                    const sel = ${JSON.stringify(selector)};
+                    const s = String(sel ?? '').trim();
+                    const isXpath = s.startsWith('xpath=') || s.startsWith('//') || s.startsWith('/') || s.startsWith('(');
+                    const xp = s.startsWith('xpath=') ? s.slice(6) : s;
+                    const el = isXpath
+                      ? (document.evaluate(xp, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue)
+                      : document.querySelector(sel);
                     return el ? (el.textContent || '') : null;
                   })()`,
             true
@@ -46715,7 +48458,7 @@ ${rootsPreview}` : "");
       name: "browser_select",
       description: "Set the value of a <select> element.",
       schema: object({
-        selector: string().describe("CSS selector of the select element"),
+        selector: string().describe('CSS selector (or XPath prefixed with "xpath=") of the select element'),
         value: string().describe("Option value to set")
       }),
       execute: async ({ selector, value }) => {
@@ -46728,7 +48471,13 @@ ${rootsPreview}` : "");
           await this.waitForSelector(target, selector, 5e3);
           const selected = await target.executeJavaScript(
             `(() => {
-              const el = document.querySelector(${JSON.stringify(selector)});
+              const sel = ${JSON.stringify(selector)};
+              const s = String(sel ?? '').trim();
+              const isXpath = s.startsWith('xpath=') || s.startsWith('//') || s.startsWith('/') || s.startsWith('(');
+              const xp = s.startsWith('xpath=') ? s.slice(6) : s;
+              const el = isXpath
+                ? (document.evaluate(xp, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue)
+                : document.querySelector(sel);
               if (!el) throw new Error('Element not found');
               const tag = el.tagName?.toLowerCase?.();
               if (tag !== 'select') throw new Error('Element is not a <select>');
@@ -48081,415 +49830,6 @@ class MockTrelloConnector {
   }
 }
 new MockTrelloConnector();
-class WebAPIService {
-  constructor() {
-    this.registerTools();
-  }
-  registerTools() {
-    const githubSearchSchema = object({
-      query: string().describe('Search query (e.g., "langchain", "react")'),
-      type: _enum(["repositories", "users", "code"]).optional().describe("Type of search (default: repositories)"),
-      sort: _enum(["stars", "forks", "updated", "best-match"]).optional().describe("Sort by (default: best-match)"),
-      limit: number().optional().describe("Number of results to return (default: 5, max: 10)")
-    });
-    const githubSearchTool = {
-      name: "api_github_search",
-      description: "Search GitHub repositories, users, or code via API. MUCH faster than browser automation. Returns repo names, stars, descriptions. Use this instead of navigating to github.com for search tasks.",
-      schema: githubSearchSchema,
-      execute: async ({ query, type = "repositories", sort = "stars", limit: limit2 = 5 }) => {
-        try {
-          const searchType = type === "repositories" ? "repositories" : type === "users" ? "users" : "code";
-          const url = `https://api.github.com/search/${searchType}?q=${encodeURIComponent(query)}&sort=${sort}&order=desc&per_page=${Math.min(limit2, 10)}`;
-          const response = await fetch(url, {
-            headers: {
-              "Accept": "application/vnd.github.v3+json",
-              "User-Agent": "EnterpriseBrowser/1.0"
-            }
-          });
-          if (!response.ok) {
-            if (response.status === 403) {
-              return JSON.stringify({ error: "Rate limited. Try browser_navigate to https://github.com/search?q=" + encodeURIComponent(query) + "&type=repositories&s=stars&o=desc instead." });
-            }
-            return JSON.stringify({ error: `GitHub API error: ${response.status} ${response.statusText}` });
-          }
-          const data = await response.json();
-          if (searchType === "repositories") {
-            const results = data.items.slice(0, limit2).map((repo) => {
-              var _a3;
-              return {
-                name: repo.full_name,
-                stars: repo.stargazers_count,
-                forks: repo.forks_count,
-                description: ((_a3 = repo.description) == null ? void 0 : _a3.slice(0, 100)) || "",
-                url: repo.html_url,
-                language: repo.language
-              };
-            });
-            return JSON.stringify({ total_count: data.total_count, results }, null, 2);
-          } else if (searchType === "users") {
-            const results = data.items.slice(0, limit2).map((user) => ({
-              login: user.login,
-              url: user.html_url,
-              type: user.type
-            }));
-            return JSON.stringify({ total_count: data.total_count, results }, null, 2);
-          }
-          return JSON.stringify({ total_count: data.total_count, items: data.items.slice(0, limit2) }, null, 2);
-        } catch (e) {
-          return JSON.stringify({ error: `Failed to search GitHub: ${e.message}` });
-        }
-      }
-    };
-    const githubGetRepoSchema = object({
-      owner: string().describe('Repository owner/organization (e.g., "vercel")'),
-      repo: string().describe('Repository name (e.g., "next.js")')
-    });
-    const githubGetRepoTool = {
-      name: "api_github_get_repo",
-      description: "Get GitHub repository metadata via API (description, stars, forks, topics, language, homepage, updated time). Use this for summarizing a specific repo.",
-      schema: githubGetRepoSchema,
-      execute: async ({ owner, repo }) => {
-        var _a3;
-        try {
-          const url = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
-          const response = await fetch(url, {
-            headers: {
-              "Accept": "application/vnd.github.v3+json",
-              "User-Agent": "EnterpriseBrowser/1.0"
-            }
-          });
-          if (!response.ok) {
-            if (response.status === 403) {
-              return JSON.stringify({ error: "Rate limited. Try browser_navigate to https://github.com/" + owner + "/" + repo + " instead." });
-            }
-            return JSON.stringify({ error: `GitHub API error: ${response.status} ${response.statusText}` });
-          }
-          const data = await response.json();
-          const result = {
-            full_name: data.full_name,
-            url: data.html_url,
-            description: data.description || "",
-            homepage: data.homepage || "",
-            topics: Array.isArray(data.topics) ? data.topics : [],
-            language: data.language || "",
-            stars: data.stargazers_count,
-            forks: data.forks_count,
-            open_issues: data.open_issues_count,
-            archived: Boolean(data.archived),
-            updated_at: data.updated_at,
-            created_at: data.created_at,
-            license: ((_a3 = data.license) == null ? void 0 : _a3.spdx_id) || ""
-          };
-          return JSON.stringify(result, null, 2);
-        } catch (e) {
-          return JSON.stringify({ error: `Failed to fetch repo: ${e.message}` });
-        }
-      }
-    };
-    const githubGetReadmeSchema = object({
-      owner: string().describe('Repository owner/organization (e.g., "vercel")'),
-      repo: string().describe('Repository name (e.g., "next.js")'),
-      ref: string().optional().describe('Optional git ref/branch/tag (e.g., "main")'),
-      maxChars: number().optional().describe("Maximum characters of README to return (default: 6000)")
-    });
-    const githubGetReadmeTool = {
-      name: "api_github_get_readme",
-      description: "Fetch a GitHub repository README via API and return its text (truncated). Use this to summarize what a project does without relying on browser scraping.",
-      schema: githubGetReadmeSchema,
-      execute: async ({ owner, repo, ref, maxChars = 6e3 }) => {
-        try {
-          const qs = ref ? `?ref=${encodeURIComponent(ref)}` : "";
-          const url = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/readme${qs}`;
-          const response = await fetch(url, {
-            headers: {
-              "Accept": "application/vnd.github.v3+json",
-              "User-Agent": "EnterpriseBrowser/1.0"
-            }
-          });
-          if (!response.ok) {
-            if (response.status === 404) {
-              return JSON.stringify({ error: "README not found for this repository." });
-            }
-            if (response.status === 403) {
-              return JSON.stringify({ error: "Rate limited. Try browser_navigate to https://github.com/" + owner + "/" + repo + " instead." });
-            }
-            return JSON.stringify({ error: `GitHub API error: ${response.status} ${response.statusText}` });
-          }
-          const data = await response.json();
-          const contentBase64 = typeof (data == null ? void 0 : data.content) === "string" ? data.content : "";
-          const encoding = typeof (data == null ? void 0 : data.encoding) === "string" ? data.encoding : "";
-          if (!contentBase64 || encoding !== "base64") {
-            return JSON.stringify({ error: "Unexpected README response format from GitHub API." });
-          }
-          const text = Buffer.from(contentBase64, "base64").toString("utf8");
-          const truncated = text.slice(0, Math.max(0, Math.min(maxChars, 2e4)));
-          return JSON.stringify(
-            {
-              owner,
-              repo,
-              name: (data == null ? void 0 : data.name) || "README",
-              path: (data == null ? void 0 : data.path) || "",
-              html_url: (data == null ? void 0 : data.html_url) || "",
-              text: truncated,
-              truncated: truncated.length < text.length
-            },
-            null,
-            2
-          );
-        } catch (e) {
-          return JSON.stringify({ error: `Failed to fetch README: ${e.message}` });
-        }
-      }
-    };
-    const hnTopStoriesSchema = object({
-      limit: number().optional().describe("Number of stories to return (default: 5, max: 30)")
-    });
-    const hnTopStoriesTool = {
-      name: "api_hackernews_top",
-      description: "Get top stories from Hacker News via API. Returns titles, scores, URLs. Use this instead of navigating to news.ycombinator.com.",
-      schema: hnTopStoriesSchema,
-      execute: async ({ limit: limit2 = 5 }) => {
-        try {
-          const idsResponse = await fetch("https://hacker-news.firebaseio.com/v0/topstories.json");
-          if (!idsResponse.ok) {
-            return JSON.stringify({ error: "Failed to fetch HN top stories" });
-          }
-          const ids = await idsResponse.json();
-          const storyLimit = Math.min(limit2, 30);
-          const stories = await Promise.all(
-            ids.slice(0, storyLimit).map(async (id) => {
-              const storyResponse = await fetch(`https://hacker-news.firebaseio.com/v0/item/${id}.json`);
-              return storyResponse.json();
-            })
-          );
-          const results = stories.map((story) => ({
-            title: story.title,
-            score: story.score,
-            url: story.url || `https://news.ycombinator.com/item?id=${story.id}`,
-            by: story.by,
-            comments: story.descendants || 0
-          }));
-          return JSON.stringify({ results }, null, 2);
-        } catch (e) {
-          return JSON.stringify({ error: `Failed to fetch HN stories: ${e.message}` });
-        }
-      }
-    };
-    const wikiTodaySchema = object({});
-    const wikiTodayTool = {
-      name: "api_wikipedia_featured",
-      description: "Get today's featured article from Wikipedia via API. Use this instead of navigating to wikipedia.org.",
-      schema: wikiTodaySchema,
-      execute: async () => {
-        var _a3, _b, _c, _d, _e, _f;
-        try {
-          const today = /* @__PURE__ */ new Date();
-          const year = today.getFullYear();
-          const month = String(today.getMonth() + 1).padStart(2, "0");
-          const day = String(today.getDate()).padStart(2, "0");
-          const url = `https://api.wikimedia.org/feed/v1/wikipedia/en/featured/${year}/${month}/${day}`;
-          const response = await fetch(url, {
-            headers: {
-              "User-Agent": "EnterpriseBrowser/1.0"
-            }
-          });
-          if (!response.ok) {
-            return JSON.stringify({ error: `Wikipedia API error: ${response.status}` });
-          }
-          const data = await response.json();
-          const result = {
-            title: ((_a3 = data.tfa) == null ? void 0 : _a3.title) || "Unknown",
-            extract: ((_c = (_b = data.tfa) == null ? void 0 : _b.extract) == null ? void 0 : _c.slice(0, 500)) || "",
-            url: ((_f = (_e = (_d = data.tfa) == null ? void 0 : _d.content_urls) == null ? void 0 : _e.desktop) == null ? void 0 : _f.page) || ""
-          };
-          return JSON.stringify(result, null, 2);
-        } catch (e) {
-          return JSON.stringify({ error: `Failed to fetch Wikipedia featured: ${e.message}` });
-        }
-      }
-    };
-    const httpGetSchema = object({
-      url: string().describe("URL to fetch"),
-      headers: record(string(), string()).optional().describe("Optional headers")
-    });
-    const httpGetTool = {
-      name: "api_http_get",
-      description: "Make a simple HTTP GET request to any URL. Returns the response body. Useful for APIs that return JSON.",
-      schema: httpGetSchema,
-      execute: async ({ url, headers = {} }) => {
-        try {
-          const response = await fetch(url, {
-            headers: {
-              "User-Agent": "EnterpriseBrowser/1.0",
-              ...headers
-            }
-          });
-          if (!response.ok) {
-            return JSON.stringify({ error: `HTTP ${response.status}: ${response.statusText}` });
-          }
-          const contentType = response.headers.get("content-type") || "";
-          if (contentType.includes("application/json")) {
-            const data = await response.json();
-            return JSON.stringify(data, null, 2);
-          }
-          const text = await response.text();
-          return text.slice(0, 5e3);
-        } catch (e) {
-          return JSON.stringify({ error: `HTTP request failed: ${e.message}` });
-        }
-      }
-    };
-    const cryptoPriceSchema = object({
-      coin: string().describe('Cryptocurrency name or symbol (e.g., "bitcoin", "ethereum", "btc", "eth")')
-    });
-    const cryptoPriceTool = {
-      name: "api_crypto_price",
-      description: "Get current cryptocurrency price via CoinGecko API. Use this instead of navigating to coinmarketcap.com or other crypto sites. Returns price in USD, 24h change, and market cap.",
-      schema: cryptoPriceSchema,
-      execute: async ({ coin }) => {
-        var _a3;
-        try {
-          const coinMap = {
-            "btc": "bitcoin",
-            "eth": "ethereum",
-            "sol": "solana",
-            "doge": "dogecoin",
-            "xrp": "ripple",
-            "ada": "cardano",
-            "dot": "polkadot",
-            "matic": "polygon",
-            "link": "chainlink",
-            "avax": "avalanche-2"
-          };
-          const coinId = coinMap[coin.toLowerCase()] || coin.toLowerCase();
-          const url = `https://api.coingecko.com/api/v3/simple/price?ids=${coinId}&vs_currencies=usd&include_24hr_change=true&include_market_cap=true`;
-          const response = await fetch(url, {
-            headers: {
-              "User-Agent": "EnterpriseBrowser/1.0"
-            }
-          });
-          if (!response.ok) {
-            return JSON.stringify({ error: `CoinGecko API error: ${response.status}` });
-          }
-          const data = await response.json();
-          if (!data[coinId]) {
-            return JSON.stringify({ error: `Coin '${coin}' not found. Try the full name (e.g., 'bitcoin' instead of 'btc').` });
-          }
-          const coinData = data[coinId];
-          const result = {
-            coin: coinId,
-            price_usd: coinData.usd,
-            change_24h_percent: ((_a3 = coinData.usd_24h_change) == null ? void 0 : _a3.toFixed(2)) + "%",
-            market_cap_usd: coinData.usd_market_cap
-          };
-          return JSON.stringify(result, null, 2);
-        } catch (e) {
-          return JSON.stringify({ error: `Failed to fetch crypto price: ${e.message}` });
-        }
-      }
-    };
-    const weatherSchema = object({
-      latitude: number().describe("Latitude of the location"),
-      longitude: number().describe("Longitude of the location"),
-      city: string().optional().describe("City name for display purposes")
-    });
-    const weatherTool = {
-      name: "api_weather",
-      description: "Get current weather for a specific latitude and longitude via Open-Meteo API. Use lookup_city_coordinates first if you only have a city name.",
-      schema: weatherSchema,
-      execute: async ({ latitude, longitude, city }) => {
-        try {
-          const url = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,rain,showers,snowfall,weather_code,wind_speed_10m&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch`;
-          const response = await fetch(url);
-          if (!response.ok) return JSON.stringify({ error: `Weather API error: ${response.status}` });
-          const data = await response.json();
-          const current = data.current;
-          return JSON.stringify({
-            location: city || `${latitude}, ${longitude}`,
-            temperature: `${current.temperature_2m}°F`,
-            feels_like: `${current.apparent_temperature}°F`,
-            humidity: `${current.relative_humidity_2m}%`,
-            wind_speed: `${current.wind_speed_10m} mph`,
-            condition_code: current.weather_code,
-            units: data.current_units
-          }, null, 2);
-        } catch (e) {
-          return JSON.stringify({ error: `Failed to fetch weather: ${e.message}` });
-        }
-      }
-    };
-    const webSearchSchema = object({
-      query: string().describe("Search query")
-    });
-    const webSearchTool = {
-      name: "api_web_search",
-      description: "Search the web via DuckDuckGo Instant Answer API. Returns a summary, related topics, and links. Useful for quick facts or finding official websites.",
-      schema: webSearchSchema,
-      execute: async ({ query }) => {
-        var _a3;
-        try {
-          const url = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
-          const response = await fetch(url, {
-            headers: { "User-Agent": "EnterpriseBrowser/1.0" }
-          });
-          if (!response.ok) return JSON.stringify({ error: `Search API error: ${response.status}` });
-          const data = await response.json();
-          return JSON.stringify({
-            abstract: data.AbstractText,
-            source: data.AbstractSource,
-            url: data.AbstractURL,
-            related: (_a3 = data.RelatedTopics) == null ? void 0 : _a3.slice(0, 5).map((topic) => ({
-              text: topic.Text,
-              url: topic.FirstURL
-            }))
-          }, null, 2);
-        } catch (e) {
-          return JSON.stringify({ error: `Failed to search: ${e.message}` });
-        }
-      }
-    };
-    const cityCoordSchema = object({
-      city: string().describe('City name (e.g., "San Francisco", "Tokyo")')
-    });
-    const cityCoordTool = {
-      name: "lookup_city_coordinates",
-      description: "Get latitude and longitude for a city name. Use this before calling api_weather.",
-      schema: cityCoordSchema,
-      execute: async ({ city }) => {
-        try {
-          const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=en&format=json`;
-          const response = await fetch(url);
-          if (!response.ok) return JSON.stringify({ error: `Geocoding API error: ${response.status}` });
-          const data = await response.json();
-          if (!data.results || data.results.length === 0) {
-            return JSON.stringify({ error: `City '${city}' not found.` });
-          }
-          const result = data.results[0];
-          return JSON.stringify({
-            city: result.name,
-            country: result.country,
-            latitude: result.latitude,
-            longitude: result.longitude,
-            timezone: result.timezone
-          }, null, 2);
-        } catch (e) {
-          return JSON.stringify({ error: `Failed to lookup city: ${e.message}` });
-        }
-      }
-    };
-    toolRegistry.register(githubSearchTool);
-    toolRegistry.register(githubGetRepoTool);
-    toolRegistry.register(githubGetReadmeTool);
-    toolRegistry.register(hnTopStoriesTool);
-    toolRegistry.register(wikiTodayTool);
-    toolRegistry.register(httpGetTool);
-    toolRegistry.register(cryptoPriceTool);
-    toolRegistry.register(weatherTool);
-    toolRegistry.register(webSearchTool);
-    toolRegistry.register(cityCoordTool);
-  }
-}
-new WebAPIService();
 class CodeExecutionService {
   constructor() {
     this.registerTools();
@@ -48617,8 +49957,40 @@ process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path$2.join(process.env.APP_ROOT
 let win;
 const newTabDashboardService = new NewTabDashboardService(new DummyAeroCoreDataSource());
 let newTabDashboardTimer = null;
+let auditMaintenanceTimer = null;
 const pendingApprovals = /* @__PURE__ */ new Map();
 const APPROVAL_TIMEOUT_MS = 3e4;
+let chatHistoryKey = null;
+async function loadOrGenerateChatHistoryKey() {
+  if (chatHistoryKey) return chatHistoryKey;
+  let keyHex = await vaultService.getSecret("chat_history_key");
+  if (!keyHex) {
+    keyHex = crypto$2.randomBytes(32).toString("hex");
+    await vaultService.setSecret("chat_history_key", keyHex);
+  }
+  chatHistoryKey = Buffer.from(keyHex, "hex");
+  return chatHistoryKey;
+}
+async function encryptChatHistory(text) {
+  const key = await loadOrGenerateChatHistoryKey();
+  const iv = crypto$2.randomBytes(16);
+  const cipher = crypto$2.createCipheriv("aes-256-cbc", key, iv);
+  let encrypted = cipher.update(text);
+  encrypted = Buffer.concat([encrypted, cipher.final()]);
+  return iv.toString("hex") + ":" + encrypted.toString("hex");
+}
+async function decryptChatHistory(payload) {
+  const key = await loadOrGenerateChatHistoryKey();
+  const parts = String(payload ?? "").split(":");
+  const ivHex = parts.shift() ?? "";
+  const dataHex = parts.join(":");
+  const iv = Buffer.from(ivHex, "hex");
+  const encryptedText = Buffer.from(dataHex, "hex");
+  const decipher = crypto$2.createDecipheriv("aes-256-cbc", key, iv);
+  let decrypted = decipher.update(encryptedText);
+  decrypted = Buffer.concat([decrypted, decipher.final()]);
+  return decrypted.toString();
+}
 function createWindow() {
   win = new BrowserWindow({
     icon: path$2.join(process.env.VITE_PUBLIC, "electron-vite.svg"),
@@ -48654,6 +50026,38 @@ app.on("activate", () => {
 app.whenReady().then(() => {
   const policyService = new PolicyService(telemetryService, auditService);
   toolRegistry.setPolicyService(policyService);
+  policyService.init({ remotePolicyUrl: process.env.POLICY_REMOTE_URL || void 0 }).catch(() => void 0);
+  ipcMain.handle("policy:status", async () => {
+    return policyService.getRemotePolicyStatus();
+  });
+  ipcMain.handle("policy:sync", async (_event, url) => {
+    const targetUrl = typeof url === "string" && url.trim() ? url.trim() : process.env.POLICY_REMOTE_URL || "";
+    if (!targetUrl) return { success: false, error: "No policy URL provided" };
+    try {
+      const bundle = await policyService.fetchRemotePolicies(targetUrl);
+      return { success: true, bundle };
+    } catch (e) {
+      return { success: false, error: String((e == null ? void 0 : e.message) ?? e) };
+    }
+  });
+  ipcMain.handle("policy:set-dev-override", async (_event, enabled, token) => {
+    const ok = await policyService.setDeveloperOverride(Boolean(enabled), token);
+    return { success: ok };
+  });
+  ipcMain.handle("identity:get-session", async () => {
+    return await identityService.getSession();
+  });
+  ipcMain.handle("identity:login", async () => {
+    const profile = await identityService.loginWithPopup();
+    return profile;
+  });
+  ipcMain.handle("identity:logout", async () => {
+    await identityService.clearSession();
+    return { success: true };
+  });
+  ipcMain.handle("identity:get-access-token", async () => {
+    return await identityService.getAccessToken();
+  });
   newTabDashboardService.init().then(() => {
     if (newTabDashboardTimer) clearInterval(newTabDashboardTimer);
     newTabDashboardTimer = setInterval(async () => {
@@ -48672,6 +50076,34 @@ app.whenReady().then(() => {
   }).catch(() => void 0);
   ipcMain.handle("newtab:dashboard-snapshot", async () => {
     return newTabDashboardService.getSnapshot();
+  });
+  ipcMain.handle("chatHistory:get", async () => {
+    const filePath = path$2.join(app.getPath("userData"), "chat_history.json.enc");
+    try {
+      const raw = await fs$1.readFile(filePath, "utf8");
+      const json = await decryptChatHistory(raw);
+      const parsed = JSON.parse(json);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  });
+  ipcMain.handle("chatHistory:set", async (_event, messages) => {
+    const filePath = path$2.join(app.getPath("userData"), "chat_history.json.enc");
+    const arr2 = Array.isArray(messages) ? messages : [];
+    const capped = arr2.slice(-200);
+    const json = JSON.stringify(capped);
+    const enc = await encryptChatHistory(json);
+    await fs$1.writeFile(filePath, enc, "utf8");
+    return { success: true };
+  });
+  ipcMain.handle("chatHistory:clear", async () => {
+    const filePath = path$2.join(app.getPath("userData"), "chat_history.json.enc");
+    try {
+      await fs$1.unlink(filePath);
+    } catch {
+    }
+    return { success: true };
   });
   ipcMain.on("agent:approval-response", (event, payload) => {
     var _a3;
@@ -48747,6 +50179,41 @@ app.whenReady().then(() => {
       return { ...row, details };
     });
   });
+  ipcMain.handle("audit:verify-chain", async (_event, limit2) => {
+    const n = typeof limit2 === "number" ? limit2 : void 0;
+    return auditService.verifyHashChain(n);
+  });
+  ipcMain.handle("audit:ship-now", async (_event, limit2) => {
+    const n = typeof limit2 === "number" ? limit2 : 200;
+    return await auditService.shipPendingLogs(n);
+  });
+  ipcMain.handle("audit:rotate-now", async (_event, retentionDays2) => {
+    const n = typeof retentionDays2 === "number" ? retentionDays2 : 30;
+    return await auditService.rotateLogs(n);
+  });
+  if (auditMaintenanceTimer) clearInterval(auditMaintenanceTimer);
+  const shipIntervalMs = (() => {
+    const raw = process.env.AUDIT_SHIP_INTERVAL_MS;
+    const n = raw ? Number(raw) : NaN;
+    if (Number.isFinite(n) && n > 5e3) return n;
+    return 6e4;
+  })();
+  const retentionDays = (() => {
+    const raw = process.env.AUDIT_RETENTION_DAYS;
+    const n = raw ? Number(raw) : NaN;
+    if (Number.isFinite(n) && n > 0) return n;
+    return 30;
+  })();
+  auditMaintenanceTimer = setInterval(async () => {
+    try {
+      await auditService.shipPendingLogs(200);
+    } catch {
+    }
+    try {
+      await auditService.rotateLogs(retentionDays);
+    } catch {
+    }
+  }, shipIntervalMs);
   ipcMain.handle("agent:feedback", async (_event, payload) => {
     const p = payload;
     const id = p == null ? void 0 : p.skillId;
@@ -48938,6 +50405,13 @@ app.whenReady().then(() => {
   });
   ipcMain.handle("agent:get-models", async () => {
     return AVAILABLE_MODELS;
+  });
+  ipcMain.handle("agent:get-llm-config", async () => {
+    return agentService.getLLMConfig();
+  });
+  ipcMain.handle("agent:set-llm-config", async (_event, cfg) => {
+    await agentService.setLLMConfig(cfg ?? {});
+    return { success: true };
   });
   ipcMain.handle("agent:get-current-model", async () => {
     return agentService.getCurrentModelId();
