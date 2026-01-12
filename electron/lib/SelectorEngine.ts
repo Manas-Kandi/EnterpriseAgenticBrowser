@@ -1,0 +1,1376 @@
+/**
+ * SelectorEngine - Robust, semantic selector generation for browser automation
+ * 
+ * This module implements a comprehensive selector scoring and generation system
+ * that prioritizes semantic attributes (aria-label, role, name) over brittle
+ * CSS classes, enabling reliable automation on "wild" web applications.
+ * 
+ * Key Features:
+ * - Multi-strategy selector generation (CSS, XPath, Text-based)
+ * - Semantic attribute scoring with configurable weights
+ * - Uniqueness validation
+ * - Stability scoring (prefers attributes unlikely to change)
+ * - Accessibility-first approach (ARIA attributes prioritized)
+ */
+
+// ============================================================================
+// Types
+// ============================================================================
+
+export type SelectorKind = 'css' | 'xpath' | 'text' | 'combined';
+
+export interface SelectorCandidate {
+  kind: SelectorKind;
+  value: string;
+  score: number;
+  matches: number;
+  isUnique: boolean;
+  strategy: string;
+  confidence: 'high' | 'medium' | 'low';
+}
+
+export interface ElementDescriptor {
+  tag: string;
+  id?: string;
+  testId?: string;
+  name?: string;
+  ariaLabel?: string;
+  ariaLabelledBy?: string;
+  ariaDescribedBy?: string;
+  role?: string;
+  placeholder?: string;
+  title?: string;
+  href?: string;
+  type?: string;
+  value?: string;
+  text?: string;
+  classes?: string[];
+  dataAttributes?: Record<string, string>;
+  nthOfType?: number;
+  parentDescriptor?: Partial<ElementDescriptor>;
+}
+
+export interface ScoringConfig {
+  // Weights for different attribute types (higher = more preferred)
+  weights: {
+    id: number;
+    testId: number;
+    ariaLabel: number;
+    ariaLabelledBy: number;
+    role: number;
+    name: number;
+    placeholder: number;
+    title: number;
+    href: number;
+    text: number;
+    classes: number;
+    nthOfType: number;
+    xpath: number;
+  };
+  // Penalties
+  penalties: {
+    nonUnique: number;
+    dynamicClass: number;
+    deepNesting: number;
+    genericTag: number;
+  };
+  // Bonuses
+  bonuses: {
+    semanticAttribute: number;
+    stableAttribute: number;
+    shortSelector: number;
+  };
+}
+
+// ============================================================================
+// Default Configuration
+// ============================================================================
+
+export const DEFAULT_SCORING_CONFIG: ScoringConfig = {
+  weights: {
+    id: 100,           // IDs are typically unique and stable
+    testId: 95,        // data-testid is explicitly for testing
+    ariaLabel: 90,     // Accessibility labels are semantic and stable
+    ariaLabelledBy: 85,
+    role: 80,          // ARIA roles indicate semantic purpose
+    name: 75,          // Form element names are usually stable
+    placeholder: 70,   // Placeholders are user-facing, relatively stable
+    title: 65,         // Title attributes are semantic
+    href: 60,          // Links with specific hrefs
+    text: 55,          // Visible text (can change with i18n)
+    classes: 30,       // Classes are often dynamic/utility-based
+    nthOfType: 20,     // Positional selectors are fragile
+    xpath: 40,         // XPath fallback
+  },
+  penalties: {
+    nonUnique: -50,    // Heavy penalty for non-unique selectors
+    dynamicClass: -20, // Penalty for classes that look dynamic
+    deepNesting: -5,   // Per-level penalty for deep selectors
+    genericTag: -10,   // Penalty for generic tags like div, span
+  },
+  bonuses: {
+    semanticAttribute: 15,  // Bonus for using semantic HTML
+    stableAttribute: 10,    // Bonus for attributes unlikely to change
+    shortSelector: 5,       // Bonus for concise selectors
+  },
+};
+
+// ============================================================================
+// Utility Functions
+// ============================================================================
+
+/**
+ * Escape a string for use in CSS attribute selectors
+ */
+export function escapeCSS(value: string): string {
+  if (typeof value !== 'string') return '';
+  // Use CSS.escape if available, otherwise manual escape
+  if (typeof CSS !== 'undefined' && CSS.escape) {
+    return CSS.escape(value);
+  }
+  return value.replace(/([!"#$%&'()*+,.\/:;<=>?@[\\\]^`{|}~])/g, '\\$1');
+}
+
+/**
+ * Escape a string for use in XPath expressions
+ */
+export function escapeXPath(value: string): string {
+  const v = String(value ?? '');
+  if (!v.includes("'")) return `'${v}'`;
+  if (!v.includes('"')) return `"${v}"`;
+  // Use concat() for strings with both quote types
+  return 'concat(' + v.split("'").map(p => `'${p}'`).join(", \"'\", ") + ')';
+}
+
+/**
+ * Format attribute value for CSS selector
+ */
+export function formatAttrValue(value: string): string {
+  if (typeof value !== 'string') return "''";
+  // Simple alphanumeric values don't need quotes
+  if (/^[a-zA-Z0-9_-]+$/.test(value)) return value;
+  // Escape and quote
+  return `'${value.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
+}
+
+/**
+ * Check if a class name looks dynamic (generated by CSS-in-JS, etc.)
+ */
+export function isDynamicClass(className: string): boolean {
+  const patterns = [
+    /^[a-z]{1,3}[A-Z][a-zA-Z0-9]{4,}$/,  // camelCase with hash (e.g., scXYZ123)
+    /^_[a-zA-Z0-9]{6,}$/,                 // Underscore prefix with hash
+    /^css-[a-zA-Z0-9]+$/,                 // Emotion/styled-components
+    /^sc-[a-zA-Z0-9]+$/,                  // styled-components
+    /^styles?_[a-zA-Z0-9]+__[a-zA-Z0-9]+/, // CSS Modules
+    /^[a-zA-Z0-9]{20,}$/,                 // Long random strings
+    /^[a-f0-9]{8,}$/i,                    // Hex hashes
+    /^\d+$/,                              // Pure numbers
+  ];
+  return patterns.some(p => p.test(className));
+}
+
+/**
+ * Check if a tag is generic (div, span, etc.)
+ */
+export function isGenericTag(tag: string): boolean {
+  const generic = ['div', 'span', 'section', 'article', 'aside', 'header', 'footer', 'main', 'nav', 'p', 'li', 'ul', 'ol'];
+  return generic.includes(tag.toLowerCase());
+}
+
+/**
+ * Check if an attribute is semantic (accessibility-related)
+ */
+export function isSemanticAttribute(attr: string): boolean {
+  const semantic = [
+    'aria-label', 'aria-labelledby', 'aria-describedby', 'aria-description',
+    'role', 'name', 'title', 'alt', 'placeholder', 'for', 'id',
+    'data-testid', 'data-test-id', 'data-cy', 'data-test'
+  ];
+  return semantic.includes(attr.toLowerCase());
+}
+
+// ============================================================================
+// Selector Generation Strategies
+// ============================================================================
+
+/**
+ * Generate CSS selector candidates for an element
+ */
+export function generateCSSSelectors(
+  el: ElementDescriptor,
+  config: ScoringConfig = DEFAULT_SCORING_CONFIG
+): SelectorCandidate[] {
+  const candidates: SelectorCandidate[] = [];
+  const tag = el.tag.toLowerCase();
+
+  // Strategy 1: ID selector (highest priority)
+  if (el.id && !isDynamicClass(el.id)) {
+    candidates.push({
+      kind: 'css',
+      value: `#${escapeCSS(el.id)}`,
+      score: config.weights.id,
+      matches: 1, // IDs should be unique
+      isUnique: true,
+      strategy: 'id',
+      confidence: 'high',
+    });
+  }
+
+  // Strategy 2: data-testid (explicit testing hook)
+  if (el.testId) {
+    candidates.push({
+      kind: 'css',
+      value: `[data-testid=${formatAttrValue(el.testId)}]`,
+      score: config.weights.testId,
+      matches: 0, // Will be validated
+      isUnique: false,
+      strategy: 'testId',
+      confidence: 'high',
+    });
+  }
+
+  // Strategy 3: aria-label (accessibility, semantic)
+  if (el.ariaLabel) {
+    candidates.push({
+      kind: 'css',
+      value: `${tag}[aria-label=${formatAttrValue(el.ariaLabel)}]`,
+      score: config.weights.ariaLabel + config.bonuses.semanticAttribute,
+      matches: 0,
+      isUnique: false,
+      strategy: 'ariaLabel',
+      confidence: 'high',
+    });
+  }
+
+  // Strategy 4: role attribute (semantic)
+  if (el.role) {
+    const roleSelector = `[role=${formatAttrValue(el.role)}]`;
+    candidates.push({
+      kind: 'css',
+      value: roleSelector,
+      score: config.weights.role + config.bonuses.semanticAttribute,
+      matches: 0,
+      isUnique: false,
+      strategy: 'role',
+      confidence: 'medium',
+    });
+
+    // Combine role with aria-label for higher specificity
+    if (el.ariaLabel) {
+      candidates.push({
+        kind: 'css',
+        value: `[role=${formatAttrValue(el.role)}][aria-label=${formatAttrValue(el.ariaLabel)}]`,
+        score: config.weights.role + config.weights.ariaLabel + config.bonuses.semanticAttribute,
+        matches: 0,
+        isUnique: false,
+        strategy: 'role+ariaLabel',
+        confidence: 'high',
+      });
+    }
+  }
+
+  // Strategy 5: name attribute (forms)
+  if (el.name) {
+    candidates.push({
+      kind: 'css',
+      value: `${tag}[name=${formatAttrValue(el.name)}]`,
+      score: config.weights.name + config.bonuses.stableAttribute,
+      matches: 0,
+      isUnique: false,
+      strategy: 'name',
+      confidence: 'high',
+    });
+  }
+
+  // Strategy 6: placeholder (inputs)
+  if (el.placeholder) {
+    candidates.push({
+      kind: 'css',
+      value: `${tag}[placeholder=${formatAttrValue(el.placeholder)}]`,
+      score: config.weights.placeholder,
+      matches: 0,
+      isUnique: false,
+      strategy: 'placeholder',
+      confidence: 'medium',
+    });
+  }
+
+  // Strategy 7: title attribute
+  if (el.title) {
+    candidates.push({
+      kind: 'css',
+      value: `${tag}[title=${formatAttrValue(el.title)}]`,
+      score: config.weights.title,
+      matches: 0,
+      isUnique: false,
+      strategy: 'title',
+      confidence: 'medium',
+    });
+  }
+
+  // Strategy 8: href for links
+  if (el.href && tag === 'a') {
+    // Prefer exact href match
+    candidates.push({
+      kind: 'css',
+      value: `a[href=${formatAttrValue(el.href)}]`,
+      score: config.weights.href + config.bonuses.stableAttribute,
+      matches: 0,
+      isUnique: false,
+      strategy: 'href',
+      confidence: 'high',
+    });
+
+    // Also try partial match for relative URLs
+    if (el.href.startsWith('/') && !el.href.includes('?')) {
+      candidates.push({
+        kind: 'css',
+        value: `a[href^=${formatAttrValue(el.href)}]`,
+        score: config.weights.href - 10,
+        matches: 0,
+        isUnique: false,
+        strategy: 'hrefPrefix',
+        confidence: 'medium',
+      });
+    }
+  }
+
+  // Strategy 9: type attribute for inputs
+  if (el.type && ['input', 'button'].includes(tag)) {
+    const typeSelector = `${tag}[type=${formatAttrValue(el.type)}]`;
+    
+    // Combine with name or placeholder for specificity
+    if (el.name) {
+      candidates.push({
+        kind: 'css',
+        value: `${tag}[type=${formatAttrValue(el.type)}][name=${formatAttrValue(el.name)}]`,
+        score: config.weights.name + 20,
+        matches: 0,
+        isUnique: false,
+        strategy: 'type+name',
+        confidence: 'high',
+      });
+    }
+    if (el.placeholder) {
+      candidates.push({
+        kind: 'css',
+        value: `${tag}[type=${formatAttrValue(el.type)}][placeholder=${formatAttrValue(el.placeholder)}]`,
+        score: config.weights.placeholder + 15,
+        matches: 0,
+        isUnique: false,
+        strategy: 'type+placeholder',
+        confidence: 'medium',
+      });
+    }
+  }
+
+  // Strategy 10: Stable classes (non-dynamic)
+  if (el.classes && el.classes.length > 0) {
+    const stableClasses = el.classes.filter(c => !isDynamicClass(c));
+    if (stableClasses.length > 0) {
+      // Use up to 2 stable classes
+      const classSelector = stableClasses.slice(0, 2).map(c => `.${escapeCSS(c)}`).join('');
+      candidates.push({
+        kind: 'css',
+        value: `${tag}${classSelector}`,
+        score: config.weights.classes + (stableClasses.length > 1 ? 5 : 0),
+        matches: 0,
+        isUnique: false,
+        strategy: 'classes',
+        confidence: 'low',
+      });
+    }
+  }
+
+  // Strategy 11: Data attributes (custom)
+  if (el.dataAttributes) {
+    for (const [key, value] of Object.entries(el.dataAttributes)) {
+      if (key === 'testid' || key === 'test-id') continue; // Already handled
+      candidates.push({
+        kind: 'css',
+        value: `${tag}[data-${key}=${formatAttrValue(value)}]`,
+        score: config.weights.classes + 10,
+        matches: 0,
+        isUnique: false,
+        strategy: `data-${key}`,
+        confidence: 'medium',
+      });
+    }
+  }
+
+  return candidates;
+}
+
+/**
+ * Generate XPath selector candidates for an element
+ */
+export function generateXPathSelectors(
+  el: ElementDescriptor,
+  config: ScoringConfig = DEFAULT_SCORING_CONFIG
+): SelectorCandidate[] {
+  const candidates: SelectorCandidate[] = [];
+  const tag = el.tag.toLowerCase();
+
+  // XPath Strategy 1: ID
+  if (el.id && !isDynamicClass(el.id)) {
+    candidates.push({
+      kind: 'xpath',
+      value: `xpath=//*[@id=${escapeXPath(el.id)}]`,
+      score: config.weights.id - 5, // Slightly lower than CSS ID
+      matches: 1,
+      isUnique: true,
+      strategy: 'xpath-id',
+      confidence: 'high',
+    });
+  }
+
+  // XPath Strategy 2: data-testid
+  if (el.testId) {
+    candidates.push({
+      kind: 'xpath',
+      value: `xpath=//*[@data-testid=${escapeXPath(el.testId)}]`,
+      score: config.weights.testId - 5,
+      matches: 0,
+      isUnique: false,
+      strategy: 'xpath-testId',
+      confidence: 'high',
+    });
+  }
+
+  // XPath Strategy 3: aria-label
+  if (el.ariaLabel) {
+    candidates.push({
+      kind: 'xpath',
+      value: `xpath=//${tag}[@aria-label=${escapeXPath(el.ariaLabel)}]`,
+      score: config.weights.ariaLabel,
+      matches: 0,
+      isUnique: false,
+      strategy: 'xpath-ariaLabel',
+      confidence: 'high',
+    });
+  }
+
+  // XPath Strategy 4: name
+  if (el.name) {
+    candidates.push({
+      kind: 'xpath',
+      value: `xpath=//${tag}[@name=${escapeXPath(el.name)}]`,
+      score: config.weights.name,
+      matches: 0,
+      isUnique: false,
+      strategy: 'xpath-name',
+      confidence: 'high',
+    });
+  }
+
+  // XPath Strategy 5: placeholder
+  if (el.placeholder) {
+    candidates.push({
+      kind: 'xpath',
+      value: `xpath=//${tag}[@placeholder=${escapeXPath(el.placeholder)}]`,
+      score: config.weights.placeholder,
+      matches: 0,
+      isUnique: false,
+      strategy: 'xpath-placeholder',
+      confidence: 'medium',
+    });
+  }
+
+  // XPath Strategy 6: Text content (powerful for buttons/links)
+  if (el.text && el.text.trim().length > 0 && el.text.length < 100) {
+    const trimmedText = el.text.trim();
+    
+    // Exact text match
+    candidates.push({
+      kind: 'xpath',
+      value: `xpath=//${tag}[normalize-space(text())=${escapeXPath(trimmedText)}]`,
+      score: config.weights.text + 10,
+      matches: 0,
+      isUnique: false,
+      strategy: 'xpath-exactText',
+      confidence: 'medium',
+    });
+
+    // Contains text (more flexible)
+    candidates.push({
+      kind: 'xpath',
+      value: `xpath=//${tag}[contains(normalize-space(.), ${escapeXPath(trimmedText)})]`,
+      score: config.weights.text,
+      matches: 0,
+      isUnique: false,
+      strategy: 'xpath-containsText',
+      confidence: 'low',
+    });
+
+    // For buttons/links, also try with role
+    if (['button', 'a'].includes(tag) || el.role === 'button' || el.role === 'link') {
+      const roleTag = el.role ? `*[@role='${el.role}']` : tag;
+      candidates.push({
+        kind: 'xpath',
+        value: `xpath=//${roleTag}[normalize-space(.)=${escapeXPath(trimmedText)}]`,
+        score: config.weights.text + config.weights.role,
+        matches: 0,
+        isUnique: false,
+        strategy: 'xpath-roleText',
+        confidence: 'medium',
+      });
+    }
+  }
+
+  // XPath Strategy 7: Role + other attributes
+  if (el.role) {
+    candidates.push({
+      kind: 'xpath',
+      value: `xpath=//*[@role=${escapeXPath(el.role)}]`,
+      score: config.weights.role,
+      matches: 0,
+      isUnique: false,
+      strategy: 'xpath-role',
+      confidence: 'medium',
+    });
+
+    if (el.ariaLabel) {
+      candidates.push({
+        kind: 'xpath',
+        value: `xpath=//*[@role=${escapeXPath(el.role)} and @aria-label=${escapeXPath(el.ariaLabel)}]`,
+        score: config.weights.role + config.weights.ariaLabel,
+        matches: 0,
+        isUnique: false,
+        strategy: 'xpath-role+ariaLabel',
+        confidence: 'high',
+      });
+    }
+  }
+
+  // XPath Strategy 8: Positional (fallback)
+  if (el.nthOfType !== undefined && el.nthOfType > 0) {
+    // Build a path using parent context if available
+    if (el.parentDescriptor?.id) {
+      candidates.push({
+        kind: 'xpath',
+        value: `xpath=//*[@id=${escapeXPath(el.parentDescriptor.id)}]//${tag}[${el.nthOfType}]`,
+        score: config.weights.nthOfType + 20,
+        matches: 0,
+        isUnique: false,
+        strategy: 'xpath-parentId+nth',
+        confidence: 'medium',
+      });
+    } else if (el.parentDescriptor?.testId) {
+      candidates.push({
+        kind: 'xpath',
+        value: `xpath=//*[@data-testid=${escapeXPath(el.parentDescriptor.testId)}]//${tag}[${el.nthOfType}]`,
+        score: config.weights.nthOfType + 15,
+        matches: 0,
+        isUnique: false,
+        strategy: 'xpath-parentTestId+nth',
+        confidence: 'medium',
+      });
+    }
+  }
+
+  return candidates;
+}
+
+/**
+ * Generate text-based selector candidates
+ */
+export function generateTextSelectors(
+  el: ElementDescriptor,
+  config: ScoringConfig = DEFAULT_SCORING_CONFIG
+): SelectorCandidate[] {
+  const candidates: SelectorCandidate[] = [];
+
+  if (el.text && el.text.trim().length > 0 && el.text.length < 100) {
+    const trimmedText = el.text.trim();
+    
+    candidates.push({
+      kind: 'text',
+      value: trimmedText,
+      score: config.weights.text,
+      matches: 0,
+      isUnique: false,
+      strategy: 'text-exact',
+      confidence: 'medium',
+    });
+  }
+
+  // aria-label as text fallback
+  if (el.ariaLabel) {
+    candidates.push({
+      kind: 'text',
+      value: el.ariaLabel,
+      score: config.weights.ariaLabel - 10,
+      matches: 0,
+      isUnique: false,
+      strategy: 'text-ariaLabel',
+      confidence: 'medium',
+    });
+  }
+
+  return candidates;
+}
+
+// ============================================================================
+// Main Selector Engine
+// ============================================================================
+
+export interface SelectorEngineOptions {
+  config?: ScoringConfig;
+  maxCandidates?: number;
+  requireUnique?: boolean;
+}
+
+/**
+ * Generate all selector candidates for an element, scored and ranked
+ */
+export function generateAllSelectors(
+  el: ElementDescriptor,
+  options: SelectorEngineOptions = {}
+): SelectorCandidate[] {
+  const config = options.config ?? DEFAULT_SCORING_CONFIG;
+  const maxCandidates = options.maxCandidates ?? 10;
+
+  const allCandidates: SelectorCandidate[] = [
+    ...generateCSSSelectors(el, config),
+    ...generateXPathSelectors(el, config),
+    ...generateTextSelectors(el, config),
+  ];
+
+  // Sort by score (descending)
+  allCandidates.sort((a, b) => b.score - a.score);
+
+  // Return top candidates
+  return allCandidates.slice(0, maxCandidates);
+}
+
+/**
+ * Pick the best selector from candidates based on uniqueness validation
+ */
+export function pickBestSelector(
+  candidates: SelectorCandidate[],
+  validateUniqueness: (selector: string, kind: SelectorKind) => number
+): SelectorCandidate | null {
+  // First pass: find unique selectors
+  for (const candidate of candidates) {
+    const matches = validateUniqueness(candidate.value, candidate.kind);
+    candidate.matches = matches;
+    candidate.isUnique = matches === 1;
+    
+    if (candidate.isUnique) {
+      return candidate;
+    }
+  }
+
+  // Second pass: return highest-scored non-unique if no unique found
+  // (but penalize the score)
+  const sorted = [...candidates].sort((a, b) => {
+    const aScore = a.isUnique ? a.score : a.score - 50;
+    const bScore = b.isUnique ? b.score : b.score - 50;
+    return bScore - aScore;
+  });
+
+  return sorted[0] ?? null;
+}
+
+// ============================================================================
+// Browser-Injectable Code Generator
+// ============================================================================
+
+/**
+ * Generate JavaScript code that can be injected into a browser context
+ * to extract element descriptors and generate selectors
+ */
+export function generateBrowserSelectorCode(): string {
+  return `
+(() => {
+  // ========== Utility Functions ==========
+  const escapeCSS = (value) => {
+    if (typeof value !== 'string') return '';
+    if (typeof CSS !== 'undefined' && CSS.escape) return CSS.escape(value);
+    return value.replace(/([!"#$%&'()*+,.\\/:;<=>?@[\\\\\\]^\`{|}~])/g, '\\\\$1');
+  };
+
+  const escapeXPath = (value) => {
+    const v = String(value ?? '');
+    if (!v.includes("'")) return "'" + v + "'";
+    if (!v.includes('"')) return '"' + v + '"';
+    return 'concat(' + v.split("'").map(p => "'" + p + "'").join(", \"'\", ") + ')';
+  };
+
+  const formatAttrValue = (value) => {
+    if (typeof value !== 'string') return "''";
+    if (/^[a-zA-Z0-9_-]+$/.test(value)) return value;
+    return "'" + value.replace(/\\\\/g, '\\\\\\\\').replace(/'/g, "\\\\'") + "'";
+  };
+
+  const isDynamicClass = (className) => {
+    const patterns = [
+      /^[a-z]{1,3}[A-Z][a-zA-Z0-9]{4,}$/,
+      /^_[a-zA-Z0-9]{6,}$/,
+      /^css-[a-zA-Z0-9]+$/,
+      /^sc-[a-zA-Z0-9]+$/,
+      /^styles?_[a-zA-Z0-9]+__[a-zA-Z0-9]+/,
+      /^[a-zA-Z0-9]{20,}$/,
+      /^[a-f0-9]{8,}$/i,
+      /^\\d+$/,
+    ];
+    return patterns.some(p => p.test(className));
+  };
+
+  const isGenericTag = (tag) => {
+    const generic = ['div', 'span', 'section', 'article', 'aside', 'header', 'footer', 'main', 'nav', 'p', 'li', 'ul', 'ol'];
+    return generic.includes(tag.toLowerCase());
+  };
+
+  // ========== Scoring Configuration ==========
+  const WEIGHTS = {
+    id: 100,
+    testId: 95,
+    ariaLabel: 90,
+    ariaLabelledBy: 85,
+    role: 80,
+    name: 75,
+    placeholder: 70,
+    title: 65,
+    href: 60,
+    text: 55,
+    classes: 30,
+    nthOfType: 20,
+    xpath: 40,
+  };
+
+  const BONUSES = {
+    semanticAttribute: 15,
+    stableAttribute: 10,
+    shortSelector: 5,
+  };
+
+  // ========== Selector Validation ==========
+  const countCSS = (sel) => {
+    try {
+      return document.querySelectorAll(sel).length;
+    } catch {
+      return 0;
+    }
+  };
+
+  const countXPath = (xp) => {
+    try {
+      const snap = document.evaluate(
+        xp,
+        document,
+        null,
+        XPathResult.ORDERED_NODE_SNAPSHOT_TYPE,
+        null
+      );
+      return snap.snapshotLength || 0;
+    } catch {
+      return 0;
+    }
+  };
+
+  const validateSelector = (value, kind) => {
+    if (kind === 'xpath') {
+      const xp = value.startsWith('xpath=') ? value.slice(6) : value;
+      return countXPath(xp);
+    }
+    return countCSS(value);
+  };
+
+  // ========== Element Descriptor Extraction ==========
+  const extractDescriptor = (el) => {
+    if (!el || el.nodeType !== 1) return null;
+
+    const tag = (el.tagName || '').toLowerCase();
+    const id = el.id || undefined;
+    const testId = el.getAttribute?.('data-testid') || el.getAttribute?.('data-test-id') || undefined;
+    const name = el.getAttribute?.('name') || undefined;
+    const ariaLabel = el.getAttribute?.('aria-label') || undefined;
+    const ariaLabelledBy = el.getAttribute?.('aria-labelledby') || undefined;
+    const ariaDescribedBy = el.getAttribute?.('aria-describedby') || undefined;
+    const role = el.getAttribute?.('role') || undefined;
+    const placeholder = el.getAttribute?.('placeholder') || undefined;
+    const title = el.getAttribute?.('title') || undefined;
+    const href = tag === 'a' ? (el.getAttribute?.('href') || undefined) : undefined;
+    const type = el.getAttribute?.('type') || undefined;
+    const value = 'value' in el ? String(el.value ?? '') : undefined;
+    const text = (el.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 100);
+    const classes = el.classList ? Array.from(el.classList) : [];
+
+    // Extract data-* attributes
+    const dataAttributes = {};
+    if (el.dataset) {
+      for (const [key, val] of Object.entries(el.dataset)) {
+        if (key !== 'testid' && key !== 'testId') {
+          dataAttributes[key] = val;
+        }
+      }
+    }
+
+    // Calculate nth-of-type
+    let nthOfType;
+    const parent = el.parentElement;
+    if (parent) {
+      const siblings = Array.from(parent.children).filter(sib => sib.tagName === el.tagName);
+      if (siblings.length > 1) {
+        nthOfType = siblings.indexOf(el) + 1;
+      }
+    }
+
+    // Parent descriptor for context
+    let parentDescriptor;
+    if (parent && parent !== document.body && parent !== document.documentElement) {
+      parentDescriptor = {
+        id: parent.id || undefined,
+        testId: parent.getAttribute?.('data-testid') || parent.getAttribute?.('data-test-id') || undefined,
+        tag: (parent.tagName || '').toLowerCase(),
+      };
+    }
+
+    return {
+      tag,
+      id,
+      testId,
+      name,
+      ariaLabel,
+      ariaLabelledBy,
+      ariaDescribedBy,
+      role,
+      placeholder,
+      title,
+      href,
+      type,
+      value,
+      text,
+      classes,
+      dataAttributes: Object.keys(dataAttributes).length > 0 ? dataAttributes : undefined,
+      nthOfType,
+      parentDescriptor,
+    };
+  };
+
+  // ========== Selector Generation ==========
+  const generateCSSSelectors = (desc) => {
+    const candidates = [];
+    const tag = desc.tag;
+
+    // ID
+    if (desc.id && !isDynamicClass(desc.id)) {
+      candidates.push({
+        kind: 'css',
+        value: '#' + escapeCSS(desc.id),
+        score: WEIGHTS.id,
+        strategy: 'id',
+        confidence: 'high',
+      });
+    }
+
+    // data-testid
+    if (desc.testId) {
+      candidates.push({
+        kind: 'css',
+        value: '[data-testid=' + formatAttrValue(desc.testId) + ']',
+        score: WEIGHTS.testId,
+        strategy: 'testId',
+        confidence: 'high',
+      });
+    }
+
+    // aria-label
+    if (desc.ariaLabel) {
+      candidates.push({
+        kind: 'css',
+        value: tag + '[aria-label=' + formatAttrValue(desc.ariaLabel) + ']',
+        score: WEIGHTS.ariaLabel + BONUSES.semanticAttribute,
+        strategy: 'ariaLabel',
+        confidence: 'high',
+      });
+    }
+
+    // role
+    if (desc.role) {
+      candidates.push({
+        kind: 'css',
+        value: '[role=' + formatAttrValue(desc.role) + ']',
+        score: WEIGHTS.role + BONUSES.semanticAttribute,
+        strategy: 'role',
+        confidence: 'medium',
+      });
+
+      if (desc.ariaLabel) {
+        candidates.push({
+          kind: 'css',
+          value: '[role=' + formatAttrValue(desc.role) + '][aria-label=' + formatAttrValue(desc.ariaLabel) + ']',
+          score: WEIGHTS.role + WEIGHTS.ariaLabel + BONUSES.semanticAttribute,
+          strategy: 'role+ariaLabel',
+          confidence: 'high',
+        });
+      }
+    }
+
+    // name
+    if (desc.name) {
+      candidates.push({
+        kind: 'css',
+        value: tag + '[name=' + formatAttrValue(desc.name) + ']',
+        score: WEIGHTS.name + BONUSES.stableAttribute,
+        strategy: 'name',
+        confidence: 'high',
+      });
+    }
+
+    // placeholder
+    if (desc.placeholder) {
+      candidates.push({
+        kind: 'css',
+        value: tag + '[placeholder=' + formatAttrValue(desc.placeholder) + ']',
+        score: WEIGHTS.placeholder,
+        strategy: 'placeholder',
+        confidence: 'medium',
+      });
+    }
+
+    // title
+    if (desc.title) {
+      candidates.push({
+        kind: 'css',
+        value: tag + '[title=' + formatAttrValue(desc.title) + ']',
+        score: WEIGHTS.title,
+        strategy: 'title',
+        confidence: 'medium',
+      });
+    }
+
+    // href
+    if (desc.href && tag === 'a') {
+      candidates.push({
+        kind: 'css',
+        value: 'a[href=' + formatAttrValue(desc.href) + ']',
+        score: WEIGHTS.href + BONUSES.stableAttribute,
+        strategy: 'href',
+        confidence: 'high',
+      });
+    }
+
+    // type + name/placeholder
+    if (desc.type && ['input', 'button'].includes(tag)) {
+      if (desc.name) {
+        candidates.push({
+          kind: 'css',
+          value: tag + '[type=' + formatAttrValue(desc.type) + '][name=' + formatAttrValue(desc.name) + ']',
+          score: WEIGHTS.name + 20,
+          strategy: 'type+name',
+          confidence: 'high',
+        });
+      }
+      if (desc.placeholder) {
+        candidates.push({
+          kind: 'css',
+          value: tag + '[type=' + formatAttrValue(desc.type) + '][placeholder=' + formatAttrValue(desc.placeholder) + ']',
+          score: WEIGHTS.placeholder + 15,
+          strategy: 'type+placeholder',
+          confidence: 'medium',
+        });
+      }
+    }
+
+    // Stable classes
+    if (desc.classes && desc.classes.length > 0) {
+      const stableClasses = desc.classes.filter(c => !isDynamicClass(c));
+      if (stableClasses.length > 0) {
+        const classSelector = stableClasses.slice(0, 2).map(c => '.' + escapeCSS(c)).join('');
+        candidates.push({
+          kind: 'css',
+          value: tag + classSelector,
+          score: WEIGHTS.classes + (stableClasses.length > 1 ? 5 : 0),
+          strategy: 'classes',
+          confidence: 'low',
+        });
+      }
+    }
+
+    return candidates;
+  };
+
+  const generateXPathSelectors = (desc) => {
+    const candidates = [];
+    const tag = desc.tag;
+
+    // ID
+    if (desc.id && !isDynamicClass(desc.id)) {
+      candidates.push({
+        kind: 'xpath',
+        value: 'xpath=//*[@id=' + escapeXPath(desc.id) + ']',
+        score: WEIGHTS.id - 5,
+        strategy: 'xpath-id',
+        confidence: 'high',
+      });
+    }
+
+    // data-testid
+    if (desc.testId) {
+      candidates.push({
+        kind: 'xpath',
+        value: 'xpath=//*[@data-testid=' + escapeXPath(desc.testId) + ']',
+        score: WEIGHTS.testId - 5,
+        strategy: 'xpath-testId',
+        confidence: 'high',
+      });
+    }
+
+    // aria-label
+    if (desc.ariaLabel) {
+      candidates.push({
+        kind: 'xpath',
+        value: 'xpath=//' + tag + '[@aria-label=' + escapeXPath(desc.ariaLabel) + ']',
+        score: WEIGHTS.ariaLabel,
+        strategy: 'xpath-ariaLabel',
+        confidence: 'high',
+      });
+    }
+
+    // name
+    if (desc.name) {
+      candidates.push({
+        kind: 'xpath',
+        value: 'xpath=//' + tag + '[@name=' + escapeXPath(desc.name) + ']',
+        score: WEIGHTS.name,
+        strategy: 'xpath-name',
+        confidence: 'high',
+      });
+    }
+
+    // placeholder
+    if (desc.placeholder) {
+      candidates.push({
+        kind: 'xpath',
+        value: 'xpath=//' + tag + '[@placeholder=' + escapeXPath(desc.placeholder) + ']',
+        score: WEIGHTS.placeholder,
+        strategy: 'xpath-placeholder',
+        confidence: 'medium',
+      });
+    }
+
+    // Text content
+    if (desc.text && desc.text.trim().length > 0 && desc.text.length < 100) {
+      const trimmedText = desc.text.trim();
+      
+      candidates.push({
+        kind: 'xpath',
+        value: 'xpath=//' + tag + '[normalize-space(text())=' + escapeXPath(trimmedText) + ']',
+        score: WEIGHTS.text + 10,
+        strategy: 'xpath-exactText',
+        confidence: 'medium',
+      });
+
+      candidates.push({
+        kind: 'xpath',
+        value: 'xpath=//' + tag + '[contains(normalize-space(.), ' + escapeXPath(trimmedText) + ')]',
+        score: WEIGHTS.text,
+        strategy: 'xpath-containsText',
+        confidence: 'low',
+      });
+
+      if (['button', 'a'].includes(tag) || desc.role === 'button' || desc.role === 'link') {
+        const roleTag = desc.role ? "*[@role='" + desc.role + "']" : tag;
+        candidates.push({
+          kind: 'xpath',
+          value: 'xpath=//' + roleTag + '[normalize-space(.)=' + escapeXPath(trimmedText) + ']',
+          score: WEIGHTS.text + WEIGHTS.role,
+          strategy: 'xpath-roleText',
+          confidence: 'medium',
+        });
+      }
+    }
+
+    // Role
+    if (desc.role) {
+      candidates.push({
+        kind: 'xpath',
+        value: 'xpath=//*[@role=' + escapeXPath(desc.role) + ']',
+        score: WEIGHTS.role,
+        strategy: 'xpath-role',
+        confidence: 'medium',
+      });
+
+      if (desc.ariaLabel) {
+        candidates.push({
+          kind: 'xpath',
+          value: 'xpath=//*[@role=' + escapeXPath(desc.role) + ' and @aria-label=' + escapeXPath(desc.ariaLabel) + ']',
+          score: WEIGHTS.role + WEIGHTS.ariaLabel,
+          strategy: 'xpath-role+ariaLabel',
+          confidence: 'high',
+        });
+      }
+    }
+
+    // Positional with parent context
+    if (desc.nthOfType !== undefined && desc.nthOfType > 0) {
+      if (desc.parentDescriptor?.id) {
+        candidates.push({
+          kind: 'xpath',
+          value: 'xpath=//*[@id=' + escapeXPath(desc.parentDescriptor.id) + ']//' + tag + '[' + desc.nthOfType + ']',
+          score: WEIGHTS.nthOfType + 20,
+          strategy: 'xpath-parentId+nth',
+          confidence: 'medium',
+        });
+      } else if (desc.parentDescriptor?.testId) {
+        candidates.push({
+          kind: 'xpath',
+          value: 'xpath=//*[@data-testid=' + escapeXPath(desc.parentDescriptor.testId) + ']//' + tag + '[' + desc.nthOfType + ']',
+          score: WEIGHTS.nthOfType + 15,
+          strategy: 'xpath-parentTestId+nth',
+          confidence: 'medium',
+        });
+      }
+    }
+
+    return candidates;
+  };
+
+  const generateTextSelectors = (desc) => {
+    const candidates = [];
+
+    if (desc.text && desc.text.trim().length > 0 && desc.text.length < 100) {
+      candidates.push({
+        kind: 'text',
+        value: desc.text.trim(),
+        score: WEIGHTS.text,
+        strategy: 'text-exact',
+        confidence: 'medium',
+      });
+    }
+
+    if (desc.ariaLabel) {
+      candidates.push({
+        kind: 'text',
+        value: desc.ariaLabel,
+        score: WEIGHTS.ariaLabel - 10,
+        strategy: 'text-ariaLabel',
+        confidence: 'medium',
+      });
+    }
+
+    return candidates;
+  };
+
+  // ========== Main Function ==========
+  const generateSelectorsForElement = (el, maxCandidates = 10) => {
+    const desc = extractDescriptor(el);
+    if (!desc) return { descriptor: null, candidates: [] };
+
+    const allCandidates = [
+      ...generateCSSSelectors(desc),
+      ...generateXPathSelectors(desc),
+      ...generateTextSelectors(desc),
+    ];
+
+    // Validate and score
+    for (const candidate of allCandidates) {
+      candidate.matches = validateSelector(candidate.value, candidate.kind);
+      candidate.isUnique = candidate.matches === 1;
+      
+      // Adjust score based on uniqueness
+      if (!candidate.isUnique && candidate.matches > 0) {
+        candidate.score -= 50;
+      }
+    }
+
+    // Sort by score
+    allCandidates.sort((a, b) => b.score - a.score);
+
+    // Pick best selector (first unique, or highest scored)
+    let bestSelector = null;
+    for (const c of allCandidates) {
+      if (c.isUnique) {
+        bestSelector = c.value;
+        break;
+      }
+    }
+    if (!bestSelector && allCandidates.length > 0) {
+      bestSelector = allCandidates[0].value;
+    }
+
+    return {
+      descriptor: desc,
+      bestSelector,
+      candidates: allCandidates.slice(0, maxCandidates),
+    };
+  };
+
+  // Export for use
+  return {
+    extractDescriptor,
+    generateSelectorsForElement,
+    validateSelector,
+    countCSS,
+    countXPath,
+  };
+})()
+`;
+}
+
+/**
+ * Generate the enhanced bestSelector function for browser injection
+ */
+export function generateEnhancedBestSelectorCode(): string {
+  return `
+const bestSelector = (el) => {
+  if (!el || el.nodeType !== 1) return '';
+  
+  const tag = (el.tagName || '').toLowerCase();
+  const unique = (sel) => {
+    try {
+      if (!sel) return false;
+      return document.querySelectorAll(sel).length === 1;
+    } catch {
+      return false;
+    }
+  };
+
+  const formatAttrValue = (value) => {
+    if (typeof value !== 'string') return "''";
+    if (/^[a-zA-Z0-9_-]+$/.test(value)) return value;
+    return "'" + value.replace(/\\\\/g, '\\\\\\\\').replace(/'/g, "\\\\'") + "'";
+  };
+
+  const isDynamicClass = (className) => {
+    const patterns = [
+      /^[a-z]{1,3}[A-Z][a-zA-Z0-9]{4,}$/,
+      /^_[a-zA-Z0-9]{6,}$/,
+      /^css-[a-zA-Z0-9]+$/,
+      /^sc-[a-zA-Z0-9]+$/,
+      /^styles?_[a-zA-Z0-9]+__[a-zA-Z0-9]+/,
+      /^[a-zA-Z0-9]{20,}$/,
+      /^[a-f0-9]{8,}$/i,
+      /^\\d+$/,
+    ];
+    return patterns.some(p => p.test(className));
+  };
+
+  // Priority 1: ID (if not dynamic)
+  if (el.id && !isDynamicClass(el.id)) {
+    const sel = '#' + CSS.escape(el.id);
+    if (unique(sel)) return sel;
+  }
+
+  // Priority 2: data-testid
+  const testId = el.getAttribute?.('data-testid') || el.getAttribute?.('data-test-id');
+  if (testId) {
+    const sel = '[data-testid=' + formatAttrValue(testId) + ']';
+    if (unique(sel)) return sel;
+  }
+
+  // Priority 3: aria-label (semantic)
+  const ariaLabel = el.getAttribute?.('aria-label');
+  if (ariaLabel) {
+    const sel = tag + '[aria-label=' + formatAttrValue(ariaLabel) + ']';
+    if (unique(sel)) return sel;
+  }
+
+  // Priority 4: role + aria-label combination
+  const role = el.getAttribute?.('role');
+  if (role && ariaLabel) {
+    const sel = '[role=' + formatAttrValue(role) + '][aria-label=' + formatAttrValue(ariaLabel) + ']';
+    if (unique(sel)) return sel;
+  }
+
+  // Priority 5: name attribute
+  const name = el.getAttribute?.('name');
+  if (name) {
+    const sel = tag + '[name=' + formatAttrValue(name) + ']';
+    if (unique(sel)) return sel;
+  }
+
+  // Priority 6: placeholder
+  const placeholder = el.getAttribute?.('placeholder');
+  if (placeholder) {
+    const sel = tag + '[placeholder=' + formatAttrValue(placeholder) + ']';
+    if (unique(sel)) return sel;
+  }
+
+  // Priority 7: title
+  const title = el.getAttribute?.('title');
+  if (title) {
+    const sel = tag + '[title=' + formatAttrValue(title) + ']';
+    if (unique(sel)) return sel;
+  }
+
+  // Priority 8: href for links
+  if (tag === 'a') {
+    const href = el.getAttribute?.('href');
+    if (href) {
+      const sel = 'a[href=' + formatAttrValue(href) + ']';
+      if (unique(sel)) return sel;
+    }
+  }
+
+  // Priority 9: type + name/placeholder for inputs
+  const type = el.getAttribute?.('type');
+  if (type && ['input', 'button'].includes(tag)) {
+    if (name) {
+      const sel = tag + '[type=' + formatAttrValue(type) + '][name=' + formatAttrValue(name) + ']';
+      if (unique(sel)) return sel;
+    }
+    if (placeholder) {
+      const sel = tag + '[type=' + formatAttrValue(type) + '][placeholder=' + formatAttrValue(placeholder) + ']';
+      if (unique(sel)) return sel;
+    }
+  }
+
+  // Priority 10: Stable classes only
+  if (el.className && typeof el.className === 'string') {
+    const classes = el.className.split(' ').filter(c => c.trim() && !isDynamicClass(c));
+    if (classes.length > 0) {
+      const classSelector = classes.slice(0, 2).map(c => '.' + CSS.escape(c)).join('');
+      const sel = tag + classSelector;
+      if (unique(sel)) return sel;
+    }
+  }
+
+  // Priority 11: role alone (less specific)
+  if (role) {
+    const sel = '[role=' + formatAttrValue(role) + ']';
+    if (unique(sel)) return sel;
+  }
+
+  // Fallback: CSS path
+  const cssPath = (el) => {
+    if (!el || el.nodeType !== 1) return '';
+    const parts = [];
+    let cur = el;
+    let guard = 0;
+    while (cur && cur.nodeType === 1 && guard++ < 7) {
+      const t = cur.tagName.toLowerCase();
+      if (cur.id && !isDynamicClass(cur.id)) {
+        parts.unshift(t + '#' + CSS.escape(cur.id));
+        break;
+      }
+
+      let part = t;
+      const tid = cur.getAttribute?.('data-testid') || cur.getAttribute?.('data-test-id');
+      if (tid) {
+        part += '[data-testid=' + formatAttrValue(tid) + ']';
+        parts.unshift(part);
+        break;
+      }
+
+      const parent = cur.parentElement;
+      if (parent) {
+        const sameTagSiblings = Array.from(parent.children).filter(sib => sib.tagName === cur.tagName);
+        if (sameTagSiblings.length > 1) {
+          part += ':nth-of-type(' + (sameTagSiblings.indexOf(cur) + 1) + ')';
+        }
+      }
+
+      parts.unshift(part);
+      cur = cur.parentElement;
+    }
+    return parts.join(' > ');
+  };
+
+  return cssPath(el) || tag;
+};
+`;
+}
