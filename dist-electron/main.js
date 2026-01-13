@@ -46192,10 +46192,12 @@ const _AgentService = class _AgentService {
       response_format: { type: "json_object" },
       ...resolved.extraBody ?? {}
     };
+    const isLocalProvider = provider === "ollama" || provider === "lmstudio";
+    const effectiveApiKey = isLocalProvider ? apiKey ?? "local" : apiKey ?? void 0;
     return new ChatOpenAI({
       configuration: {
         baseURL,
-        apiKey: provider === "openai_compatible" ? apiKey ?? "local" : apiKey ?? void 0
+        apiKey: effectiveApiKey
       },
       modelName: resolved.modelName,
       temperature: resolved.temperature,
@@ -47418,6 +47420,34 @@ class BrowserAutomationService {
           const title = await target.executeJavaScript(`document.title`, true);
           const elements = await target.executeJavaScript(
             `(() => {
+                // ========== Semantic Selector Engine ==========
+                // Implements robust, accessibility-first selector generation
+                // with scoring based on attribute stability and semantic meaning.
+                
+                // ========== Scoring Configuration ==========
+                const WEIGHTS = {
+                  id: 100,           // IDs are typically unique and stable
+                  testId: 95,        // data-testid is explicitly for testing
+                  ariaLabel: 90,     // Accessibility labels are semantic and stable
+                  ariaLabelledBy: 85,
+                  role: 80,          // ARIA roles indicate semantic purpose
+                  name: 75,          // Form element names are usually stable
+                  placeholder: 70,   // Placeholders are user-facing, relatively stable
+                  title: 65,         // Title attributes are semantic
+                  href: 60,          // Links with specific hrefs
+                  text: 55,          // Visible text (can change with i18n)
+                  classes: 30,       // Classes are often dynamic/utility-based
+                  nthOfType: 20,     // Positional selectors are fragile
+                  xpath: 40,         // XPath fallback
+                };
+
+                const BONUSES = {
+                  semanticAttribute: 15,
+                  stableAttribute: 10,
+                  shortSelector: 5,
+                };
+
+                // ========== Utility Functions ==========
                 const escapeForSingleQuotes = (value) => {
                   if (typeof value !== 'string') return '';
                   return value.replace(/\\\\/g, '\\\\\\\\').replace(/'/g, "\\\\'");
@@ -47425,9 +47455,30 @@ class BrowserAutomationService {
 
                 const attrSelectorValue = (value) => {
                   if (typeof value !== 'string') return "''";
-                  // If value is simple, avoid quotes entirely (JSON-safe and CSS-valid).
                   if (/^[a-zA-Z0-9_-]+$/.test(value)) return value;
                   return "'" + escapeForSingleQuotes(value) + "'";
+                };
+
+                const xpathLiteral = (value) => {
+                  const v = String(value ?? '');
+                  if (!v.includes("'")) return "'" + v + "'";
+                  if (!v.includes('"')) return '"' + v + '"';
+                  return 'concat(' + v.split("'").map((p) => "'" + p + "'").join(", "'", ") + ')';
+                };
+
+                // Detect dynamic/generated class names (CSS-in-JS, etc.)
+                const isDynamicClass = (className) => {
+                  const patterns = [
+                    /^[a-z]{1,3}[A-Z][a-zA-Z0-9]{4,}$/,  // camelCase with hash
+                    /^_[a-zA-Z0-9]{6,}$/,                 // Underscore prefix with hash
+                    /^css-[a-zA-Z0-9]+$/,                 // Emotion/styled-components
+                    /^sc-[a-zA-Z0-9]+$/,                  // styled-components
+                    /^styles?_[a-zA-Z0-9]+__[a-zA-Z0-9]+/, // CSS Modules
+                    /^[a-zA-Z0-9]{20,}$/,                 // Long random strings
+                    /^[a-f0-9]{8,}$/i,                    // Hex hashes
+                    /^\\d+$/,                              // Pure numbers
+                  ];
+                  return patterns.some(p => p.test(className));
                 };
 
                 const isVisible = (el) => {
@@ -47440,7 +47491,6 @@ class BrowserAutomationService {
                   if (!rects || rects.length === 0) return false;
                   const rect = el.getBoundingClientRect();
                   if (rect.width < 2 || rect.height < 2) return false;
-                  // Prefer in-viewport elements (allow small offscreen buffer)
                   const vw = window.innerWidth || 0;
                   const vh = window.innerHeight || 0;
                   const buffer = 40;
@@ -47449,6 +47499,179 @@ class BrowserAutomationService {
                   return true;
                 };
 
+                // ========== Selector Validation ==========
+                const countCSS = (sel) => {
+                  try { return document.querySelectorAll(sel).length; } catch { return 0; }
+                };
+
+                const countXPath = (xp) => {
+                  try {
+                    const snap = document.evaluate(xp, document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+                    return snap.snapshotLength || 0;
+                  } catch { return 0; }
+                };
+
+                const unique = (sel) => {
+                  try { return sel && document.querySelectorAll(sel).length === 1; } catch { return false; }
+                };
+
+                // ========== CSS Selector Generation ==========
+                const generateCSSCandidates = (el) => {
+                  const candidates = [];
+                  const tag = (el.tagName || '').toLowerCase();
+
+                  // Priority 1: ID (if not dynamic)
+                  if (el.id && !isDynamicClass(el.id)) {
+                    const sel = '#' + CSS.escape(el.id);
+                    candidates.push({ kind: 'css', value: sel, score: WEIGHTS.id, strategy: 'id', confidence: 'high' });
+                  }
+
+                  // Priority 2: data-testid
+                  const testId = el.getAttribute?.('data-testid') || el.getAttribute?.('data-test-id');
+                  if (testId) {
+                    candidates.push({ kind: 'css', value: '[data-testid=' + attrSelectorValue(testId) + ']', score: WEIGHTS.testId, strategy: 'testId', confidence: 'high' });
+                  }
+
+                  // Priority 3: aria-label (semantic)
+                  const ariaLabel = el.getAttribute?.('aria-label');
+                  if (ariaLabel) {
+                    candidates.push({ kind: 'css', value: tag + '[aria-label=' + attrSelectorValue(ariaLabel) + ']', score: WEIGHTS.ariaLabel + BONUSES.semanticAttribute, strategy: 'ariaLabel', confidence: 'high' });
+                  }
+
+                  // Priority 4: role + aria-label combination
+                  const role = el.getAttribute?.('role');
+                  if (role) {
+                    candidates.push({ kind: 'css', value: '[role=' + attrSelectorValue(role) + ']', score: WEIGHTS.role + BONUSES.semanticAttribute, strategy: 'role', confidence: 'medium' });
+                    if (ariaLabel) {
+                      candidates.push({ kind: 'css', value: '[role=' + attrSelectorValue(role) + '][aria-label=' + attrSelectorValue(ariaLabel) + ']', score: WEIGHTS.role + WEIGHTS.ariaLabel + BONUSES.semanticAttribute, strategy: 'role+ariaLabel', confidence: 'high' });
+                    }
+                  }
+
+                  // Priority 5: name attribute
+                  const name = el.getAttribute?.('name');
+                  if (name) {
+                    candidates.push({ kind: 'css', value: tag + '[name=' + attrSelectorValue(name) + ']', score: WEIGHTS.name + BONUSES.stableAttribute, strategy: 'name', confidence: 'high' });
+                  }
+
+                  // Priority 6: placeholder
+                  const placeholder = el.getAttribute?.('placeholder');
+                  if (placeholder) {
+                    candidates.push({ kind: 'css', value: tag + '[placeholder=' + attrSelectorValue(placeholder) + ']', score: WEIGHTS.placeholder, strategy: 'placeholder', confidence: 'medium' });
+                  }
+
+                  // Priority 7: title
+                  const title = el.getAttribute?.('title');
+                  if (title) {
+                    candidates.push({ kind: 'css', value: tag + '[title=' + attrSelectorValue(title) + ']', score: WEIGHTS.title, strategy: 'title', confidence: 'medium' });
+                  }
+
+                  // Priority 8: href for links
+                  if (tag === 'a') {
+                    const href = el.getAttribute?.('href');
+                    if (href) {
+                      candidates.push({ kind: 'css', value: 'a[href=' + attrSelectorValue(href) + ']', score: WEIGHTS.href + BONUSES.stableAttribute, strategy: 'href', confidence: 'high' });
+                    }
+                  }
+
+                  // Priority 9: type + name/placeholder for inputs
+                  const type = el.getAttribute?.('type');
+                  if (type && ['input', 'button'].includes(tag)) {
+                    if (name) {
+                      candidates.push({ kind: 'css', value: tag + '[type=' + attrSelectorValue(type) + '][name=' + attrSelectorValue(name) + ']', score: WEIGHTS.name + 20, strategy: 'type+name', confidence: 'high' });
+                    }
+                    if (placeholder) {
+                      candidates.push({ kind: 'css', value: tag + '[type=' + attrSelectorValue(type) + '][placeholder=' + attrSelectorValue(placeholder) + ']', score: WEIGHTS.placeholder + 15, strategy: 'type+placeholder', confidence: 'medium' });
+                    }
+                  }
+
+                  // Priority 10: Stable classes only (filter out dynamic ones)
+                  if (el.className && typeof el.className === 'string') {
+                    const stableClasses = el.className.split(' ').filter(c => c.trim() && !isDynamicClass(c));
+                    if (stableClasses.length > 0) {
+                      const classSelector = stableClasses.slice(0, 2).map(c => '.' + CSS.escape(c)).join('');
+                      candidates.push({ kind: 'css', value: tag + classSelector, score: WEIGHTS.classes + (stableClasses.length > 1 ? 5 : 0), strategy: 'classes', confidence: 'low' });
+                    }
+                  }
+
+                  return candidates;
+                };
+
+                // ========== XPath Selector Generation ==========
+                const generateXPathCandidates = (el) => {
+                  const candidates = [];
+                  const tag = (el.tagName || '').toLowerCase();
+
+                  // XPath by ID
+                  if (el.id && !isDynamicClass(el.id)) {
+                    candidates.push({ kind: 'xpath', value: 'xpath=//*[@id=' + xpathLiteral(el.id) + ']', score: WEIGHTS.id - 5, strategy: 'xpath-id', confidence: 'high' });
+                  }
+
+                  // XPath by data-testid
+                  const testId = el.getAttribute?.('data-testid') || el.getAttribute?.('data-test-id');
+                  if (testId) {
+                    candidates.push({ kind: 'xpath', value: 'xpath=//*[@data-testid=' + xpathLiteral(testId) + ']', score: WEIGHTS.testId - 5, strategy: 'xpath-testId', confidence: 'high' });
+                  }
+
+                  // XPath by aria-label
+                  const ariaLabel = el.getAttribute?.('aria-label');
+                  if (ariaLabel) {
+                    candidates.push({ kind: 'xpath', value: 'xpath=//' + tag + '[@aria-label=' + xpathLiteral(ariaLabel) + ']', score: WEIGHTS.ariaLabel, strategy: 'xpath-ariaLabel', confidence: 'high' });
+                  }
+
+                  // XPath by name
+                  const name = el.getAttribute?.('name');
+                  if (name) {
+                    candidates.push({ kind: 'xpath', value: 'xpath=//' + tag + '[@name=' + xpathLiteral(name) + ']', score: WEIGHTS.name, strategy: 'xpath-name', confidence: 'high' });
+                  }
+
+                  // XPath by placeholder
+                  const placeholder = el.getAttribute?.('placeholder');
+                  if (placeholder) {
+                    candidates.push({ kind: 'xpath', value: 'xpath=//' + tag + '[@placeholder=' + xpathLiteral(placeholder) + ']', score: WEIGHTS.placeholder, strategy: 'xpath-placeholder', confidence: 'medium' });
+                  }
+
+                  // XPath by role
+                  const role = el.getAttribute?.('role');
+                  if (role) {
+                    candidates.push({ kind: 'xpath', value: 'xpath=//*[@role=' + xpathLiteral(role) + ']', score: WEIGHTS.role, strategy: 'xpath-role', confidence: 'medium' });
+                    if (ariaLabel) {
+                      candidates.push({ kind: 'xpath', value: 'xpath=//*[@role=' + xpathLiteral(role) + ' and @aria-label=' + xpathLiteral(ariaLabel) + ']', score: WEIGHTS.role + WEIGHTS.ariaLabel, strategy: 'xpath-role+ariaLabel', confidence: 'high' });
+                    }
+                  }
+
+                  // XPath by text content (powerful for buttons/links)
+                  const text = (el.textContent || '').replace(/\\s+/g, ' ').trim();
+                  if (text && text.length > 0 && text.length < 80) {
+                    candidates.push({ kind: 'xpath', value: 'xpath=//' + tag + '[normalize-space(.)=' + xpathLiteral(text) + ']', score: WEIGHTS.text + 10, strategy: 'xpath-exactText', confidence: 'medium' });
+                    candidates.push({ kind: 'xpath', value: 'xpath=//' + tag + '[contains(normalize-space(.), ' + xpathLiteral(text) + ')]', score: WEIGHTS.text, strategy: 'xpath-containsText', confidence: 'low' });
+                    
+                    // Role + text combination
+                    if (role || ['button', 'a'].includes(tag)) {
+                      const roleTag = role ? "*[@role='" + role + "']" : tag;
+                      candidates.push({ kind: 'xpath', value: 'xpath=//' + roleTag + '[normalize-space(.)=' + xpathLiteral(text) + ']', score: WEIGHTS.text + WEIGHTS.role, strategy: 'xpath-roleText', confidence: 'medium' });
+                    }
+                  }
+
+                  // XPath positional fallback with parent context
+                  const parent = el.parentElement;
+                  if (parent) {
+                    const siblings = Array.from(parent.children).filter(sib => sib.tagName === el.tagName);
+                    if (siblings.length > 1) {
+                      const nth = siblings.indexOf(el) + 1;
+                      if (parent.id && !isDynamicClass(parent.id)) {
+                        candidates.push({ kind: 'xpath', value: 'xpath=//*[@id=' + xpathLiteral(parent.id) + ']//' + tag + '[' + nth + ']', score: WEIGHTS.nthOfType + 20, strategy: 'xpath-parentId+nth', confidence: 'medium' });
+                      }
+                      const parentTestId = parent.getAttribute?.('data-testid') || parent.getAttribute?.('data-test-id');
+                      if (parentTestId) {
+                        candidates.push({ kind: 'xpath', value: 'xpath=//*[@data-testid=' + xpathLiteral(parentTestId) + ']//' + tag + '[' + nth + ']', score: WEIGHTS.nthOfType + 15, strategy: 'xpath-parentTestId+nth', confidence: 'medium' });
+                      }
+                    }
+                  }
+
+                  return candidates;
+                };
+
+                // ========== CSS Path Fallback ==========
                 const cssPath = (el) => {
                   if (!el || el.nodeType !== 1) return '';
                   const parts = [];
@@ -47456,164 +47679,88 @@ class BrowserAutomationService {
                   let guard = 0;
                   while (cur && cur.nodeType === 1 && guard++ < 7) {
                     const tag = cur.tagName.toLowerCase();
-                    if (cur.id) {
+                    if (cur.id && !isDynamicClass(cur.id)) {
                       parts.unshift(tag + '#' + CSS.escape(cur.id));
                       break;
                     }
-
                     let part = tag;
-                    const testId =
-                      cur.getAttribute &&
-                      (cur.getAttribute('data-testid') || cur.getAttribute('data-test-id'));
+                    const testId = cur.getAttribute?.('data-testid') || cur.getAttribute?.('data-test-id');
                     if (testId) {
                       part += '[data-testid=' + attrSelectorValue(testId) + ']';
                       parts.unshift(part);
                       break;
                     }
-
-                    const classList = cur.classList ? Array.from(cur.classList) : [];
-                    if (classList.length) {
-                      part += '.' + classList.slice(0, 2).map((c) => CSS.escape(c)).join('.');
-                    }
-
                     const parent = cur.parentElement;
                     if (parent) {
-                      const sameTagSiblings = Array.from(parent.children).filter(
-                        (sib) => sib.tagName === cur.tagName
-                      );
+                      const sameTagSiblings = Array.from(parent.children).filter(sib => sib.tagName === cur.tagName);
                       if (sameTagSiblings.length > 1) {
                         part += ':nth-of-type(' + (sameTagSiblings.indexOf(cur) + 1) + ')';
                       }
                     }
-
                     parts.unshift(part);
                     cur = cur.parentElement;
                   }
                   return parts.join(' > ');
                 };
 
-                const isXPathSelector = (sel) => {
-                  const s = String(sel ?? '').trim();
-                  return s.startsWith('xpath=') || s.startsWith('//') || s.startsWith('/') || s.startsWith('(');
-                };
-
-                const xpathLiteral = (value) => {
-                  const v = String(value ?? '');
-                  if (!v.includes("'")) return "'" + v + "'";
-                  if (!v.includes('"')) return '"' + v + '"';
-                  return (
-                    'concat(' +
-                    v
-                      .split("'")
-                      .map((p) => "'" + p + "'")
-                      .join(", "'", ") +
-                    ')'
-                  );
-                };
-
-                const countXPath = (xp) => {
-                  try {
-                    const snap = document.evaluate(
-                      xp,
-                      document,
-                      null,
-                      XPathResult.ORDERED_NODE_SNAPSHOT_TYPE,
-                      null
-                    );
-                    return snap.snapshotLength || 0;
-                  } catch {
-                    return 0;
-                  }
-                };
-
-                const xpathFor = (el) => {
-                  if (!el || el.nodeType !== 1) return '';
-                  const tag = (el.tagName || '').toLowerCase();
-                  const id = el.id;
-                  if (id) return '//*[@id=' + xpathLiteral(id) + ']';
-
-                  const testId =
-                    el.getAttribute &&
-                    (el.getAttribute('data-testid') || el.getAttribute('data-test-id'));
-                  if (testId) return '//*[@data-testid=' + xpathLiteral(testId) + ']';
-
-                  const name = el.getAttribute && el.getAttribute('name');
-                  if (name) return '//' + tag + '[@name=' + xpathLiteral(name) + ']';
-
-                  const ariaLabel = el.getAttribute && el.getAttribute('aria-label');
-                  if (ariaLabel) return '//' + tag + '[@aria-label=' + xpathLiteral(ariaLabel) + ']';
-
-                  const placeholder = el.getAttribute && el.getAttribute('placeholder');
-                  if (placeholder) return '//' + tag + '[@placeholder=' + xpathLiteral(placeholder) + ']';
-
-                  // Fallback: short-ish absolute path with nth-of-type
-                  const parts = [];
-                  let cur = el;
-                  let guard = 0;
-                  while (cur && cur.nodeType === 1 && guard++ < 7) {
-                    const t = (cur.tagName || '').toLowerCase();
-                    const parent = cur.parentElement;
-                    if (!parent) {
-                      parts.unshift(t);
-                      break;
-                    }
-                    const siblings = Array.from(parent.children).filter((sib) => sib.tagName === cur.tagName);
-                    if (siblings.length > 1) {
-                      const idx = siblings.indexOf(cur) + 1;
-                      parts.unshift(t + '[' + idx + ']');
-                    } else {
-                      parts.unshift(t);
-                    }
-                    cur = parent;
-                  }
-                  return '/' + parts.join('/');
-                };
-
+                // ========== Best Selector Selection ==========
                 const bestSelector = (el) => {
                   if (!el || el.nodeType !== 1) return '';
-                  const unique = (sel) => {
-                    try {
-                      if (!sel) return false;
-                      return document.querySelectorAll(sel).length === 1;
-                    } catch {
-                      return false;
-                    }
-                  };
-
-                  if (el.id) return '#' + el.id;
-                  const testId = el.getAttribute && (el.getAttribute('data-testid') || el.getAttribute('data-test-id'));
-                  if (testId) return '[data-testid=' + attrSelectorValue(testId) + ']';
-                  const name = el.getAttribute && el.getAttribute('name');
-                  if (name) {
-                    const sel = el.tagName.toLowerCase() + '[name=' + attrSelectorValue(name) + ']';
-                    if (unique(sel)) return sel;
+                  
+                  // Generate all candidates
+                  const cssCandidates = generateCSSCandidates(el);
+                  
+                  // Validate uniqueness and sort by score
+                  for (const c of cssCandidates) {
+                    c.matches = countCSS(c.value);
+                    c.isUnique = c.matches === 1;
                   }
-                  const ariaLabel = el.getAttribute && el.getAttribute('aria-label');
-                  if (ariaLabel) {
-                    const sel = el.tagName.toLowerCase() + '[aria-label=' + attrSelectorValue(ariaLabel) + ']';
-                    if (unique(sel)) return sel;
+                  
+                  // Sort by: unique first, then by score
+                  cssCandidates.sort((a, b) => {
+                    if (a.isUnique && !b.isUnique) return -1;
+                    if (!a.isUnique && b.isUnique) return 1;
+                    return b.score - a.score;
+                  });
+                  
+                  // Return first unique, or highest scored
+                  for (const c of cssCandidates) {
+                    if (c.isUnique) return c.value;
                   }
-                  const placeholder = el.getAttribute && el.getAttribute('placeholder');
-                  if (placeholder) {
-                    const sel = el.tagName.toLowerCase() + '[placeholder=' + attrSelectorValue(placeholder) + ']';
-                    if (unique(sel)) return sel;
-                  }
-                  const href = el.tagName.toLowerCase() === 'a' ? (el.getAttribute && el.getAttribute('href')) : '';
-                  if (href) {
-                    const sel = 'a[href=' + attrSelectorValue(href) + ']';
-                    if (unique(sel)) return sel;
-                  }
-                  if (el.className && typeof el.className === 'string') {
-                    const classes = el.className.split(' ').filter((c) => c.trim()).slice(0, 3).join('.');
-                    if (classes) {
-                      const sel = el.tagName.toLowerCase() + '.' + classes;
-                      if (unique(sel)) return sel;
-                    }
-                  }
-                  const path = cssPath(el);
-                  return path || el.tagName.toLowerCase();
+                  
+                  // Fallback to CSS path
+                  return cssPath(el) || el.tagName.toLowerCase();
                 };
 
+                // ========== Generate All Ranked Candidates ==========
+                const generateAllCandidates = (el) => {
+                  const cssCandidates = generateCSSCandidates(el);
+                  const xpathCandidates = generateXPathCandidates(el);
+                  const allCandidates = [...cssCandidates, ...xpathCandidates];
+                  
+                  // Validate and score
+                  for (const c of allCandidates) {
+                    if (c.kind === 'xpath') {
+                      const xp = c.value.startsWith('xpath=') ? c.value.slice(6) : c.value;
+                      c.matches = countXPath(xp);
+                    } else {
+                      c.matches = countCSS(c.value);
+                    }
+                    c.isUnique = c.matches === 1;
+                    // Penalize non-unique selectors
+                    if (!c.isUnique && c.matches > 0) {
+                      c.score -= 50;
+                    }
+                  }
+                  
+                  // Sort by score
+                  allCandidates.sort((a, b) => b.score - a.score);
+                  
+                  // Return top 6 candidates
+                  return allCandidates.slice(0, 6);
+                };
+
+                // ========== Main Observation Logic ==========
                 const requestedScope = ${JSON.stringify(scope ?? "main")};
                 const root =
                   requestedScope === 'document'
@@ -47624,10 +47771,9 @@ class BrowserAutomationService {
                   try { return root && root !== document ? root.contains(el) : true; } catch { return true; }
                 };
 
-                const selectorList = 'button, a, input, textarea, select, summary, [role="button"], [role="link"], [role="tab"]';
+                const selectorList = 'button, a, input, textarea, select, summary, [role="button"], [role="link"], [role="tab"], [role="menuitem"], [role="option"], [role="checkbox"], [role="radio"], [role="switch"], [role="slider"], [role="combobox"], [role="listbox"], [role="textbox"]';
                 const candidates = Array.from((root && root !== document ? root : document).querySelectorAll(selectorList));
 
-                // Visible + within root + de-duplicate by selector+text+tag.
                 const seen = new Set();
                 const out = [];
                 const limit = Math.max(1, Math.min(200, ${JSON.stringify(maxElements ?? 80)}));
@@ -47642,23 +47788,22 @@ class BrowserAutomationService {
                   const type = el.getAttribute('type') || '';
                   const role = el.getAttribute('role') || '';
                   const name = el.getAttribute('name') || '';
+                  const title = el.getAttribute('title') || '';
                   const disabled = 'disabled' in el ? Boolean(el.disabled) : el.getAttribute('aria-disabled') === 'true';
-                  const selector = bestSelector(el);
-                  const matches = selector ? document.querySelectorAll(selector).length : 0;
-                  const xpath = xpathFor(el);
-                  const xpathMatches = xpath ? countXPath(xpath) : 0;
                   const value = 'value' in el ? String(el.value ?? '') : '';
                   const href = tag === 'a' ? (el.getAttribute('href') || '') : '';
                   const ariaLabel = el.getAttribute('aria-label') || '';
+                  const ariaLabelledBy = el.getAttribute('aria-labelledby') || '';
+                  const testId = el.getAttribute('data-testid') || el.getAttribute('data-test-id') || '';
+
+                  // Generate best selector and all candidates
+                  const selector = bestSelector(el);
+                  const matches = selector ? countCSS(selector) : 0;
+                  const selectorCandidates = generateAllCandidates(el);
 
                   const key = [tag, selector, text].join('|');
                   if (seen.has(key)) continue;
                   seen.add(key);
-
-                  const selectorCandidates = [];
-                  if (selector) selectorCandidates.push({ kind: 'css', value: selector, matches });
-                  if (xpath) selectorCandidates.push({ kind: 'xpath', value: 'xpath=' + xpath, matches: xpathMatches });
-                  if (text) selectorCandidates.push({ kind: 'text', value: text, matches: candidates.length });
 
                   out.push({
                     tag,
@@ -47667,13 +47812,16 @@ class BrowserAutomationService {
                     type,
                     role,
                     name,
+                    title,
                     disabled,
                     value,
                     href,
                     ariaLabel,
+                    ariaLabelledBy,
+                    testId,
                     selector,
                     matches,
-                    xpath,
+                    isUnique: matches === 1,
                     selectorCandidates,
                   });
                   if (out.length >= limit) break;
@@ -47681,8 +47829,7 @@ class BrowserAutomationService {
 
                 // Provide a small main-text snippet so the agent can orient itself.
                 const mainText = (() => {
-                  const node =
-                    (document.querySelector('main, [role="main"]') || document.body);
+                  const node = (document.querySelector('main, [role="main"]') || document.body);
                   const raw = (node?.innerText || '').replace(/\\s+/g, ' ').trim();
                   return raw.slice(0, 1200);
                 })();
@@ -50443,6 +50590,64 @@ app.whenReady().then(() => {
   });
   ipcMain.handle("agent:get-permission-mode", async () => {
     return agentService.getPermissionMode();
+  });
+  ipcMain.handle("agent:test-connection", async (_event, cfg) => {
+    var _a3, _b, _c;
+    const { baseUrl, apiKey, model } = cfg;
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 1e4);
+      const response = await fetch(`${baseUrl}/chat/completions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...apiKey ? { "Authorization": `Bearer ${apiKey}` } : {}
+        },
+        body: JSON.stringify({
+          model,
+          messages: [{ role: "user", content: 'Say "ok" and nothing else.' }],
+          max_tokens: 10,
+          temperature: 0
+        }),
+        signal: controller.signal
+      });
+      clearTimeout(timeout);
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => "Unknown error");
+        return { success: false, error: `HTTP ${response.status}: ${errorText.slice(0, 200)}` };
+      }
+      const data = await response.json();
+      const content = ((_c = (_b = (_a3 = data == null ? void 0 : data.choices) == null ? void 0 : _a3[0]) == null ? void 0 : _b.message) == null ? void 0 : _c.content) || "";
+      return { success: true, response: content.slice(0, 100), model: (data == null ? void 0 : data.model) || model };
+    } catch (err) {
+      if (err.name === "AbortError") {
+        return { success: false, error: "Connection timed out (10s)" };
+      }
+      return { success: false, error: err.message || "Connection failed" };
+    }
+  });
+  ipcMain.handle("agent:list-remote-models", async (_event, cfg) => {
+    const { baseUrl, apiKey } = cfg;
+    try {
+      const response = await fetch(`${baseUrl}/models`, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          ...apiKey ? { "Authorization": `Bearer ${apiKey}` } : {}
+        }
+      });
+      if (!response.ok) {
+        return { success: false, error: `HTTP ${response.status}`, models: [] };
+      }
+      const data = await response.json();
+      const models = ((data == null ? void 0 : data.data) || (data == null ? void 0 : data.models) || []).map((m) => ({
+        id: m.id || m.name || m,
+        name: m.name || m.id || m
+      }));
+      return { success: true, models };
+    } catch (err) {
+      return { success: false, error: err.message, models: [] };
+    }
   });
   ipcMain.handle("browser:navigate-tab", async (_, url) => {
     const win2 = BrowserWindow.getAllWindows()[0];

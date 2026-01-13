@@ -50,6 +50,8 @@ electron.contextBridge.exposeInMainWorld("agent", {
   getModels: () => electron.ipcRenderer.invoke("agent:get-models"),
   getLlmConfig: () => electron.ipcRenderer.invoke("agent:get-llm-config"),
   setLlmConfig: (cfg) => electron.ipcRenderer.invoke("agent:set-llm-config", cfg),
+  testConnection: (cfg) => electron.ipcRenderer.invoke("agent:test-connection", cfg),
+  listRemoteModels: (cfg) => electron.ipcRenderer.invoke("agent:list-remote-models", cfg),
   getCurrentModel: () => electron.ipcRenderer.invoke("agent:get-current-model"),
   setModel: (modelId) => electron.ipcRenderer.invoke("agent:set-model", modelId),
   setMode: (mode) => electron.ipcRenderer.invoke("agent:set-mode", mode),
