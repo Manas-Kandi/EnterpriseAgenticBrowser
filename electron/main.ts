@@ -117,7 +117,9 @@ function createWindow() {
   })
 
   if (VITE_DEV_SERVER_URL) {
-    win.loadURL(VITE_DEV_SERVER_URL)
+    win.loadURL(VITE_DEV_SERVER_URL).catch((e) => {
+      console.error('Failed to load dev server URL:', e);
+    });
     // Open DevTools in development mode to see any errors
     win.webContents.openDevTools()
   } else {

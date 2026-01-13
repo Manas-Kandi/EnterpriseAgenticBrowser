@@ -145,6 +145,8 @@ const DOMAIN_RISK_LEVELS: Record<string, RiskLevel> = {
   'github.com': RiskLevel.MEDIUM,
   'stackoverflow.com': RiskLevel.LOW,
   'google.com': RiskLevel.LOW,
+  'duckduckgo.com': RiskLevel.LOW,
+  'icons.duckduckgo.com': RiskLevel.LOW,
 };
 
 export class PolicyService {

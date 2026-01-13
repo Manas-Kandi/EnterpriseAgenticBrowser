@@ -42474,7 +42474,9 @@ const DOMAIN_RISK_LEVELS = {
   // External domains - HIGH risk
   "github.com": 1,
   "stackoverflow.com": 0,
-  "google.com": 0
+  "google.com": 0,
+  "duckduckgo.com": 0,
+  "icons.duckduckgo.com": 0
   /* LOW */
 };
 class PolicyService {
@@ -43636,7 +43638,10 @@ class IdentityService {
       });
       loginWin.on("closed", () => fail(new Error("Login window closed")));
     });
-    await loginWin.loadURL(authUrl.toString());
+    await loginWin.loadURL(authUrl.toString()).catch((e) => {
+      if (String((e == null ? void 0 : e.message) || "").includes("ERR_ABORTED")) return;
+      throw e;
+    });
     let finalUrl;
     try {
       finalUrl = await waitForRedirect;
@@ -46452,6 +46457,7 @@ API-FIRST (MUCH FASTER):
 - Prefer API tools (api_web_search/api_http_get/etc.) when they can accomplish the task.
 - For GitHub repository summaries, prefer api_github_get_repo and api_github_get_readme when available.
 - Use browser tools only if no API is available or the user needs to SEE/INTERACT with the page.
+- If you must perform a web search via browser_navigate, use DuckDuckGo (https://duckduckgo.com/?q=...) instead of Google to avoid CAPTCHA blocks.
 </strategy>
 
 <browser_primitives>
@@ -47811,8 +47817,10 @@ class BrowserAutomationService {
             await target.loadURL(url);
           } catch (e) {
             const msg = String((e == null ? void 0 : e.message) ?? e);
-            if (!msg.includes("ERR_ABORTED")) throw e;
+            const isAborted2 = msg.includes("ERR_ABORTED") || e.code === "ERR_ABORTED" || e.errno === -3;
+            if (!isAborted2) throw e;
             await this.delay(250);
+            if (target.isDestroyed()) throw new Error("WebContents destroyed during navigation");
             const current = target.getURL();
             if (!current) throw e;
           }
@@ -50003,7 +50011,9 @@ function createWindow() {
     win == null ? void 0 : win.webContents.send("main-process-message", (/* @__PURE__ */ new Date()).toLocaleString());
   });
   if (VITE_DEV_SERVER_URL) {
-    win.loadURL(VITE_DEV_SERVER_URL);
+    win.loadURL(VITE_DEV_SERVER_URL).catch((e) => {
+      console.error("Failed to load dev server URL:", e);
+    });
     win.webContents.openDevTools();
   } else {
     win.loadFile(path$2.join(RENDERER_DIST, "index.html"));

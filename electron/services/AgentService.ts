@@ -796,6 +796,7 @@ API-FIRST (MUCH FASTER):
 - Prefer API tools (api_web_search/api_http_get/etc.) when they can accomplish the task.
 - For GitHub repository summaries, prefer api_github_get_repo and api_github_get_readme when available.
 - Use browser tools only if no API is available or the user needs to SEE/INTERACT with the page.
+- If you must perform a web search via browser_navigate, use DuckDuckGo (https://duckduckgo.com/?q=...) instead of Google to avoid CAPTCHA blocks.
 </strategy>
 
 <browser_primitives>

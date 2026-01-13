@@ -295,7 +295,11 @@ export class IdentityService {
       loginWin.on('closed', () => fail(new Error('Login window closed')));
     });
 
-    await loginWin.loadURL(authUrl.toString());
+    await loginWin.loadURL(authUrl.toString()).catch((e) => {
+      // Ignore ERR_ABORTED which often happens on immediate redirects
+      if (String(e?.message || '').includes('ERR_ABORTED')) return;
+      throw e;
+    });
 
     let finalUrl: string;
     try {
