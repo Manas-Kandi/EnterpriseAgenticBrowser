@@ -14,6 +14,9 @@ export default {
       useESM: true,
     }],
   },
+  transformIgnorePatterns: [
+    'node_modules/(?!(uuid|zod)/)',
+  ],
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],
   collectCoverageFrom: [
     'src/**/*.{ts,tsx}',

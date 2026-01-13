@@ -270,15 +270,43 @@ app.whenReady().then(async () => {
     return policyService.getRemotePolicyStatus();
   });
 
+  ipcMain.handle('policy:sync-state', async () => {
+    return policyService.getSyncState();
+  });
+
   ipcMain.handle('policy:sync', async (_event, url?: string) => {
     const targetUrl = typeof url === 'string' && url.trim() ? url.trim() : (process.env.POLICY_REMOTE_URL || '');
     if (!targetUrl) return { success: false, error: 'No policy URL provided' };
     try {
       const bundle = await policyService.fetchRemotePolicies(targetUrl);
       return { success: true, bundle };
-    } catch (e: any) {
-      return { success: false, error: String(e?.message ?? e) };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Sync failed' };
     }
+  });
+
+  ipcMain.handle('policy:configure', async (_event, cfg: { url: string; authToken?: string }) => {
+    if (!cfg.url || typeof cfg.url !== 'string') {
+      return { success: false, error: 'Policy URL is required' };
+    }
+    return policyService.configureRemotePolicy(cfg.url, cfg.authToken);
+  });
+
+  ipcMain.handle('policy:set-auth-token', async (_event, token: string) => {
+    if (!token || typeof token !== 'string') {
+      return { success: false, error: 'Token is required' };
+    }
+    await policyService.setAuthToken(token);
+    return { success: true };
+  });
+
+  ipcMain.handle('policy:clear-auth-token', async () => {
+    await policyService.clearAuthToken();
+    return { success: true };
+  });
+
+  ipcMain.handle('policy:get-admin-message', async () => {
+    return { message: policyService.getAdminMessage() };
   });
 
   ipcMain.handle('policy:set-dev-override', async (_event, enabled: boolean, token?: string) => {

@@ -50,8 +50,35 @@ interface Window {
   }
 
   policy?: {
-    status: () => Promise<{ configuredUrl: string | null; hasRemotePolicy: boolean; version: number | null; fetchedAt: number | null; allowlistCount: number; blocklistCount: number; developerOverrideEnabled: boolean }>;
+    status: () => Promise<{ 
+      configuredUrl: string | null; 
+      hasRemotePolicy: boolean; 
+      version: number | null; 
+      fetchedAt: number | null; 
+      expiresAt: number | null;
+      allowlistCount: number; 
+      blocklistCount: number; 
+      toolRestrictionsCount: number;
+      timeBasedRulesCount: number;
+      developerOverrideEnabled: boolean;
+      message: string | null;
+      syncStatus: 'idle' | 'syncing' | 'success' | 'error';
+      lastSyncError: string | null;
+      isExpired: boolean;
+    }>;
+    syncState: () => Promise<{
+      status: 'idle' | 'syncing' | 'success' | 'error';
+      lastSyncTime: number | null;
+      lastError: string | null;
+      nextSyncTime: number | null;
+      policyVersion: number | null;
+      isExpired: boolean;
+    }>;
     sync: (url?: string) => Promise<{ success: boolean; bundle?: any; error?: string }>;
+    configure: (cfg: { url: string; authToken?: string }) => Promise<{ success: boolean; error?: string }>;
+    setAuthToken: (token: string) => Promise<{ success: boolean; error?: string }>;
+    clearAuthToken: () => Promise<{ success: boolean }>;
+    getAdminMessage: () => Promise<{ message: string | null }>;
     setDevOverride: (enabled: boolean, token?: string) => Promise<{ success: boolean }>;
   }
 

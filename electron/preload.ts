@@ -41,7 +41,12 @@ contextBridge.exposeInMainWorld('chatHistory', {
 
 contextBridge.exposeInMainWorld('policy', {
   status: () => ipcRenderer.invoke('policy:status'),
+  syncState: () => ipcRenderer.invoke('policy:sync-state'),
   sync: (url?: string) => ipcRenderer.invoke('policy:sync', url),
+  configure: (cfg: { url: string; authToken?: string }) => ipcRenderer.invoke('policy:configure', cfg),
+  setAuthToken: (token: string) => ipcRenderer.invoke('policy:set-auth-token', token),
+  clearAuthToken: () => ipcRenderer.invoke('policy:clear-auth-token'),
+  getAdminMessage: () => ipcRenderer.invoke('policy:get-admin-message'),
   setDevOverride: (enabled: boolean, token?: string) => ipcRenderer.invoke('policy:set-dev-override', enabled, token),
 })
 
