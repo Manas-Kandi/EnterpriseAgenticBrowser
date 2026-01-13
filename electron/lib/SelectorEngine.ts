@@ -338,8 +338,6 @@ export function generateCSSSelectors(
 
   // Strategy 9: type attribute for inputs
   if (el.type && ['input', 'button'].includes(tag)) {
-    const typeSelector = `${tag}[type=${formatAttrValue(el.type)}]`;
-    
     // Combine with name or placeholder for specificity
     if (el.name) {
       candidates.push({

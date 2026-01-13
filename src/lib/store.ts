@@ -4,13 +4,113 @@ import { persist } from 'zustand/middleware';
 export type AgentMode = 'chat' | 'read' | 'do';
 export type AgentPermissionMode = 'yolo' | 'permissions' | 'manual';
 
-export type LLMProvider = 'nvidia' | 'openai_compatible';
+export type LLMProvider = 
+  | 'nvidia'
+  | 'openai'
+  | 'anthropic'
+  | 'groq'
+  | 'together'
+  | 'openrouter'
+  | 'ollama'
+  | 'lmstudio'
+  | 'custom';
+
+export interface LLMProviderPreset {
+  id: LLMProvider;
+  name: string;
+  baseUrl: string;
+  defaultModel: string;
+  requiresApiKey: boolean;
+  models?: string[];
+  description: string;
+}
+
+export const LLM_PROVIDER_PRESETS: LLMProviderPreset[] = [
+  {
+    id: 'nvidia',
+    name: 'NVIDIA NIM',
+    baseUrl: 'https://integrate.api.nvidia.com/v1',
+    defaultModel: 'meta/llama-3.3-70b-instruct',
+    requiresApiKey: true,
+    description: 'NVIDIA AI Foundation Models via NIM',
+  },
+  {
+    id: 'openai',
+    name: 'OpenAI',
+    baseUrl: 'https://api.openai.com/v1',
+    defaultModel: 'gpt-4o',
+    requiresApiKey: true,
+    models: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-3.5-turbo', 'o1', 'o1-mini'],
+    description: 'OpenAI GPT models',
+  },
+  {
+    id: 'anthropic',
+    name: 'Anthropic',
+    baseUrl: 'https://api.anthropic.com/v1',
+    defaultModel: 'claude-sonnet-4-20250514',
+    requiresApiKey: true,
+    models: ['claude-sonnet-4-20250514', 'claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022', 'claude-3-opus-20240229'],
+    description: 'Anthropic Claude models',
+  },
+  {
+    id: 'groq',
+    name: 'Groq',
+    baseUrl: 'https://api.groq.com/openai/v1',
+    defaultModel: 'llama-3.3-70b-versatile',
+    requiresApiKey: true,
+    models: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768', 'gemma2-9b-it'],
+    description: 'Ultra-fast inference on Groq LPU',
+  },
+  {
+    id: 'together',
+    name: 'Together AI',
+    baseUrl: 'https://api.together.xyz/v1',
+    defaultModel: 'meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo',
+    requiresApiKey: true,
+    description: 'Open-source models on Together AI',
+  },
+  {
+    id: 'openrouter',
+    name: 'OpenRouter',
+    baseUrl: 'https://openrouter.ai/api/v1',
+    defaultModel: 'anthropic/claude-sonnet-4',
+    requiresApiKey: true,
+    description: 'Access multiple providers via OpenRouter',
+  },
+  {
+    id: 'ollama',
+    name: 'Ollama (Local)',
+    baseUrl: 'http://localhost:11434/v1',
+    defaultModel: 'llama3.2',
+    requiresApiKey: false,
+    models: ['llama3.2', 'llama3.1', 'mistral', 'codellama', 'phi3', 'gemma2'],
+    description: 'Run models locally with Ollama',
+  },
+  {
+    id: 'lmstudio',
+    name: 'LM Studio (Local)',
+    baseUrl: 'http://localhost:1234/v1',
+    defaultModel: 'local-model',
+    requiresApiKey: false,
+    description: 'Run models locally with LM Studio',
+  },
+  {
+    id: 'custom',
+    name: 'Custom OpenAI-Compatible',
+    baseUrl: '',
+    defaultModel: '',
+    requiresApiKey: false,
+    description: 'Any OpenAI-compatible API endpoint',
+  },
+];
 
 export interface LLMSettings {
   provider: LLMProvider;
   baseUrl: string;
   model: string;
   apiKeyAccount: string;
+  temperature?: number;
+  maxTokens?: number;
 }
 
 export interface BrowserTab {

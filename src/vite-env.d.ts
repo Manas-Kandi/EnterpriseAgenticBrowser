@@ -13,6 +13,8 @@ interface Window {
     getModels: () => Promise<Array<{ id: string; name: string; supportsThinking: boolean }>>;
     getLlmConfig: () => Promise<{ provider: string; baseUrl: string; apiKeyAccount: string }>;
     setLlmConfig: (cfg: any) => Promise<{ success: boolean }>;
+    testConnection: (cfg: { baseUrl: string; apiKey?: string; model: string }) => Promise<{ success: boolean; error?: string; response?: string; model?: string }>;
+    listRemoteModels: (cfg: { baseUrl: string; apiKey?: string }) => Promise<{ success: boolean; error?: string; models: Array<{ id: string; name: string }> }>;
     getCurrentModel: () => Promise<string>;
     setModel: (modelId: string) => Promise<{ success: boolean; modelId: string }>;
     setMode: (mode: 'chat' | 'read' | 'do') => Promise<{ success: boolean }>;

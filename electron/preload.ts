@@ -59,6 +59,10 @@ contextBridge.exposeInMainWorld('agent', {
   getLlmConfig: () => ipcRenderer.invoke('agent:get-llm-config'),
   setLlmConfig: (cfg: { provider?: string; baseUrl?: string; apiKeyAccount?: string; modelId?: string }) =>
     ipcRenderer.invoke('agent:set-llm-config', cfg),
+  testConnection: (cfg: { baseUrl: string; apiKey?: string; model: string }) =>
+    ipcRenderer.invoke('agent:test-connection', cfg),
+  listRemoteModels: (cfg: { baseUrl: string; apiKey?: string }) =>
+    ipcRenderer.invoke('agent:list-remote-models', cfg),
   getCurrentModel: () => ipcRenderer.invoke('agent:get-current-model'),
   setModel: (modelId: string) => ipcRenderer.invoke('agent:set-model', modelId),
   setMode: (mode: 'chat' | 'read' | 'do') => ipcRenderer.invoke('agent:set-mode', mode),

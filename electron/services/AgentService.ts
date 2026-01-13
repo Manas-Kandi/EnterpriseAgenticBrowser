@@ -109,13 +109,24 @@ export const AVAILABLE_MODELS: ModelConfig[] = [
 export type AgentMode = 'chat' | 'read' | 'do';
 export type AgentPermissionMode = 'yolo' | 'permissions' | 'manual';
 
-export type LLMProvider = 'nvidia' | 'openai_compatible';
+export type LLMProvider = 
+  | 'nvidia'
+  | 'openai'
+  | 'anthropic'
+  | 'groq'
+  | 'together'
+  | 'openrouter'
+  | 'ollama'
+  | 'lmstudio'
+  | 'custom';
 
 export type LLMConfig = {
   provider: LLMProvider;
   baseUrl: string;
   apiKeyAccount: string;
   apiKey?: string | null;
+  temperature?: number;
+  maxTokens?: number;
 };
 
 export class AgentService {
@@ -464,10 +475,14 @@ export class AgentService {
       ...(resolved.extraBody ?? {}),
     };
 
+    // Local providers (ollama, lmstudio) don't require API keys
+    const isLocalProvider = provider === 'ollama' || provider === 'lmstudio';
+    const effectiveApiKey = isLocalProvider ? (apiKey ?? 'local') : (apiKey ?? undefined);
+
     return new ChatOpenAI({
       configuration: {
         baseURL,
-        apiKey: provider === 'openai_compatible' ? (apiKey ?? 'local') : (apiKey ?? undefined),
+        apiKey: effectiveApiKey,
       },
       modelName: resolved.modelName,
       temperature: resolved.temperature,

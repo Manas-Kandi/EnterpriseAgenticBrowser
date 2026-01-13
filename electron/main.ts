@@ -671,6 +671,73 @@ ipcMain.handle('agent:chat', async (event, message) => {
     return agentService.getPermissionMode();
   });
 
+  // Test LLM connection
+  ipcMain.handle('agent:test-connection', async (_event, cfg: { baseUrl: string; apiKey?: string; model: string }) => {
+    const { baseUrl, apiKey, model } = cfg;
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000); // 10s timeout
+
+      const response = await fetch(`${baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {}),
+        },
+        body: JSON.stringify({
+          model,
+          messages: [{ role: 'user', content: 'Say "ok" and nothing else.' }],
+          max_tokens: 10,
+          temperature: 0,
+        }),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeout);
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => 'Unknown error');
+        return { success: false, error: `HTTP ${response.status}: ${errorText.slice(0, 200)}` };
+      }
+
+      const data = await response.json();
+      const content = data?.choices?.[0]?.message?.content || '';
+      return { success: true, response: content.slice(0, 100), model: data?.model || model };
+    } catch (err: any) {
+      if (err.name === 'AbortError') {
+        return { success: false, error: 'Connection timed out (10s)' };
+      }
+      return { success: false, error: err.message || 'Connection failed' };
+    }
+  });
+
+  // List available models from provider
+  ipcMain.handle('agent:list-remote-models', async (_event, cfg: { baseUrl: string; apiKey?: string }) => {
+    const { baseUrl, apiKey } = cfg;
+    try {
+      const response = await fetch(`${baseUrl}/models`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {}),
+        },
+      });
+
+      if (!response.ok) {
+        return { success: false, error: `HTTP ${response.status}`, models: [] };
+      }
+
+      const data = await response.json();
+      const models = (data?.data || data?.models || []).map((m: any) => ({
+        id: m.id || m.name || m,
+        name: m.name || m.id || m,
+      }));
+      return { success: true, models };
+    } catch (err: any) {
+      return { success: false, error: err.message, models: [] };
+    }
+  });
+
   // Handler for agent to navigate when no webview exists (e.g., New Tab page)
   ipcMain.handle('browser:navigate-tab', async (_, url: string) => {
     const win = BrowserWindow.getAllWindows()[0];
