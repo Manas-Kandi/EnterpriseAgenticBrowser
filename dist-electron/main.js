@@ -50113,6 +50113,38 @@ let win;
 const newTabDashboardService = new NewTabDashboardService(new DummyAeroCoreDataSource());
 let newTabDashboardTimer = null;
 let auditMaintenanceTimer = null;
+const SESSION_VERSION = 1;
+const SESSION_FILE = "session_state.json";
+async function loadSessionState() {
+  try {
+    const filePath = path$2.join(app.getPath("userData"), SESSION_FILE);
+    const raw = await fs$1.readFile(filePath, "utf8");
+    const data = JSON.parse(raw);
+    if (data.version !== SESSION_VERSION) return null;
+    return data;
+  } catch {
+    return null;
+  }
+}
+async function saveSessionState(state) {
+  try {
+    const filePath = path$2.join(app.getPath("userData"), SESSION_FILE);
+    await fs$1.writeFile(filePath, JSON.stringify(state, null, 2), "utf8");
+  } catch (err) {
+    console.error("[Session] Failed to save session state:", err);
+  }
+}
+function getWindowState() {
+  if (!win) return null;
+  const bounds = win.getBounds();
+  return {
+    x: bounds.x,
+    y: bounds.y,
+    width: bounds.width,
+    height: bounds.height,
+    isMaximized: win.isMaximized()
+  };
+}
 const pendingApprovals = /* @__PURE__ */ new Map();
 const APPROVAL_TIMEOUT_MS = 3e4;
 let chatHistoryKey = null;
@@ -50146,16 +50178,59 @@ async function decryptChatHistory(payload) {
   decrypted = Buffer.concat([decrypted, decipher.final()]);
   return decrypted.toString();
 }
-function createWindow() {
+async function createWindow(sessionState) {
+  const defaultWidth = 1200;
+  const defaultHeight = 800;
+  const windowState = (sessionState == null ? void 0 : sessionState.windowState) ?? {
+    width: defaultWidth,
+    height: defaultHeight,
+    isMaximized: false
+  };
   win = new BrowserWindow({
     icon: path$2.join(process.env.VITE_PUBLIC, "electron-vite.svg"),
+    x: windowState.x,
+    y: windowState.y,
+    width: windowState.width,
+    height: windowState.height,
     webPreferences: {
       preload: path$2.join(__dirname$1, "preload.mjs"),
       webviewTag: true
     }
   });
+  if (windowState.isMaximized) {
+    win.maximize();
+  }
+  win.on("close", async () => {
+    const state = getWindowState();
+    if (state) {
+      await saveSessionState({
+        lastSessionTime: Date.now(),
+        windowState: state,
+        version: SESSION_VERSION
+      });
+    }
+  });
+  const saveInterval = setInterval(async () => {
+    const state = getWindowState();
+    if (state) {
+      await saveSessionState({
+        lastSessionTime: Date.now(),
+        windowState: state,
+        version: SESSION_VERSION
+      });
+    }
+  }, 3e4);
+  win.on("closed", () => {
+    clearInterval(saveInterval);
+  });
   win.webContents.on("did-finish-load", () => {
     win == null ? void 0 : win.webContents.send("main-process-message", (/* @__PURE__ */ new Date()).toLocaleString());
+    if (sessionState) {
+      win == null ? void 0 : win.webContents.send("session:restored", {
+        lastSessionTime: sessionState.lastSessionTime,
+        restoredAt: Date.now()
+      });
+    }
   });
   if (VITE_DEV_SERVER_URL) {
     win.loadURL(VITE_DEV_SERVER_URL).catch((e) => {
@@ -50175,12 +50250,15 @@ app.on("window-all-closed", () => {
     win = null;
   }
 });
-app.on("activate", () => {
+app.on("activate", async () => {
   if (BrowserWindow.getAllWindows().length === 0) {
-    createWindow();
+    const sessionState = await loadSessionState();
+    createWindow(sessionState);
   }
 });
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  const sessionState = await loadSessionState();
+  console.log("[Session] Loaded session state:", sessionState ? `last session ${new Date(sessionState.lastSessionTime).toISOString()}` : "no previous session");
   const policyService = new PolicyService(telemetryService, auditService);
   toolRegistry.setPolicyService(policyService);
   policyService.init({ remotePolicyUrl: process.env.POLICY_REMOTE_URL || void 0 }).catch(() => void 0);
@@ -50649,6 +50727,25 @@ app.whenReady().then(() => {
       return { success: false, error: err.message, models: [] };
     }
   });
+  ipcMain.handle("session:get-info", async () => {
+    const state = await loadSessionState();
+    return state ? {
+      lastSessionTime: state.lastSessionTime,
+      hasSession: true
+    } : {
+      lastSessionTime: null,
+      hasSession: false
+    };
+  });
+  ipcMain.handle("session:clear", async () => {
+    try {
+      const filePath = path$2.join(app.getPath("userData"), SESSION_FILE);
+      await fs$1.unlink(filePath);
+      return { success: true };
+    } catch {
+      return { success: false };
+    }
+  });
   ipcMain.handle("browser:navigate-tab", async (_, url) => {
     const win2 = BrowserWindow.getAllWindows()[0];
     if (win2) {
@@ -50657,7 +50754,7 @@ app.whenReady().then(() => {
     }
     return { success: false, error: "No window found" };
   });
-  createWindow();
+  createWindow(sessionState);
 });
 export {
   MAIN_DIST,

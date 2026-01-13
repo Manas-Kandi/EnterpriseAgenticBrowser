@@ -115,6 +115,15 @@ electron.contextBridge.exposeInMainWorld("newtab", {
 electron.contextBridge.exposeInMainWorld("telemetry", {
   export: () => electron.ipcRenderer.invoke("telemetry:export")
 });
+electron.contextBridge.exposeInMainWorld("session", {
+  getInfo: () => electron.ipcRenderer.invoke("session:get-info"),
+  clear: () => electron.ipcRenderer.invoke("session:clear"),
+  onRestored: (callback) => {
+    const listener = (_, payload) => callback(payload);
+    electron.ipcRenderer.on("session:restored", listener);
+    return () => electron.ipcRenderer.off("session:restored", listener);
+  }
+});
 electron.contextBridge.exposeInMainWorld("benchmark", {
   runSuite: (filter) => electron.ipcRenderer.invoke("benchmark:runSuite", filter)
 });
