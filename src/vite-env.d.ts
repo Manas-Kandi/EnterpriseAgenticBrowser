@@ -75,4 +75,10 @@ interface Window {
     getDashboardSnapshot: () => Promise<{ ts: number; kpis: Array<{ id: string; label: string; value: string; delta?: string }>; events: Array<{ id: string; ts: number; title: string; detail?: string; severity?: 'info' | 'warn' | 'critical' }>; reasoning: Array<{ id: string; ts: number; markdown: string }> }>;
     onDashboardUpdate: (callback: (snapshot: { ts: number; kpis: Array<{ id: string; label: string; value: string; delta?: string }>; events: Array<{ id: string; ts: number; title: string; detail?: string; severity?: 'info' | 'warn' | 'critical' }>; reasoning: Array<{ id: string; ts: number; markdown: string }> }) => void) => (() => void);
   }
+
+  session?: {
+    getInfo: () => Promise<{ lastSessionTime: number | null; hasSession: boolean }>;
+    clear: () => Promise<{ success: boolean }>;
+    onRestored: (callback: (payload: { lastSessionTime: number; restoredAt: number }) => void) => (() => void);
+  }
 }

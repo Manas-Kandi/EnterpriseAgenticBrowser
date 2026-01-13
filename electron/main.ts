@@ -54,6 +54,57 @@ let newTabDashboardTimer: NodeJS.Timeout | null = null;
 
 let auditMaintenanceTimer: NodeJS.Timeout | null = null;
 
+// Session persistence for window state
+interface WindowState {
+  x?: number;
+  y?: number;
+  width: number;
+  height: number;
+  isMaximized: boolean;
+}
+
+interface SessionMetadata {
+  lastSessionTime: number;
+  windowState: WindowState;
+  version: number;
+}
+
+const SESSION_VERSION = 1;
+const SESSION_FILE = 'session_state.json';
+
+async function loadSessionState(): Promise<SessionMetadata | null> {
+  try {
+    const filePath = path.join(app.getPath('userData'), SESSION_FILE);
+    const raw = await fs.readFile(filePath, 'utf8');
+    const data = JSON.parse(raw);
+    if (data.version !== SESSION_VERSION) return null;
+    return data as SessionMetadata;
+  } catch {
+    return null;
+  }
+}
+
+async function saveSessionState(state: SessionMetadata): Promise<void> {
+  try {
+    const filePath = path.join(app.getPath('userData'), SESSION_FILE);
+    await fs.writeFile(filePath, JSON.stringify(state, null, 2), 'utf8');
+  } catch (err) {
+    console.error('[Session] Failed to save session state:', err);
+  }
+}
+
+function getWindowState(): WindowState | null {
+  if (!win) return null;
+  const bounds = win.getBounds();
+  return {
+    x: bounds.x,
+    y: bounds.y,
+    width: bounds.width,
+    height: bounds.height,
+    isMaximized: win.isMaximized(),
+  };
+}
+
 type PendingApproval = {
   requestId: string;
   runId: string | null;
@@ -102,19 +153,72 @@ async function decryptChatHistory(payload: string): Promise<string> {
   return decrypted.toString();
 }
 
-function createWindow() {
+async function createWindow(sessionState?: SessionMetadata | null) {
+  const defaultWidth = 1200;
+  const defaultHeight = 800;
+
+  // Use saved window state or defaults
+  const windowState = sessionState?.windowState ?? {
+    width: defaultWidth,
+    height: defaultHeight,
+    isMaximized: false,
+  };
+
   win = new BrowserWindow({
     icon: path.join(process.env.VITE_PUBLIC, 'electron-vite.svg'),
+    x: windowState.x,
+    y: windowState.y,
+    width: windowState.width,
+    height: windowState.height,
     webPreferences: {
       preload: path.join(__dirname, 'preload.mjs'),
       webviewTag: true,
     },
-  })
+  });
 
-  // Test active push message to Renderer-process.
+  // Restore maximized state
+  if (windowState.isMaximized) {
+    win.maximize();
+  }
+
+  // Save window state on close
+  win.on('close', async () => {
+    const state = getWindowState();
+    if (state) {
+      await saveSessionState({
+        lastSessionTime: Date.now(),
+        windowState: state,
+        version: SESSION_VERSION,
+      });
+    }
+  });
+
+  // Save window state periodically (every 30s) to handle crashes
+  const saveInterval = setInterval(async () => {
+    const state = getWindowState();
+    if (state) {
+      await saveSessionState({
+        lastSessionTime: Date.now(),
+        windowState: state,
+        version: SESSION_VERSION,
+      });
+    }
+  }, 30000);
+
+  win.on('closed', () => {
+    clearInterval(saveInterval);
+  });
+
+  // Send session restore info to renderer
   win.webContents.on('did-finish-load', () => {
-    win?.webContents.send('main-process-message', (new Date).toLocaleString())
-  })
+    win?.webContents.send('main-process-message', (new Date).toLocaleString());
+    if (sessionState) {
+      win?.webContents.send('session:restored', {
+        lastSessionTime: sessionState.lastSessionTime,
+        restoredAt: Date.now(),
+      });
+    }
+  });
 
   if (VITE_DEV_SERVER_URL) {
     win.loadURL(VITE_DEV_SERVER_URL).catch((e) => {
@@ -123,7 +227,6 @@ function createWindow() {
     // Open DevTools in development mode to see any errors
     win.webContents.openDevTools()
   } else {
-    // win.loadFile('dist/index.html')
     win.loadFile(path.join(RENDERER_DIST, 'index.html'))
   }
 }
@@ -142,15 +245,19 @@ app.on('window-all-closed', () => {
   }
 })
 
-app.on('activate', () => {
+app.on('activate', async () => {
   // On OS X it's common to re-create a window in the app when the
   // dock icon is clicked and there are no other windows open.
   if (BrowserWindow.getAllWindows().length === 0) {
-    createWindow()
+    const sessionState = await loadSessionState();
+    createWindow(sessionState);
   }
-})
+});
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  // Load session state for window restoration
+  const sessionState = await loadSessionState();
+  console.log('[Session] Loaded session state:', sessionState ? `last session ${new Date(sessionState.lastSessionTime).toISOString()}` : 'no previous session');
   // Initialize PolicyService
   const policyService = new PolicyService(telemetryService, auditService);
   toolRegistry.setPolicyService(policyService);
@@ -738,6 +845,28 @@ ipcMain.handle('agent:chat', async (event, message) => {
     }
   });
 
+  // Session state handlers
+  ipcMain.handle('session:get-info', async () => {
+    const state = await loadSessionState();
+    return state ? {
+      lastSessionTime: state.lastSessionTime,
+      hasSession: true,
+    } : {
+      lastSessionTime: null,
+      hasSession: false,
+    };
+  });
+
+  ipcMain.handle('session:clear', async () => {
+    try {
+      const filePath = path.join(app.getPath('userData'), SESSION_FILE);
+      await fs.unlink(filePath);
+      return { success: true };
+    } catch {
+      return { success: false };
+    }
+  });
+
   // Handler for agent to navigate when no webview exists (e.g., New Tab page)
   ipcMain.handle('browser:navigate-tab', async (_, url: string) => {
     const win = BrowserWindow.getAllWindows()[0];
@@ -748,5 +877,5 @@ ipcMain.handle('agent:chat', async (event, message) => {
     return { success: false, error: 'No window found' };
   });
 
-  createWindow();
+  createWindow(sessionState);
 })

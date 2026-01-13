@@ -133,6 +133,16 @@ contextBridge.exposeInMainWorld('telemetry', {
   export: () => ipcRenderer.invoke('telemetry:export'),
 })
 
+contextBridge.exposeInMainWorld('session', {
+  getInfo: () => ipcRenderer.invoke('session:get-info'),
+  clear: () => ipcRenderer.invoke('session:clear'),
+  onRestored: (callback: (payload: { lastSessionTime: number; restoredAt: number }) => void) => {
+    const listener = (_: unknown, payload: { lastSessionTime: number; restoredAt: number }) => callback(payload);
+    ipcRenderer.on('session:restored', listener);
+    return () => ipcRenderer.off('session:restored', listener);
+  },
+})
+
 contextBridge.exposeInMainWorld('benchmark', {
   runSuite: (filter?: string) => ipcRenderer.invoke('benchmark:runSuite', filter),
 })

@@ -113,6 +113,12 @@ export interface LLMSettings {
   maxTokens?: number;
 }
 
+export interface SessionInfo {
+  lastSavedAt: number;
+  tabCount: number;
+  chatMessageCount: number;
+}
+
 export interface BrowserTab {
   id: string;
   url: string;
@@ -182,6 +188,7 @@ interface BrowserState {
   agentMode: AgentMode;
   agentPermissionMode: AgentPermissionMode;
   dockConfig: DockConfig;
+  sessionInfo: SessionInfo;
 
   llmSettings: LLMSettings;
   
@@ -209,6 +216,10 @@ interface BrowserState {
   setSaasModeEnabled: (enabled: boolean) => void;
 
   setLlmSettings: (next: Partial<LLMSettings>) => void;
+  
+  // Session management
+  cleanupRestoredTabs: () => void;
+  updateSessionInfo: () => void;
 
   toggleDockItem: (group: 'core' | 'aero', id: DockCoreItemId | DockAeroItemId) => void;
   moveDockItem: (group: 'core' | 'aero', id: DockCoreItemId | DockAeroItemId, direction: 'up' | 'down') => void;
@@ -240,6 +251,30 @@ export const useBrowserStore = create<BrowserState>()(
         model: 'llama-3.1-70b',
         apiKeyAccount: 'llm:nvidia:apiKey',
       },
+
+      sessionInfo: {
+        lastSavedAt: Date.now(),
+        tabCount: 1,
+        chatMessageCount: 0,
+      },
+
+      // Clean up tab loading states after session restore
+      cleanupRestoredTabs: () => set((state) => ({
+        tabs: state.tabs.map((tab) => ({
+          ...tab,
+          loading: false,
+          action: null,
+        })),
+      })),
+
+      // Update session info (called periodically)
+      updateSessionInfo: () => set((state) => ({
+        sessionInfo: {
+          lastSavedAt: Date.now(),
+          tabCount: state.tabs.length,
+          chatMessageCount: state.sessionInfo.chatMessageCount,
+        },
+      })),
 
       addTab: (url = 'about:newtab', options) => set((state) => {
         const newTab = {
@@ -515,13 +550,24 @@ export const useBrowserStore = create<BrowserState>()(
         tabGroups: state.tabGroups,
         tabsLayout: state.tabsLayout,
         saasModeEnabled: state.saasModeEnabled,
+        activeSidebarPanel: state.activeSidebarPanel,
         user: state.user,
         appMode: state.appMode,
         agentMode: state.agentMode,
         agentPermissionMode: state.agentPermissionMode,
         dockConfig: state.dockConfig,
         llmSettings: state.llmSettings,
+        sessionInfo: state.sessionInfo,
       }),
+      // Clean up loading states when rehydrating from storage
+      onRehydrateStorage: () => (state) => {
+        if (state) {
+          // Reset loading states on all tabs after restore
+          state.cleanupRestoredTabs();
+          // Update session info
+          state.updateSessionInfo();
+        }
+      },
     }
   )
 );
