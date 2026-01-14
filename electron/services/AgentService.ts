@@ -277,10 +277,7 @@ export class AgentService {
   private inferToolFromText(text: string): { tool: string; args: unknown; thought?: string } | null {
     const lower = text.toLowerCase();
     
-    // Pattern: "I will use <tool_name>" or "use <tool_name>"
-    const toolMentionMatch = lower.match(/(?:i will |i'll |let me |going to )?use (?:the )?(\w+)(?:_\w+)* (?:tool )?to/i);
-    
-    // Try to extract the full tool name
+    // Try to extract the full tool name from common patterns
     let toolName: string | null = null;
     
     // Check for specific tool mentions
