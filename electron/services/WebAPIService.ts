@@ -452,36 +452,84 @@ export class WebAPIService {
       },
     };
 
-    // Generic Web Search (DuckDuckGo Instant Answer API)
+    // Generic Web Search - tries DuckDuckGo API first, provides browser fallback
     const webSearchSchema = z.object({
       query: z.string().describe('Search query'),
     });
 
     const webSearchTool: AgentTool<typeof webSearchSchema> = {
       name: 'api_web_search',
-      description: 'Search the web via DuckDuckGo Instant Answer API. Returns a summary, related topics, and links. Useful for quick facts or finding official websites.',
+      description: 'Search the web. Returns results if available, or a browser URL to navigate to for the search. For LinkedIn/social media searches, this will return a direct browser URL since APIs are limited.',
       schema: webSearchSchema,
       execute: async ({ query }) => {
+        const lowerQuery = query.toLowerCase();
+        
+        // For LinkedIn, social media, or people searches - go directly to browser
+        // DuckDuckGo Instant Answer API doesn't handle these well
+        if (lowerQuery.includes('linkedin') || 
+            lowerQuery.includes('twitter') || 
+            lowerQuery.includes('facebook') ||
+            lowerQuery.includes('instagram') ||
+            lowerQuery.includes('profile') ||
+            /\b(find|look for|search for)\b.*\b(person|people|user|account)\b/i.test(query)) {
+          const searchUrl = `https://duckduckgo.com/?q=${encodeURIComponent(query)}`;
+          return JSON.stringify({
+            status: 'browser_required',
+            message: `Social media and people searches require browser navigation for best results.`,
+            action: `Use browser_navigate to go to: ${searchUrl}`,
+            url: searchUrl
+          }, null, 2);
+        }
+        
         try {
           const url = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
           const response = await fetch(url, {
-            headers: { 'User-Agent': 'EnterpriseBrowser/1.0' }
+            headers: { 'User-Agent': 'EnterpriseBrowser/1.0' },
+            signal: AbortSignal.timeout(5000) // 5s timeout
           });
-          if (!response.ok) return JSON.stringify({ error: `Search API error: ${response.status}` });
+          if (!response.ok) {
+            const searchUrl = `https://duckduckgo.com/?q=${encodeURIComponent(query)}`;
+            return JSON.stringify({ 
+              status: 'browser_required',
+              message: `API unavailable. Use browser instead.`,
+              url: searchUrl
+            });
+          }
 
           const data = await response.json();
+          
+          // Check if we got useful results
+          const hasAbstract = data.AbstractText && data.AbstractText.length > 10;
+          const hasRelated = data.RelatedTopics && data.RelatedTopics.length > 0;
+          
+          if (!hasAbstract && !hasRelated) {
+            // No useful results from API - suggest browser
+            const searchUrl = `https://duckduckgo.com/?q=${encodeURIComponent(query)}`;
+            return JSON.stringify({
+              status: 'browser_required', 
+              message: `No instant answer available for this query. Use browser for full search results.`,
+              action: `Use browser_navigate to go to: ${searchUrl}`,
+              url: searchUrl
+            }, null, 2);
+          }
 
           return JSON.stringify({
+            status: 'success',
             abstract: data.AbstractText,
             source: data.AbstractSource,
             url: data.AbstractURL,
             related: data.RelatedTopics?.slice(0, 5).map((topic: any) => ({
               text: topic.Text,
               url: topic.FirstURL
-            }))
+            })).filter((t: any) => t.text && t.url)
           }, null, 2);
         } catch (e: any) {
-          return JSON.stringify({ error: `Failed to search: ${e.message}` });
+          const searchUrl = `https://duckduckgo.com/?q=${encodeURIComponent(query)}`;
+          return JSON.stringify({ 
+            status: 'browser_required',
+            message: `Search API failed: ${e.message}. Use browser instead.`,
+            url: searchUrl
+          });
         }
       },
     };

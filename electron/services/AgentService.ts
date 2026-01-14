@@ -878,11 +878,13 @@ Final response schema:
 </tool_calling>
 
 <strategy>
-API-FIRST (MUCH FASTER):
-- Prefer API tools (api_web_search/api_http_get/etc.) when they can accomplish the task.
-- For GitHub repository summaries, prefer api_github_get_repo and api_github_get_readme when available.
-- Use browser tools only if no API is available or the user needs to SEE/INTERACT with the page.
-- If you must perform a web search via browser_navigate, use DuckDuckGo (https://duckduckgo.com/?q=...) instead of Google to avoid CAPTCHA blocks.
+API-FIRST, BROWSER-FALLBACK:
+- Try API tools first (api_web_search/api_github_search/etc.) - they're faster.
+- If api_web_search returns status="browser_required", immediately use browser_navigate with the provided URL.
+- For LinkedIn, Twitter, Facebook, or people searches: expect browser_required and navigate directly.
+- For GitHub: prefer api_github_get_repo and api_github_get_readme.
+- Use DuckDuckGo for browser searches (https://duckduckgo.com/?q=...) to avoid CAPTCHA.
+- DO NOT retry api_web_search more than once if it returns browser_required - switch to browser immediately.
 </strategy>
 
 <browser_primitives>
@@ -1469,6 +1471,32 @@ if (tool) {
     // This dramatically improves perceived speed for common operations
     const resultStr = String(result);
     const toolName = (action as any).tool;
+
+    // FAST PATH: Handle browser_required from api_web_search - auto-navigate
+    if (toolName === 'api_web_search' && resultStr.includes('"browser_required"')) {
+      try {
+        const parsed = JSON.parse(resultStr);
+        if (parsed.status === 'browser_required' && parsed.url) {
+          this.emitStep('thought', `Search API returned browser_required. Navigating to: ${parsed.url}`);
+          const navigateTool = tools.find((t: any) => t.name === 'browser_navigate');
+          if (navigateTool) {
+            const navResult = await navigateTool.invoke({ url: parsed.url });
+            const navResultStr = String(navResult);
+            if (!navResultStr.toLowerCase().includes('error')) {
+              usedBrowserTools = true;
+              // Add navigation result to messages and continue
+              const navMsg = new SystemMessage(`Automatically navigated to ${parsed.url} for search results.`);
+              messages.push(navMsg);
+              this.conversationHistory.push(navMsg);
+              // Continue the loop to let the model observe and respond
+              continue;
+            }
+          }
+        }
+      } catch {
+        // If parsing fails, continue normally
+      }
+    }
 
     const lowerMsg = userMessage.toLowerCase();
     const isOneShotActionRequest =
