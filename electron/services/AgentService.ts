@@ -1661,7 +1661,14 @@ async * streamChat(message: string) {
     Example: ["Navigate to Jira", "Find the issue EB-1", "Extract description", "Navigate to Confluence", "Create a new page with the description"]`);
 
   try {
-    const response = await this.model.invoke([plannerPrompt]);
+    // Add 15s timeout for planning step to avoid hanging
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('Planning timed out')), 15000)
+    );
+    
+    const invokePromise = this.model.invoke([plannerPrompt]);
+    const response = await Promise.race([invokePromise, timeoutPromise]);
+    
     const content = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
     const jsonText = this.extractJsonObject(content) || (content.startsWith('[') ? content : null);
 
@@ -1686,7 +1693,14 @@ async * streamChat(message: string) {
     Output JSON: { "success": true/false, "reason": "why" }`);
 
   try {
-    const response = await this.model.invoke([verifierPrompt]);
+    // Add 10s timeout for verification to avoid hanging
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('Verification timed out')), 10000)
+    );
+    
+    const invokePromise = this.model.invoke([verifierPrompt]);
+    const response = await Promise.race([invokePromise, timeoutPromise]);
+    
     const content = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
     const jsonText = this.extractJsonObject(content);
     if (jsonText) return JSON.parse(jsonText);
