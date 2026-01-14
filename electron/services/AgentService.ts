@@ -331,12 +331,16 @@ export class AgentService {
     };
   }
 
-  private parseToolCall(rawContent: string): { tool: string; args: unknown; thought?: string } | null {
+  /**
+   * Parse tool call from LLM response. Supports:
+   * - Single tool: { "tool": "name", "args": {...} }
+   * - Parallel tools: { "tools": [{ "tool": "name", "args": {...} }, ...] }
+   */
+  private parseToolCall(rawContent: string): { tool: string; args: unknown; thought?: string; tools?: Array<{ tool: string; args: unknown }> } | null {
     const cleaned = rawContent.replace(/```json/g, '').replace(/```/g, '').trim();
     const candidate = this.extractJsonObject(cleaned) ?? (cleaned.startsWith('{') ? cleaned : null);
     
     // If no JSON found, try to infer tool call from natural language
-    // This handles models that output ": I will use api_web_search to..." instead of JSON
     if (!candidate) {
       const inferredTool = this.inferToolFromText(cleaned);
       if (inferredTool) return inferredTool;
@@ -351,27 +355,36 @@ export class AgentService {
       }
     };
 
-    const direct = tryParse(candidate);
-    if (direct) return direct;
+    let parsed = tryParse(candidate);
+    
+    // Try various fixes if direct parse fails
+    if (!parsed) {
+      const relaxed = candidate.replace(/,\s*([}\]])/g, '$1');
+      parsed = tryParse(relaxed);
+    }
+    if (!parsed) {
+      const fixedNewlines = candidate.replace(/:\s*"([^"]*)\n([^"]*)"/g, ': "$1\\n$2"');
+      parsed = tryParse(fixedNewlines);
+    }
+    if (!parsed) {
+      const fixedQuotes = candidate.replace(/'/g, '"');
+      parsed = tryParse(fixedQuotes);
+    }
+    
+    if (parsed) {
+      // Check for parallel tools format
+      if (Array.isArray(parsed.tools) && parsed.tools.length > 0) {
+        return {
+          tool: parsed.tools[0].tool,
+          args: parsed.tools[0].args,
+          thought: parsed.thought,
+          tools: parsed.tools,
+        };
+      }
+      return parsed;
+    }
 
-    // Best-effort: strip trailing commas.
-    const relaxed = candidate.replace(/,\s*([}\]])/g, '$1');
-    const parsedRelaxed = tryParse(relaxed);
-    if (parsedRelaxed) return parsedRelaxed;
-
-    // Try fixing common JSON issues from thinking models
-    // 1. Unescaped newlines in strings
-    const fixedNewlines = candidate.replace(/:\s*"([^"]*)\n([^"]*)"/g, ': "$1\\n$2"');
-    const parsedNewlines = tryParse(fixedNewlines);
-    if (parsedNewlines) return parsedNewlines;
-
-    // 2. Single quotes instead of double quotes
-    const fixedQuotes = candidate.replace(/'/g, '"');
-    const parsedQuotes = tryParse(fixedQuotes);
-    if (parsedQuotes) return parsedQuotes;
-
-    // Very loose fallback: if it *looks* like a final_response, salvage a best-effort tool object.
-    // Extended to handle any tool, not just final_response
+    // Fallback: regex extraction
     const toolMatch = cleaned.match(/"tool"\s*:\s*"([^"]+)"/);
     const thoughtMatch = cleaned.match(/"thought"\s*:\s*"([^"]+)"/);
     const thought = thoughtMatch ? thoughtMatch[1] : undefined;
@@ -379,29 +392,21 @@ export class AgentService {
     if (!toolMatch) return null;
     const tool = toolMatch[1];
 
-    // For final_response, extract the message
     if (tool === 'final_response') {
-      // Try multiple patterns for message extraction
       const messagePatterns = [
         /"message"\s*:\s*"([\s\S]*?)"\s*(?:,|\})/,
         /"message"\s*:\s*"([^"]*)"/,
-        /"message"\s*:\s*'([^']*)'/,
       ];
       for (const pattern of messagePatterns) {
         const match = cleaned.match(pattern);
-        if (match) {
-          return { tool, args: { message: match[1] }, thought };
-        }
+        if (match) return { tool, args: { message: match[1] }, thought };
       }
-      // If we found tool=final_response but no message, return empty message
       return { tool, args: { message: '' }, thought };
     }
 
-    // For other tools, try to extract args object
     const argsMatch = cleaned.match(/"args"\s*:\s*(\{[^}]+\})/);
     if (argsMatch) {
-      const argsStr = argsMatch[1];
-      const args = tryParse(argsStr);
+      const args = tryParse(argsMatch[1]);
       if (args) return { tool, args, thought };
     }
 
@@ -855,23 +860,33 @@ Your goal is to help users complete tasks by using tools effectively and safely.
 </role>
 
 <tool_calling>
-You MUST respond ONLY with a single JSON object.
-- DO NOT include any text before or after the JSON.
-- DO NOT wrap the JSON in markdown fences.
+You MUST respond ONLY with a JSON object. NO text before or after. NO markdown fences.
 
-JSON schema (ALWAYS follow exactly):
+Single tool call:
 {
-  "thought": "brief reasoning for the next step",
+  "thought": "brief reasoning",
   "tool": "tool_name",
   "args": { ... }
 }
 
-Final response schema:
+Multiple parallel tool calls (for independent operations):
 {
-  "thought": "brief completion summary",
-  "tool": "final_response",
-  "args": { "message": "your message to the user" }
+  "thought": "brief reasoning",
+  "tools": [
+    { "tool": "tool_name1", "args": { ... } },
+    { "tool": "tool_name2", "args": { ... } }
+  ]
 }
+
+Final response:
+{
+  "thought": "completion summary",
+  "tool": "final_response",
+  "args": { "message": "your response to user" }
+}
+
+IMPORTANT: Use parallel calls when tools are independent (e.g., multiple API lookups).
+Do NOT parallelize browser actions that depend on each other.
 </tool_calling>
 
 <strategy>
@@ -990,15 +1005,27 @@ ${tools.map((t: any) => `- ${t.name}: ${t.description}`).join('\n')}
 
       // Get current model config for timeout
       const currentConfig = AVAILABLE_MODELS.find(m => m.id === this.currentModelId);
-      // 90s for thinking models AND large models like Qwen 235B
-      // 45s for fast models (reduced to fail faster when API is slow)
+      // 60s for thinking models, 30s for fast models (reduced for snappier UX)
       const isSlowModel = currentConfig?.supportsThinking || currentConfig?.id === 'qwen3-235b';
-      const timeoutMs = isSlowModel ? 90000 : 45000;
+      const timeoutMs = isSlowModel ? 60000 : 30000;
 
-      // 1. Planning Step: Decompose complex goals
-      const plan = await this.planCurrentGoal(userMessage, context);
-      if (plan.length > 1) {
-        this.emitStep('thought', `Strategic Plan: \n${ plan.map((p, idx) => `${idx + 1}. ${p}`).join('\n') } `, { phase: 'planning', plan });
+      // 1. Planning Step: Only for complex multi-step tasks (skip for simple requests)
+      const lowerUserMsg = userMessage.toLowerCase();
+      const isComplexTask = (
+        (lowerUserMsg.includes(' and ') || lowerUserMsg.includes(' then ')) ||
+        lowerUserMsg.includes('create') ||
+        lowerUserMsg.includes('fill') ||
+        lowerUserMsg.includes('submit') ||
+        lowerUserMsg.includes('workflow') ||
+        userMessage.split(' ').length > 15
+      );
+      
+      let plan: string[] = [userMessage];
+      if (isComplexTask) {
+        plan = await this.planCurrentGoal(userMessage, context);
+        if (plan.length > 1) {
+          this.emitStep('thought', `Strategic Plan: \n${ plan.map((p, idx) => `${idx + 1}. ${p}`).join('\n') } `, { phase: 'planning', plan });
+        }
       }
 
       // ReAct Loop (Max 15 turns)
@@ -1317,7 +1344,51 @@ if ((action as any).tool === "final_response") {
   return finalMessage;
 }
 
-// Handle Tool Call
+// Handle Parallel Tool Calls (if present)
+if ((action as any).tools && Array.isArray((action as any).tools) && (action as any).tools.length > 1) {
+  const parallelTools = (action as any).tools as Array<{ tool: string; args: unknown }>;
+  this.emitStep('action', `Executing ${parallelTools.length} tools in parallel`, {
+    phase: 'parallel_start',
+    tools: parallelTools.map(t => t.tool),
+  });
+  
+  const parallelStartedAt = Date.now();
+  const results = await Promise.all(
+    parallelTools.map(async (tc) => {
+      const t = tools.find((t: any) => t.name === tc.tool);
+      if (!t) return { tool: tc.tool, error: `Tool not found: ${tc.tool}` };
+      try {
+        const result = await t.invoke(tc.args);
+        if (t.name.startsWith('browser_')) usedBrowserTools = true;
+        return { tool: tc.tool, result: String(result) };
+      } catch (e: any) {
+        return { tool: tc.tool, error: String(e?.message ?? e) };
+      }
+    })
+  );
+  
+  const parallelDurationMs = Date.now() - parallelStartedAt;
+  const combinedOutput = results.map(r => 
+    'error' in r ? `${r.tool}: Error - ${r.error}` : `${r.tool}: ${r.result}`
+  ).join('\n\n');
+  
+  this.emitStep('observation', `Parallel tools completed in ${parallelDurationMs}ms:\n${combinedOutput}`, {
+    phase: 'parallel_end',
+    durationMs: parallelDurationMs,
+    results,
+  });
+  
+  const safeToolCall = this.redactSecrets(content);
+  const aiMsg = new AIMessage(safeToolCall);
+  const toolOutputMsg = new SystemMessage(`Parallel Tools Output:\n${this.redactSecrets(combinedOutput)}`);
+  messages.push(aiMsg);
+  messages.push(toolOutputMsg);
+  this.conversationHistory.push(aiMsg);
+  this.conversationHistory.push(toolOutputMsg);
+  continue;
+}
+
+// Handle Single Tool Call
 const tool = tools.find((t: any) => t.name === (action as any).tool);
 if (tool) {
   console.log(`Executing tool: ${tool.name} with args:`, action.args);
