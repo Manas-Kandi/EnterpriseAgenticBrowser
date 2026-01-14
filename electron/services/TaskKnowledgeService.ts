@@ -241,6 +241,50 @@ export class TaskKnowledgeService {
       this.skills = merged;
       await this.save();
     }
+    
+    // Prune stale skills on startup
+    await this.pruneStaleSkills();
+  }
+
+  /**
+   * Prune skills that have consistently failed or haven't been used in a long time.
+   * This prevents memory bloat and removes outdated institutional knowledge.
+   */
+  private async pruneStaleSkills() {
+    const now = Date.now();
+    const originalCount = this.skills.length;
+    
+    this.skills = this.skills.filter(skill => {
+      const total = skill.stats.successes + skill.stats.failures;
+      const successRate = total > 0 ? skill.stats.successes / total : 0.5;
+      const daysSinceLastUse = (now - skill.stats.lastUsed) / (24 * 60 * 60 * 1000);
+      
+      // Remove skills with >5 attempts and <20% success rate
+      if (total >= 5 && successRate < 0.2) {
+        console.log(`[TaskKnowledge] Pruning low-success skill: ${skill.name} (${Math.round(successRate * 100)}% success)`);
+        return false;
+      }
+      
+      // Remove skills not used in 90 days with poor success rate
+      if (daysSinceLastUse > 90 && successRate < 0.5) {
+        console.log(`[TaskKnowledge] Pruning stale skill: ${skill.name} (${Math.round(daysSinceLastUse)} days old)`);
+        return false;
+      }
+      
+      // Remove skills not used in 30 days with zero successes
+      if (daysSinceLastUse > 30 && skill.stats.successes === 0 && skill.stats.failures > 0) {
+        console.log(`[TaskKnowledge] Pruning failed skill: ${skill.name} (0 successes, ${skill.stats.failures} failures)`);
+        return false;
+      }
+      
+      return true;
+    });
+    
+    const pruned = originalCount - this.skills.length;
+    if (pruned > 0) {
+      console.log(`[TaskKnowledge] Pruned ${pruned} stale skills`);
+      await this.save();
+    }
   }
 
   private skillIdentity(s: Skill): string {
