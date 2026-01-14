@@ -270,10 +270,81 @@ export class AgentService {
     return null;
   }
 
+  /**
+   * Infer a tool call from natural language when the model doesn't output JSON.
+   * Handles cases like ": I will use api_web_search to search for X"
+   */
+  private inferToolFromText(text: string): { tool: string; args: unknown; thought?: string } | null {
+    const lower = text.toLowerCase();
+    
+    // Pattern: "I will use <tool_name>" or "use <tool_name>"
+    const toolMentionMatch = lower.match(/(?:i will |i'll |let me |going to )?use (?:the )?(\w+)(?:_\w+)* (?:tool )?to/i);
+    
+    // Try to extract the full tool name
+    let toolName: string | null = null;
+    
+    // Check for specific tool mentions
+    if (lower.includes('api_web_search') || lower.includes('web_search') || lower.includes('web search')) {
+      toolName = 'api_web_search';
+    } else if (lower.includes('browser_navigate') || lower.includes('navigate to')) {
+      toolName = 'browser_navigate';
+    } else if (lower.includes('browser_observe') || lower.includes('observe')) {
+      toolName = 'browser_observe';
+    } else if (lower.includes('browser_click')) {
+      toolName = 'browser_click';
+    } else if (lower.includes('api_http_get')) {
+      toolName = 'api_http_get';
+    }
+    
+    if (!toolName) return null;
+    
+    // Extract search query or URL from the text
+    let args: Record<string, unknown> = {};
+    
+    if (toolName === 'api_web_search') {
+      // Try to extract search query
+      // Patterns: "search for X", "search X on", "to search for X"
+      const searchMatch = text.match(/search(?:ing)? (?:for )?["']?([^"'\n]+?)["']?(?: on | in | using |$|\.|,)/i);
+      if (searchMatch) {
+        args = { query: searchMatch[1].trim() };
+      } else {
+        // Fallback: use everything after "search" as query
+        const afterSearch = text.match(/search(?:ing)? (?:for )?(.+)/i);
+        if (afterSearch) {
+          args = { query: afterSearch[1].trim().replace(/[.,]$/, '') };
+        }
+      }
+    } else if (toolName === 'browser_navigate') {
+      // Try to extract URL
+      const urlMatch = text.match(/(?:navigate to|go to|open) ["']?(https?:\/\/[^\s"']+|[a-z0-9.-]+\.[a-z]{2,}[^\s"']*)/i);
+      if (urlMatch) {
+        let url = urlMatch[1];
+        if (!url.startsWith('http')) url = 'https://' + url;
+        args = { url };
+      }
+    }
+    
+    // Only return if we have valid args
+    if (Object.keys(args).length === 0) return null;
+    
+    return {
+      tool: toolName,
+      args,
+      thought: text.slice(0, 100).trim(),
+    };
+  }
+
   private parseToolCall(rawContent: string): { tool: string; args: unknown; thought?: string } | null {
     const cleaned = rawContent.replace(/```json/g, '').replace(/```/g, '').trim();
     const candidate = this.extractJsonObject(cleaned) ?? (cleaned.startsWith('{') ? cleaned : null);
-    if (!candidate) return null;
+    
+    // If no JSON found, try to infer tool call from natural language
+    // This handles models that output ": I will use api_web_search to..." instead of JSON
+    if (!candidate) {
+      const inferredTool = this.inferToolFromText(cleaned);
+      if (inferredTool) return inferredTool;
+      return null;
+    }
 
     const tryParse = (s: string) => {
       try {
