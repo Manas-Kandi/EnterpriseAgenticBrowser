@@ -47572,6 +47572,15 @@ You can answer questions about what's on the page, explain content, summarize in
 <tool_calling>You MUST respond ONLY with a single JSON object. JSON schema: { "thought": "brief reasoning", "tool": "tool_name", "args": { ... } } Final response: { "thought": "brief completion summary", "tool": "final_response", "args": { "message": "your message" } }</tool_calling>
 <strategy>API-FIRST, BROWSER-FALLBACK: - Try API tools first. - If api_web_search returns status="browser_required", immediately use browser_navigate. - Use DuckDuckGo for browser searches.</strategy>
 <browser_primitives>- Always call browser_observe before interactions. - From browser_observe, prefer CSS matches=1, then XPath matches=1, then click_text.</browser_primitives>
+<known_apps>
+- AeroCore: http://localhost:3000/aerocore - Enterprise aviation management suite
+  - Admin: http://localhost:3000/aerocore/admin (pilot management, settings)
+  - Dispatch: http://localhost:3000/aerocore/dispatch (flight scheduling)
+  - Fleet: http://localhost:3000/aerocore/fleet (aircraft management)
+  - Cargo: http://localhost:3000/aerocore/cargo (shipment tracking)
+  - Workforce: http://localhost:3000/aerocore/hr (employee management)
+When user mentions "AeroCore" or any of its modules, navigate to the corresponding localhost:3000 URL.
+</known_apps>
 <mock_saas_ground_truth>Selectors discovered from source:
 ${selectorContext}</mock_saas_ground_truth>
 <workflow_orchestrator>For complex tasks, use WorkflowOrchestrator to manage multi-step plans.</workflow_orchestrator>
