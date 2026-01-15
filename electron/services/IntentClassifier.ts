@@ -21,6 +21,18 @@ export interface IntentClassification {
   explicitOverride?: 'replace_tab' | 'background' | 'new_tab';
 }
 
+function getPrimaryDomainToken(hostname: string): string | null {
+  const host = String(hostname || '').toLowerCase().trim();
+  if (!host) return null;
+  const parts = host.split('.').filter(Boolean);
+  if (parts.length === 0) return null;
+  if (parts[0] === 'localhost') return 'localhost';
+  // Handle common patterns like www.youtube.com -> youtube
+  const cleaned = parts[0] === 'www' ? parts.slice(1) : parts;
+  if (cleaned.length >= 2) return cleaned[cleaned.length - 2];
+  return cleaned[0] ?? null;
+}
+
 // Patterns that indicate in-context intent (operate on current page)
 const IN_CONTEXT_PATTERNS = [
   /\b(summarize|summary of)\s+(this|the|current)\s+(page|article|content|document)/i,
@@ -72,7 +84,7 @@ const EXPLICIT_NEW_TAB = [
  * Conservative default: When ambiguous, default to exploratory (new tab)
  * because opening a new tab is reversible, destroying context is not.
  */
-export function classifyIntent(userMessage: string, _currentPageContext?: string): IntentClassification {
+export function classifyIntent(userMessage: string, currentUrl?: string): IntentClassification {
   const msg = userMessage.toLowerCase().trim();
   
   // Check for explicit overrides first (highest priority)
@@ -148,9 +160,26 @@ export function classifyIntent(userMessage: string, _currentPageContext?: string
     exploratoryScore += 1;
   }
   
-  // Detect explicit navigation requests ("open X", "go to X") - user wants to SEE the page
-  // These should open in foreground, not background
-  const isExplicitNavigation = /^(open|go to|navigate to|visit)\s/i.test(msg);
+  // If user references the current site's name, treat as in-context follow-up.
+  // Example: user previously navigated to YouTube, then says "look up X on youtube".
+  if (currentUrl) {
+    try {
+      const hostname = new URL(currentUrl).hostname;
+      const token = getPrimaryDomainToken(hostname);
+      if (token && token !== 'localhost' && new RegExp(`\\b${token}\\b`, 'i').test(msg)) {
+        // Strong signal: the user explicitly referenced the current site (e.g. "on youtube").
+        // This should keep the task in the current tab unless user explicitly requests otherwise.
+        inContextScore += 6;
+        inContextReasons.push(`mentions_current_site:${token}`);
+      }
+      if (hostname === 'localhost' && /\baerocore\b/i.test(msg)) {
+        inContextScore += 6;
+        inContextReasons.push('mentions_current_site:aerocore');
+      }
+    } catch {
+      // ignore
+    }
+  }
   
   // Calculate confidence and decide
   const totalScore = inContextScore + exploratoryScore;
@@ -161,7 +190,8 @@ export function classifyIntent(userMessage: string, _currentPageContext?: string
       type: 'exploratory',
       confidence: 0.5,
       reason: 'Ambiguous intent - defaulting to new tab (reversible)',
-      openInBackground: !isExplicitNavigation, // Foreground if explicit navigation
+      // Default for "new thing": open new tab and switch to it.
+      openInBackground: false,
     };
   }
   
@@ -179,9 +209,9 @@ export function classifyIntent(userMessage: string, _currentPageContext?: string
       type: 'exploratory',
       confidence: exploratoryScore / totalScore,
       reason: `Exploratory signals: ${exploratoryReasons.join(', ')}`,
-      // Explicit navigation ("open X") should switch to the new tab (foreground)
-      // Research/search queries should stay in background to preserve context
-      openInBackground: !isExplicitNavigation,
+      // Default for "new thing": open new tab and switch to it.
+      // True background work is still supported via explicit "background" override.
+      openInBackground: false,
     };
   }
   
@@ -190,7 +220,7 @@ export function classifyIntent(userMessage: string, _currentPageContext?: string
     type: 'exploratory',
     confidence: 0.5,
     reason: 'Equal signals - defaulting to new tab (reversible)',
-    openInBackground: !isExplicitNavigation,
+    openInBackground: false,
   };
 }
 
@@ -204,7 +234,7 @@ export function shouldNavigateActiveTab(
   targetUrl: string,
   currentUrl?: string
 ): { allowNavigation: boolean; reason: string } {
-  const intent = classifyIntent(userMessage);
+  const intent = classifyIntent(userMessage, currentUrl);
   
   // Explicit override to replace tab
   if (intent.explicitOverride === 'replace_tab') {

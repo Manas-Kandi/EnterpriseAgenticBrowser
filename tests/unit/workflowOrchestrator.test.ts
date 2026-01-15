@@ -3,6 +3,45 @@ import { WorkflowOrchestrator, WorkflowTask } from '../../electron/services/Work
 import { toolRegistry } from '../../electron/services/ToolRegistry';
 import { z } from 'zod';
 
+jest.mock('uuid', () => ({
+  v4: () => `test-uuid-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+}));
+
+jest.mock('../../electron/services/AuditService', () => ({
+  auditService: {
+    log: jest.fn(),
+    getLogs: jest.fn(() => []),
+    verifyHashChain: jest.fn(() => ({ ok: true })),
+  },
+}));
+
+jest.mock('../../electron/services/TelemetryService', () => ({
+  telemetryService: {
+    emit: jest.fn(),
+  },
+}));
+
+jest.mock('../../electron/services/AgentRunContext', () => ({
+  agentRunContext: {
+    getRunId: () => 'test-run-id',
+  },
+}));
+
+jest.mock('../../electron/services/PolicyService', () => ({
+  PolicyService: class PolicyService {
+    async init() {}
+    getRemotePolicyStatus() { return { ok: true }; }
+    getSyncState() { return { ok: true }; }
+    async fetchRemotePolicies() { return { ok: true }; }
+    async configureRemotePolicy() { return { ok: true }; }
+    async setAuthToken() {}
+    async clearAuthToken() {}
+    getAdminMessage() { return null; }
+    async setDeveloperOverride() { return true; }
+    isToolAllowed() { return { allowed: true }; }
+  },
+}));
+
 // Mock model for testing
 const mockModel = {
   invoke: jest.fn()

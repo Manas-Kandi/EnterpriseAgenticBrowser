@@ -18,6 +18,8 @@ import { selectorDiscoveryService } from './SelectorDiscoveryService';
 import { WorkflowOrchestrator } from './WorkflowOrchestrator';
 import { speculativeExecutor, PredictionContext } from './SpeculativeExecutor';
 import { modelRouter, ModelTier } from './ModelRouter';
+import { browserTargetService } from './BrowserTargetService';
+import { agentTabOpenService } from './AgentTabOpenService';
 
 // Type for browser_navigate args
 interface BrowserNavigateArgs {
@@ -477,10 +479,21 @@ You can answer questions about what's on the page, explain content, summarize in
     let speculativeHits = 0;
     let speculativeMisses = 0;
 
+    // If the agent opened a new tab (foreground/background), we target subsequent browser_* tools to it.
+    let preferredTabId: string | null = null;
+
     telemetryService.emit({ eventId: uuidv4(), runId, ts: new Date().toISOString(), type: 'agent_run_start', data: { userMessage: userMessage.slice(0, 100), model: this.currentModelId } });
     auditService.log({ actor: 'agent', action: 'agent_run_start', details: { runId, userMessage: userMessage.slice(0, 100) }, status: 'pending' });
 
-    const intentClassification = classifyIntent(userMessage, browserContext);
+    const activeUrl = (() => {
+      try {
+        return browserTargetService.getActiveWebContents().getURL();
+      } catch {
+        return undefined;
+      }
+    })();
+
+    const intentClassification = classifyIntent(userMessage, activeUrl);
     this.emitStep('thought', `Intent: ${intentClassification.type} (${Math.round(intentClassification.confidence * 100)}% confidence) - ${intentClassification.reason}`, { phase: 'intent_classification', intent: intentClassification });
 
     // Adaptive Model Routing - select optimal model based on task complexity
@@ -612,25 +625,55 @@ Available tools:\n${langChainTools.map((t) => `- ${t.name}: ${t.description}`).j
         if (tool) {
           const navArgs = action.args as BrowserNavigateArgs;
           if (tool.name === 'browser_navigate' && navArgs?.url) {
-            const navCheck = shouldNavigateActiveTab(userMessage, navArgs.url, context);
+            const navCheck = shouldNavigateActiveTab(userMessage, navArgs.url, activeUrl);
             if (!navCheck.allowNavigation) {
-              const { BrowserWindow } = await import('electron');
-              const win = BrowserWindow.getAllWindows()[0];
-              if (win) {
-                win.webContents.send('browser:open-agent-tab', { url: navArgs.url, background: intentClassification.openInBackground, agentCreated: true });
-                const resMsg = `Opened ${navArgs.url} in new tab.`;
-                messages.push(new AIMessage(content));
-                messages.push(new SystemMessage(resMsg));
-                usedBrowserTools = true;
-                continue;
-              }
+              const tabId = await agentTabOpenService.openAgentTab({
+                url: String(navArgs.url),
+                background: Boolean(intentClassification.openInBackground),
+                agentCreated: true,
+              });
+              preferredTabId = tabId;
+
+              const resMsg = `Opened ${navArgs.url} in new tab.`;
+              messages.push(new AIMessage(content));
+              messages.push(new SystemMessage(resMsg));
+              usedBrowserTools = true;
+              continue;
             }
           }
 
+          // Ensure subsequent browser tool calls target the correct tab (including background tabs)
+          const TAB_ID_TOOLS = new Set([
+            'browser_observe',
+            'browser_navigate',
+            'browser_scroll',
+            'browser_press_key',
+            'browser_wait_for_selector',
+            'browser_wait_for_url',
+            'browser_focus',
+            'browser_clear',
+            'browser_click',
+            'browser_type',
+            'browser_get_text',
+            'browser_find_text',
+            'browser_wait_for_text',
+            'browser_wait_for_text_in',
+            'browser_select',
+            'browser_click_text',
+          ]);
+
+          const toolArgs = (() => {
+            const args = { ...(action.args as Record<string, unknown>) };
+            if (preferredTabId && TAB_ID_TOOLS.has(tool.name) && args.tabId == null) {
+              args.tabId = preferredTabId;
+            }
+            return args;
+          })();
+
           stepCount++;
           toolsUsed.push(tool.name);
-          this.emitStep('action', `Executing ${tool.name}`, { tool: tool.name, args: action.args as Record<string, unknown> });
-          auditService.log({ actor: 'agent', action: 'tool_execution', details: { runId, tool: tool.name, args: action.args }, status: 'pending' });
+          this.emitStep('action', `Executing ${tool.name}`, { tool: tool.name, args: toolArgs });
+          auditService.log({ actor: 'agent', action: 'tool_execution', details: { runId, tool: tool.name, args: toolArgs }, status: 'pending' });
           const toolStartedAt = Date.now();
           try {
             // Check if we have a matching speculative result
@@ -655,7 +698,7 @@ Available tools:\n${langChainTools.map((t) => `- ${t.name}: ${t.description}`).j
             } else {
               // Normal execution
               if (speculativeMatch) speculativeMisses++;
-              const toolResult = await tool.invoke(action.args);
+              const toolResult = await tool.invoke(toolArgs);
               resStr = String(toolResult);
               durationMs = Date.now() - toolStartedAt;
               telemetryService.emit({ eventId: uuidv4(), runId, ts: new Date().toISOString(), type: 'tool_call_end', name: tool.name, data: { success: true, durationMs } });

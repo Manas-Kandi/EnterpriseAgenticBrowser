@@ -92,7 +92,8 @@ interface Window {
     registerWebview: (tabId: string, webContentsId: number) => Promise<void>;
     setActiveTab: (tabId: string | null) => Promise<void>;
     onNavigateTo: (callback: (url: string) => void) => (() => void);
-    onOpenAgentTab: (callback: (payload: { url: string; background: boolean; agentCreated: boolean }) => void) => (() => void);
+    onOpenAgentTab: (callback: (payload: { url: string; background: boolean; agentCreated: boolean; requestId?: string }) => void) => (() => void);
+    reportAgentTabOpened: (payload: { requestId: string; tabId: string }) => void;
   }
   telemetry?: {
     export: () => Promise<{ success: boolean; count: number; path: string }>;

@@ -7,6 +7,7 @@ import { AgentTool, toolRegistry } from '../services/ToolRegistry';
 import { browserTargetService } from '../services/BrowserTargetService';
 import { agentRunContext } from '../services/AgentRunContext';
 import { telemetryService } from '../services/TelemetryService';
+import { agentTabOpenService } from '../services/AgentTabOpenService';
 import { app, webContents, type WebContents } from 'electron';
 
 export class BrowserAutomationService {
@@ -2008,27 +2009,12 @@ export class BrowserAutomationService {
       }),
       execute: async ({ url, background }) => {
         try {
-          const { BrowserWindow } = await import('electron');
-          const win = BrowserWindow.getAllWindows()[0];
-          if (win) {
-            // Use a promise to wait for the tab to be created and registered
-            const tabId = await new Promise<string>((resolve) => {
-              // This is a bit tricky since we need the tabId from the renderer
-              // For now, we'll trigger the open and wait for the next active webview if needed,
-              // but ideally the renderer should report back the tabId.
-              win.webContents.send('browser:open-agent-tab', {
-                url,
-                background: background ?? true,
-                agentCreated: true,
-              });
-              
-              // Fallback: wait a bit and resolve with a generic success if we can't get exact ID
-              setTimeout(() => resolve('new-tab-' + Date.now()), 1500);
-            });
-            
-            return JSON.stringify({ ok: true, tabId, message: `Opened ${url} in a new tab` });
-          }
-          return 'Failed to open tab: No browser window found';
+          const tabId = await agentTabOpenService.openAgentTab({
+            url,
+            background: background ?? true,
+            agentCreated: true,
+          });
+          return JSON.stringify({ ok: true, tabId, message: `Opened ${url} in a new tab` });
         } catch (e: any) {
           return `Failed to open tab: ${e.message}`;
         }

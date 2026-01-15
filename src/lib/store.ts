@@ -119,6 +119,10 @@ export interface SessionInfo {
   chatMessageCount: number;
 }
 
+export interface AddTabOptions {
+  agentCreated?: boolean;
+}
+
 export interface BrowserTab {
   id: string;
   url: string;
@@ -193,8 +197,8 @@ interface BrowserState {
   llmSettings: LLMSettings;
   
   // Actions
-  addTab: (url?: string, options?: { agentCreated?: boolean }) => void;
-  addTabInBackground: (url: string, options?: { agentCreated?: boolean }) => void;
+  addTab: (url?: string, options?: AddTabOptions) => string;
+  addTabInBackground: (url: string, options?: AddTabOptions) => string;
   removeTab: (id: string) => void;
   reopenLastClosedTab: () => void;
   reopenClosedTab: (id: string) => void;
@@ -276,45 +280,53 @@ export const useBrowserStore = create<BrowserState>()(
         },
       })),
 
-      addTab: (url = 'about:newtab', options) => set((state) => {
-        const newTab = {
-          id: Math.random().toString(36).substring(2, 9),
-          url,
-          title: options?.agentCreated ? 'Research: New Tab' : 'New Tab',
-          loading: false,
-          agentCreated: options?.agentCreated,
-        };
+      addTab: (url = 'about:newtab', options?: AddTabOptions) => {
+        const id = Math.random().toString(36).substring(2, 9);
+        set((state) => {
+          const newTab = {
+            id,
+            url,
+            title: options?.agentCreated ? 'Research: New Tab' : 'New Tab',
+            loading: false,
+            agentCreated: options?.agentCreated,
+          };
 
-        const activeIndex = state.activeTabId
-          ? state.tabs.findIndex((t) => t.id === state.activeTabId)
-          : -1;
-        const insertIndex = activeIndex >= 0 ? activeIndex + 1 : state.tabs.length;
+          const activeIndex = state.activeTabId
+            ? state.tabs.findIndex((t) => t.id === state.activeTabId)
+            : -1;
+          const insertIndex = activeIndex >= 0 ? activeIndex + 1 : state.tabs.length;
 
-        const nextTabs = [...state.tabs];
-        nextTabs.splice(insertIndex, 0, newTab);
+          const nextTabs = [...state.tabs];
+          nextTabs.splice(insertIndex, 0, newTab);
 
-        return { tabs: nextTabs, activeTabId: newTab.id };
-      }),
+          return { tabs: nextTabs, activeTabId: newTab.id };
+        });
+        return id;
+      },
 
-      addTabInBackground: (url, options) => set((state) => {
-        const newTab = {
-          id: Math.random().toString(36).substring(2, 9),
-          url,
-          title: options?.agentCreated ? 'Research: New Tab' : 'New Tab',
-          loading: false,
-          agentCreated: options?.agentCreated,
-        };
+      addTabInBackground: (url: string, options?: AddTabOptions) => {
+        const id = Math.random().toString(36).substring(2, 9);
+        set((state) => {
+          const newTab = {
+            id,
+            url,
+            title: options?.agentCreated ? 'Research: New Tab' : 'New Tab',
+            loading: false,
+            agentCreated: options?.agentCreated,
+          };
 
-        const activeIndex = state.activeTabId
-          ? state.tabs.findIndex((t) => t.id === state.activeTabId)
-          : -1;
-        const insertIndex = activeIndex >= 0 ? activeIndex + 1 : state.tabs.length;
+          const activeIndex = state.activeTabId
+            ? state.tabs.findIndex((t) => t.id === state.activeTabId)
+            : -1;
+          const insertIndex = activeIndex >= 0 ? activeIndex + 1 : state.tabs.length;
 
-        const nextTabs = [...state.tabs];
-        nextTabs.splice(insertIndex, 0, newTab);
+          const nextTabs = [...state.tabs];
+          nextTabs.splice(insertIndex, 0, newTab);
 
-        return { tabs: nextTabs, activeTabId: state.activeTabId };
-      }),
+          return { tabs: nextTabs, activeTabId: state.activeTabId };
+        });
+        return id;
+      },
 
       removeTab: (id) => set((state) => {
         const removedTab = state.tabs.find((t) => t.id === id);

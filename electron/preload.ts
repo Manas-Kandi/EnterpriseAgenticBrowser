@@ -118,11 +118,19 @@ contextBridge.exposeInMainWorld('browser', {
     ipcRenderer.on('browser:navigate-to', listener);
     return () => ipcRenderer.off('browser:navigate-to', listener);
   },
-  onOpenAgentTab: (callback: (payload: { url: string; background: boolean; agentCreated: boolean }) => void) => {
-    const listener = (_: unknown, payload: { url: string; background: boolean; agentCreated: boolean }) => callback(payload);
+  onOpenAgentTab: (
+    callback: (payload: { url: string; background: boolean; agentCreated: boolean; requestId?: string }) => void
+  ) => {
+    const listener = (
+      _: unknown,
+      payload: { url: string; background: boolean; agentCreated: boolean; requestId?: string }
+    ) => callback(payload);
     ipcRenderer.on('browser:open-agent-tab', listener);
     return () => ipcRenderer.off('browser:open-agent-tab', listener);
   },
+
+  reportAgentTabOpened: (payload: { requestId: string; tabId: string }) =>
+    ipcRenderer.send('browser:open-agent-tab-result', payload),
 })
 
 contextBridge.exposeInMainWorld('newtab', {

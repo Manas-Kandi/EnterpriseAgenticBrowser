@@ -64,11 +64,13 @@ function App() {
   // Listen for agent-triggered tab opens (navigation guard)
   // Core UX: Agent opens exploratory tabs in background to preserve user context
   useEffect(() => {
-    const off = window.browser?.onOpenAgentTab?.(({ url, background, agentCreated }) => {
-      if (background) {
-        addTabInBackground(url, { agentCreated });
-      } else {
-        addTab(url, { agentCreated });
+    const off = window.browser?.onOpenAgentTab?.(({ url, background, agentCreated, requestId }) => {
+      const tabId = background
+        ? addTabInBackground(url, { agentCreated })
+        : addTab(url, { agentCreated });
+
+      if (requestId && window.browser?.reportAgentTabOpened) {
+        window.browser.reportAgentTabOpened({ requestId, tabId });
       }
     });
     return () => off?.();
