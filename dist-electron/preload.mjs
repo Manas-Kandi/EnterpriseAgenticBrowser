@@ -35,7 +35,12 @@ electron.contextBridge.exposeInMainWorld("chatHistory", {
 });
 electron.contextBridge.exposeInMainWorld("policy", {
   status: () => electron.ipcRenderer.invoke("policy:status"),
+  syncState: () => electron.ipcRenderer.invoke("policy:sync-state"),
   sync: (url) => electron.ipcRenderer.invoke("policy:sync", url),
+  configure: (cfg) => electron.ipcRenderer.invoke("policy:configure", cfg),
+  setAuthToken: (token) => electron.ipcRenderer.invoke("policy:set-auth-token", token),
+  clearAuthToken: () => electron.ipcRenderer.invoke("policy:clear-auth-token"),
+  getAdminMessage: () => electron.ipcRenderer.invoke("policy:get-admin-message"),
   setDevOverride: (enabled, token) => electron.ipcRenderer.invoke("policy:set-dev-override", enabled, token)
 });
 electron.contextBridge.exposeInMainWorld("identity", {

@@ -347,7 +347,7 @@ export function AgentPanel() {
   };
 
   return (
-    <div className="h-full flex flex-col bg-background relative">
+    <div className="h-full flex flex-col bg-background relative" data-testid="agent-panel">
       {/* Header */}
       <div className="h-10 shrink-0 flex items-center justify-between px-3 bg-background z-20">
         <div className="flex items-center gap-2 overflow-hidden">
@@ -818,6 +818,7 @@ export function AgentPanel() {
               value={input}
               onChange={e => setInput(e.target.value)}
               disabled={loading}
+              data-testid="agent-input"
             />
           </form>
 

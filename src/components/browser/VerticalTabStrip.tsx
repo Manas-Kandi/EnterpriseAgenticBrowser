@@ -73,6 +73,7 @@ export function VerticalTabStrip() {
           onClick={() => addTab()}
           className="w-8 h-8 grid place-items-center rounded-full hover:bg-secondary/30 text-muted-foreground hover:text-foreground transition-colors"
           title="New Tab"
+          data-testid="add-tab-btn"
         >
           <Plus size={14} />
         </button>
@@ -162,6 +163,7 @@ export function VerticalTabStrip() {
                 tab.id === activeTabId ? 'bg-secondary/30 text-foreground' : 'hover:bg-secondary/20 text-muted-foreground',
               )}
               title={tab.title || tab.url || 'New Tab'}
+              data-testid="tab-item"
             >
               {group && (
                 <span

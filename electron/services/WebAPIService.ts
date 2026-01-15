@@ -5,13 +5,24 @@ import { identityService } from './IdentityService';
 
 dotenv.config();
 
+export interface GitHubRepo {
+  name: string;
+  stars: number;
+  forks: number;
+  description: string;
+  url: string;
+  language?: string;
+}
+
+export interface GitHubUser {
+  login: string;
+  url: string;
+  type: string;
+}
+
 /**
  * WebAPIService provides direct API access to common web services.
  * This is MUCH faster than browser automation for data retrieval tasks.
- * 
- * Strategy: API-first, browser-fallback
- * - For read-only data tasks, use APIs when available
- * - Only fall back to browser when APIs are unavailable or rate-limited
  */
 export class WebAPIService {
   constructor() {
@@ -41,7 +52,7 @@ export class WebAPIService {
     return headers;
   }
 
-  async getSkillLibrary(): Promise<any[]> {
+  async getSkillLibrary(): Promise<unknown[]> {
     const base = this.getCloudBaseUrl();
     if (!base) return [];
     const url = `${base.replace(/\/$/, '')}/skills`;
@@ -50,10 +61,14 @@ export class WebAPIService {
       throw new Error(`Skill library fetch failed: ${response.status} ${response.statusText}`);
     }
     const data = await response.json();
-    return Array.isArray(data) ? data : Array.isArray((data as any)?.skills) ? (data as any).skills : [];
+    if (Array.isArray(data)) return data;
+    if (data && typeof data === 'object' && 'skills' in data && Array.isArray((data as { skills: unknown[] }).skills)) {
+      return (data as { skills: unknown[] }).skills;
+    }
+    return [];
   }
 
-  async upsertSkillLibrary(skills: any[]): Promise<void> {
+  async upsertSkillLibrary(skills: unknown[]): Promise<void> {
     const base = this.getCloudBaseUrl();
     if (!base) return;
     const url = `${base.replace(/\/$/, '')}/skills/bulk`;
@@ -99,30 +114,31 @@ export class WebAPIService {
             return JSON.stringify({ error: `GitHub API error: ${response.status} ${response.statusText}` });
           }
 
-          const data = await response.json();
+          const data = (await response.json()) as { total_count: number; items: Record<string, unknown>[] };
 
           if (searchType === 'repositories') {
-            const results = data.items.slice(0, limit).map((repo: any) => ({
-              name: repo.full_name,
-              stars: repo.stargazers_count,
-              forks: repo.forks_count,
-              description: repo.description?.slice(0, 100) || '',
-              url: repo.html_url,
-              language: repo.language,
+            const results: GitHubRepo[] = data.items.slice(0, limit).map((repo) => ({
+              name: String(repo.full_name || ''),
+              stars: Number(repo.stargazers_count || 0),
+              forks: Number(repo.forks_count || 0),
+              description: String(repo.description || '').slice(0, 100),
+              url: String(repo.html_url || ''),
+              language: String(repo.language || ''),
             }));
             return JSON.stringify({ total_count: data.total_count, results }, null, 2);
           } else if (searchType === 'users') {
-            const results = data.items.slice(0, limit).map((user: any) => ({
-              login: user.login,
-              url: user.html_url,
-              type: user.type,
+            const results: GitHubUser[] = data.items.slice(0, limit).map((user) => ({
+              login: String(user.login || ''),
+              url: String(user.html_url || ''),
+              type: String(user.type || ''),
             }));
             return JSON.stringify({ total_count: data.total_count, results }, null, 2);
           }
 
           return JSON.stringify({ total_count: data.total_count, items: data.items.slice(0, limit) }, null, 2);
-        } catch (e: any) {
-          return JSON.stringify({ error: `Failed to search GitHub: ${e.message}` });
+        } catch (e: unknown) {
+          const errorMessage = e instanceof Error ? e.message : String(e);
+          return JSON.stringify({ error: `Failed to search GitHub: ${errorMessage}` });
         }
       },
     };
@@ -153,25 +169,26 @@ export class WebAPIService {
             return JSON.stringify({ error: `GitHub API error: ${response.status} ${response.statusText}` });
           }
 
-          const data = await response.json();
+          const data = (await response.json()) as Record<string, unknown>;
           const result = {
-            full_name: data.full_name,
-            url: data.html_url,
-            description: data.description || '',
-            homepage: data.homepage || '',
+            full_name: String(data.full_name || ''),
+            url: String(data.html_url || ''),
+            description: String(data.description || ''),
+            homepage: String(data.homepage || ''),
             topics: Array.isArray(data.topics) ? data.topics : [],
-            language: data.language || '',
-            stars: data.stargazers_count,
-            forks: data.forks_count,
-            open_issues: data.open_issues_count,
+            language: String(data.language || ''),
+            stars: Number(data.stargazers_count || 0),
+            forks: Number(data.forks_count || 0),
+            open_issues: Number(data.open_issues_count || 0),
             archived: Boolean(data.archived),
-            updated_at: data.updated_at,
-            created_at: data.created_at,
-            license: data.license?.spdx_id || '',
+            updated_at: String(data.updated_at || ''),
+            created_at: String(data.created_at || ''),
+            license: (data.license as { spdx_id?: string })?.spdx_id || '',
           };
           return JSON.stringify(result, null, 2);
-        } catch (e: any) {
-          return JSON.stringify({ error: `Failed to fetch repo: ${e.message}` });
+        } catch (e: unknown) {
+          const errorMessage = e instanceof Error ? e.message : String(e);
+          return JSON.stringify({ error: `Failed to fetch repo: ${errorMessage}` });
         }
       },
     };
@@ -208,9 +225,9 @@ export class WebAPIService {
             return JSON.stringify({ error: `GitHub API error: ${response.status} ${response.statusText}` });
           }
 
-          const data = await response.json();
-          const contentBase64 = typeof data?.content === 'string' ? data.content : '';
-          const encoding = typeof data?.encoding === 'string' ? data.encoding : '';
+          const data = (await response.json()) as { content: string; encoding: string; name?: string; path?: string; html_url?: string };
+          const contentBase64 = data.content || '';
+          const encoding = data.encoding || '';
 
           if (!contentBase64 || encoding !== 'base64') {
             return JSON.stringify({ error: 'Unexpected README response format from GitHub API.' });
@@ -222,17 +239,18 @@ export class WebAPIService {
             {
               owner,
               repo,
-              name: data?.name || 'README',
-              path: data?.path || '',
-              html_url: data?.html_url || '',
+              name: data.name || 'README',
+              path: data.path || '',
+              html_url: data.html_url || '',
               text: truncated,
               truncated: truncated.length < text.length,
             },
             null,
             2
           );
-        } catch (e: any) {
-          return JSON.stringify({ error: `Failed to fetch README: ${e.message}` });
+        } catch (e: unknown) {
+          const errorMessage = e instanceof Error ? e.message : String(e);
+          return JSON.stringify({ error: `Failed to fetch README: ${errorMessage}` });
         }
       },
     };
@@ -248,33 +266,32 @@ export class WebAPIService {
       schema: hnTopStoriesSchema,
       execute: async ({ limit = 5 }) => {
         try {
-          // Get top story IDs
           const idsResponse = await fetch('https://hacker-news.firebaseio.com/v0/topstories.json');
           if (!idsResponse.ok) {
             return JSON.stringify({ error: 'Failed to fetch HN top stories' });
           }
-          const ids = await idsResponse.json();
+          const ids = (await idsResponse.json()) as number[];
 
-          // Fetch details for top N stories
           const storyLimit = Math.min(limit, 30);
           const stories = await Promise.all(
             ids.slice(0, storyLimit).map(async (id: number) => {
               const storyResponse = await fetch(`https://hacker-news.firebaseio.com/v0/item/${id}.json`);
-              return storyResponse.json();
+              return storyResponse.json() as Promise<Record<string, unknown>>;
             })
           );
 
-          const results = stories.map((story: any) => ({
-            title: story.title,
-            score: story.score,
-            url: story.url || `https://news.ycombinator.com/item?id=${story.id}`,
-            by: story.by,
-            comments: story.descendants || 0,
+          const results = stories.map((story) => ({
+            title: String(story.title || ''),
+            score: Number(story.score || 0),
+            url: String(story.url || `https://news.ycombinator.com/item?id=${story.id}`),
+            by: String(story.by || ''),
+            comments: Number(story.descendants || 0),
           }));
 
           return JSON.stringify({ results }, null, 2);
-        } catch (e: any) {
-          return JSON.stringify({ error: `Failed to fetch HN stories: ${e.message}` });
+        } catch (e: unknown) {
+          const errorMessage = e instanceof Error ? e.message : String(e);
+          return JSON.stringify({ error: `Failed to fetch HN stories: ${errorMessage}` });
         }
       },
     };
@@ -305,7 +322,7 @@ export class WebAPIService {
             return JSON.stringify({ error: `Wikipedia API error: ${response.status}` });
           }
 
-          const data = await response.json();
+          const data = (await response.json()) as { tfa?: { title: string; extract: string; content_urls: { desktop: { page: string } } } };
 
           const result = {
             title: data.tfa?.title || 'Unknown',
@@ -314,13 +331,14 @@ export class WebAPIService {
           };
 
           return JSON.stringify(result, null, 2);
-        } catch (e: any) {
-          return JSON.stringify({ error: `Failed to fetch Wikipedia featured: ${e.message}` });
+        } catch (e: unknown) {
+          const errorMessage = e instanceof Error ? e.message : String(e);
+          return JSON.stringify({ error: `Failed to fetch Wikipedia featured: ${errorMessage}` });
         }
       },
     };
 
-    // Generic HTTP GET (for simple API calls)
+    // Generic HTTP GET
     const httpGetSchema = z.object({
       url: z.string().describe('URL to fetch'),
       headers: z.record(z.string(), z.string()).optional().describe('Optional headers'),
@@ -350,55 +368,45 @@ export class WebAPIService {
           }
 
           const text = await response.text();
-          return text.slice(0, 5000); // Limit response size
-        } catch (e: any) {
-          return JSON.stringify({ error: `HTTP request failed: ${e.message}` });
+          return text.slice(0, 5000);
+        } catch (e: unknown) {
+          const errorMessage = e instanceof Error ? e.message : String(e);
+          return JSON.stringify({ error: `HTTP request failed: ${errorMessage}` });
         }
       },
     };
 
-    // Cryptocurrency Price API (using CoinGecko - free, no API key needed)
+    // Cryptocurrency Price API
     const cryptoPriceSchema = z.object({
       coin: z.string().describe('Cryptocurrency name or symbol (e.g., "bitcoin", "ethereum", "btc", "eth")'),
     });
 
     const cryptoPriceTool: AgentTool<typeof cryptoPriceSchema> = {
       name: 'api_crypto_price',
-      description: 'Get current cryptocurrency price via CoinGecko API. Use this instead of navigating to coinmarketcap.com or other crypto sites. Returns price in USD, 24h change, and market cap.',
+      description: 'Get current cryptocurrency price via CoinGecko API. Use this instead of navigating to coinmarketcap.com. Returns price in USD, 24h change, and market cap.',
       schema: cryptoPriceSchema,
       execute: async ({ coin }) => {
         try {
-          // Normalize coin name
           const coinMap: Record<string, string> = {
-            'btc': 'bitcoin',
-            'eth': 'ethereum',
-            'sol': 'solana',
-            'doge': 'dogecoin',
-            'xrp': 'ripple',
-            'ada': 'cardano',
-            'dot': 'polkadot',
-            'matic': 'polygon',
-            'link': 'chainlink',
-            'avax': 'avalanche-2',
+            'btc': 'bitcoin', 'eth': 'ethereum', 'sol': 'solana', 'doge': 'dogecoin', 'xrp': 'ripple',
+            'ada': 'cardano', 'dot': 'polkadot', 'matic': 'polygon', 'link': 'chainlink', 'avax': 'avalanche-2',
           };
           const coinId = coinMap[coin.toLowerCase()] || coin.toLowerCase();
 
           const url = `https://api.coingecko.com/api/v3/simple/price?ids=${coinId}&vs_currencies=usd&include_24hr_change=true&include_market_cap=true`;
 
           const response = await fetch(url, {
-            headers: {
-              'User-Agent': 'EnterpriseBrowser/1.0',
-            },
+            headers: { 'User-Agent': 'EnterpriseBrowser/1.0' },
           });
 
           if (!response.ok) {
             return JSON.stringify({ error: `CoinGecko API error: ${response.status}` });
           }
 
-          const data = await response.json();
+          const data = (await response.json()) as Record<string, { usd: number; usd_24h_change: number; usd_market_cap: number }>;
 
           if (!data[coinId]) {
-            return JSON.stringify({ error: `Coin '${coin}' not found. Try the full name (e.g., 'bitcoin' instead of 'btc').` });
+            return JSON.stringify({ error: `Coin '${coin}' not found.` });
           }
 
           const coinData = data[coinId];
@@ -410,13 +418,14 @@ export class WebAPIService {
           };
 
           return JSON.stringify(result, null, 2);
-        } catch (e: any) {
-          return JSON.stringify({ error: `Failed to fetch crypto price: ${e.message}` });
+        } catch (e: unknown) {
+          const errorMessage = e instanceof Error ? e.message : String(e);
+          return JSON.stringify({ error: `Failed to fetch crypto price: ${errorMessage}` });
         }
       },
     };
 
-    // Weather API (using Open-Meteo - free, no API key needed)
+    // Weather API
     const weatherSchema = z.object({
       latitude: z.number().describe('Latitude of the location'),
       longitude: z.number().describe('Longitude of the location'),
@@ -425,7 +434,7 @@ export class WebAPIService {
 
     const weatherTool: AgentTool<typeof weatherSchema> = {
       name: 'api_weather',
-      description: 'Get current weather for a specific latitude and longitude via Open-Meteo API. Use lookup_city_coordinates first if you only have a city name.',
+      description: 'Get current weather via Open-Meteo API.',
       schema: weatherSchema,
       execute: async ({ latitude, longitude, city }) => {
         try {
@@ -434,7 +443,7 @@ export class WebAPIService {
           const response = await fetch(url);
           if (!response.ok) return JSON.stringify({ error: `Weather API error: ${response.status}` });
 
-          const data = await response.json();
+          const data = (await response.json()) as { current: Record<string, unknown>; current_units: Record<string, string> };
           const current = data.current;
 
           return JSON.stringify({
@@ -446,71 +455,35 @@ export class WebAPIService {
             condition_code: current.weather_code,
             units: data.current_units
           }, null, 2);
-        } catch (e: any) {
-          return JSON.stringify({ error: `Failed to fetch weather: ${e.message}` });
+        } catch (e: unknown) {
+          const errorMessage = e instanceof Error ? e.message : String(e);
+          return JSON.stringify({ error: `Failed to fetch weather: ${errorMessage}` });
         }
       },
     };
 
-    // Generic Web Search - tries DuckDuckGo API first, provides browser fallback
+    // Web Search Tool
     const webSearchSchema = z.object({
       query: z.string().describe('Search query'),
     });
 
     const webSearchTool: AgentTool<typeof webSearchSchema> = {
       name: 'api_web_search',
-      description: 'Search the web. Returns results if available, or a browser URL to navigate to for the search. For LinkedIn/social media searches, this will return a direct browser URL since APIs are limited.',
+      description: 'Search the web via DuckDuckGo API.',
       schema: webSearchSchema,
       execute: async ({ query }) => {
-        const lowerQuery = query.toLowerCase();
-        
-        // For LinkedIn, social media, or people searches - go directly to browser
-        // DuckDuckGo Instant Answer API doesn't handle these well
-        if (lowerQuery.includes('linkedin') || 
-            lowerQuery.includes('twitter') || 
-            lowerQuery.includes('facebook') ||
-            lowerQuery.includes('instagram') ||
-            lowerQuery.includes('profile') ||
-            /\b(find|look for|search for)\b.*\b(person|people|user|account)\b/i.test(query)) {
-          const searchUrl = `https://duckduckgo.com/?q=${encodeURIComponent(query)}`;
-          return JSON.stringify({
-            status: 'browser_required',
-            message: `Social media and people searches require browser navigation for best results.`,
-            action: `Use browser_navigate to go to: ${searchUrl}`,
-            url: searchUrl
-          }, null, 2);
-        }
-        
         try {
           const url = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
-          const response = await fetch(url, {
-            headers: { 'User-Agent': 'EnterpriseBrowser/1.0' },
-            signal: AbortSignal.timeout(5000) // 5s timeout
-          });
+          const response = await fetch(url, { headers: { 'User-Agent': 'EnterpriseBrowser/1.0' } });
           if (!response.ok) {
             const searchUrl = `https://duckduckgo.com/?q=${encodeURIComponent(query)}`;
-            return JSON.stringify({ 
-              status: 'browser_required',
-              message: `API unavailable. Use browser instead.`,
-              url: searchUrl
-            });
+            return JSON.stringify({ status: 'browser_required', message: `API unavailable.`, url: searchUrl });
           }
 
-          const data = await response.json();
-          
-          // Check if we got useful results
-          const hasAbstract = data.AbstractText && data.AbstractText.length > 10;
-          const hasRelated = data.RelatedTopics && data.RelatedTopics.length > 0;
-          
-          if (!hasAbstract && !hasRelated) {
-            // No useful results from API - suggest browser
+          const data = (await response.json()) as { AbstractText?: string; AbstractSource?: string; AbstractURL?: string; RelatedTopics?: Array<{ Text: string; FirstURL: string }> };
+          if (!data.AbstractText && (!data.RelatedTopics || data.RelatedTopics.length === 0)) {
             const searchUrl = `https://duckduckgo.com/?q=${encodeURIComponent(query)}`;
-            return JSON.stringify({
-              status: 'browser_required', 
-              message: `No instant answer available for this query. Use browser for full search results.`,
-              action: `Use browser_navigate to go to: ${searchUrl}`,
-              url: searchUrl
-            }, null, 2);
+            return JSON.stringify({ status: 'browser_required', message: `No instant answer available.`, url: searchUrl });
           }
 
           return JSON.stringify({
@@ -518,30 +491,24 @@ export class WebAPIService {
             abstract: data.AbstractText,
             source: data.AbstractSource,
             url: data.AbstractURL,
-            related: data.RelatedTopics?.slice(0, 5).map((topic: any) => ({
-              text: topic.Text,
-              url: topic.FirstURL
-            })).filter((t: any) => t.text && t.url)
+            related: data.RelatedTopics?.slice(0, 5).map((topic) => ({ text: topic.Text, url: topic.FirstURL })),
           }, null, 2);
-        } catch (e: any) {
+        } catch (e: unknown) {
+          const errorMessage = e instanceof Error ? e.message : String(e);
           const searchUrl = `https://duckduckgo.com/?q=${encodeURIComponent(query)}`;
-          return JSON.stringify({ 
-            status: 'browser_required',
-            message: `Search API failed: ${e.message}. Use browser instead.`,
-            url: searchUrl
-          });
+          return JSON.stringify({ status: 'browser_required', message: `Search API failed: ${errorMessage}`, url: searchUrl });
         }
       },
     };
 
-    // New tool for city to coordinates
+    // City Coordinate Lookup Tool
     const cityCoordSchema = z.object({
-      city: z.string().describe('City name (e.g., "San Francisco", "Tokyo")'),
+      city: z.string().describe('City name'),
     });
 
     const cityCoordTool: AgentTool<typeof cityCoordSchema> = {
       name: 'lookup_city_coordinates',
-      description: 'Get latitude and longitude for a city name. Use this before calling api_weather.',
+      description: 'Get latitude and longitude for a city name.',
       schema: cityCoordSchema,
       execute: async ({ city }) => {
         try {
@@ -549,21 +516,16 @@ export class WebAPIService {
           const response = await fetch(url);
           if (!response.ok) return JSON.stringify({ error: `Geocoding API error: ${response.status}` });
 
-          const data = await response.json();
-          if (!data.results || data.results.length === 0) {
-            return JSON.stringify({ error: `City '${city}' not found.` });
-          }
+          const data = (await response.json()) as { results?: Array<{ name: string; country: string; latitude: number; longitude: number; timezone: string }> };
+          if (!data.results || data.results.length === 0) return JSON.stringify({ error: `City '${city}' not found.` });
 
           const result = data.results[0];
           return JSON.stringify({
-            city: result.name,
-            country: result.country,
-            latitude: result.latitude,
-            longitude: result.longitude,
-            timezone: result.timezone
+            city: result.name, country: result.country, latitude: result.latitude, longitude: result.longitude, timezone: result.timezone
           }, null, 2);
-        } catch (e: any) {
-          return JSON.stringify({ error: `Failed to lookup city: ${e.message}` });
+        } catch (e: unknown) {
+          const errorMessage = e instanceof Error ? e.message : String(e);
+          return JSON.stringify({ error: `Failed to lookup city: ${errorMessage}` });
         }
       },
     };

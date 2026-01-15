@@ -24,14 +24,20 @@ export class BrowserTargetService {
     this.activeTabId = tabId;
   }
 
+  getWebContents(tabId: string): WebContents | null {
+    const registered = this.tabIdToWebContentsId.get(tabId);
+    if (registered) {
+      const wc = webContents.fromId(registered.webContentsId);
+      if (wc && !wc.isDestroyed()) return wc;
+    }
+    return null;
+  }
+
   getActiveWebContents(): WebContents {
     const activeTabId = this.activeTabId;
     if (activeTabId) {
-      const registered = this.tabIdToWebContentsId.get(activeTabId);
-      if (registered) {
-        const wc = webContents.fromId(registered.webContentsId);
-        if (wc && !wc.isDestroyed()) return wc;
-      }
+      const wc = this.getWebContents(activeTabId);
+      if (wc) return wc;
     }
 
     const all = webContents.getAllWebContents();

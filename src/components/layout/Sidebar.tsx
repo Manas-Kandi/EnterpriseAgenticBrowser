@@ -174,9 +174,10 @@ export function Sidebar() {
   return (
     <aside
       className={cn(
-        "h-full bg-background border-l border-border/50 flex flex-col transition-all duration-300",
-        collapsed ? "w-14" : "w-80"
+        'relative h-full flex flex-col border-r border-border bg-background transition-all duration-300 ease-in-out z-20',
+        collapsed ? 'w-[0px]' : 'w-80'
       )}
+      data-testid="agent-panel"
     >
       <div className="h-12 border-b border-border/50 flex items-center justify-between px-3">
         {!collapsed && <span className="font-medium text-xs uppercase tracking-wider text-muted-foreground">Agent</span>}
@@ -301,11 +302,13 @@ export function Sidebar() {
                     value={input}
                     onChange={e => setInput(e.target.value)}
                     disabled={loading}
+                    data-testid="agent-input"
                 />
                 <button 
                     type="submit" 
                     disabled={loading || !input.trim()} 
                     className="absolute right-1 top-1 p-1.5 text-muted-foreground hover:text-primary disabled:opacity-30 transition-colors"
+                    data-testid="agent-send-btn"
                 >
                     <Send size={14} />
                 </button>

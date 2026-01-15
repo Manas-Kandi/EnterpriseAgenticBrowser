@@ -1,0 +1,72 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e3]:
+  - generic [ref=e5]:
+    - generic [ref=e6]:
+      - button [disabled] [ref=e7]:
+        - img [ref=e8]
+      - button [disabled] [ref=e10]:
+        - img [ref=e11]
+      - button [ref=e13] [cursor=pointer]:
+        - img [ref=e14]
+    - generic [ref=e19]:
+      - img [ref=e21]
+      - textbox "Search or type a URL" [ref=e24]: http://localhost:3000
+    - button [ref=e26] [cursor=pointer]:
+      - img [ref=e27]
+  - generic [ref=e31]:
+    - generic [ref=e33]:
+      - generic [ref=e34]:
+        - button "AeroCore Portal" [ref=e35] [cursor=pointer]:
+          - img [ref=e36]
+        - button "AeroCore Admin" [ref=e41] [cursor=pointer]:
+          - img [ref=e42]
+        - button "AeroCore Dispatch" [ref=e44] [cursor=pointer]:
+          - img [ref=e45]
+        - button "AeroCore Fleet" [ref=e47] [cursor=pointer]:
+          - img [ref=e48]
+      - button "Agent" [ref=e55] [cursor=pointer]:
+        - img [ref=e56]
+    - generic [ref=e60]:
+      - generic [ref=e61]:
+        - generic [ref=e62]: Tabs
+        - button "New Tab" [ref=e63] [cursor=pointer]:
+          - img [ref=e64]
+      - button "Home" [ref=e66] [cursor=pointer]:
+        - generic [ref=e69]: Home
+        - button "Close" [ref=e71]:
+          - img [ref=e72]
+    - generic [ref=e77]:
+      - generic [ref=e79]:
+        - button "New Chat" [ref=e80] [cursor=pointer]:
+          - img [ref=e81]
+        - button "Saved Plans" [ref=e82] [cursor=pointer]:
+          - img [ref=e83]
+        - button "Auto-learn OFF" [ref=e85] [cursor=pointer]:
+          - img [ref=e86]
+        - button "More" [ref=e94] [cursor=pointer]:
+          - img [ref=e95]
+        - button "Close Panel" [ref=e99] [cursor=pointer]:
+          - img [ref=e100]
+      - generic [ref=e104]:
+        - img [ref=e105]
+        - paragraph [ref=e113]: Antigravity Agent
+        - paragraph [ref=e114]: Ready to assist your development
+      - generic [ref=e116]:
+        - textbox "Ask anything (⌘L), @ to mention, / for workflows" [active] [ref=e118]: Update the AeroCore Admin role for "admin@example.com" to "Security"
+        - generic [ref=e119]:
+          - button [ref=e120] [cursor=pointer]:
+            - img [ref=e121]
+          - button "Do" [ref=e122] [cursor=pointer]:
+            - img [ref=e123]
+            - generic [ref=e125]: Do
+          - button "Select Model" [ref=e127] [cursor=pointer]:
+            - img [ref=e128]
+            - generic [ref=e130]: Select Model
+          - button "YOLO Mode" [ref=e131] [cursor=pointer]:
+            - img [ref=e132]
+          - button [ref=e134] [cursor=pointer]:
+            - img [ref=e135]
+    - main [ref=e138]
+```

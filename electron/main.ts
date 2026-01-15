@@ -259,7 +259,7 @@ app.whenReady().then(async () => {
   const sessionState = await loadSessionState();
   console.log('[Session] Loaded session state:', sessionState ? `last session ${new Date(sessionState.lastSessionTime).toISOString()}` : 'no previous session');
   // Initialize PolicyService
-  const policyService = new PolicyService(telemetryService, auditService);
+  const policyService = new PolicyService(auditService, telemetryService);
   toolRegistry.setPolicyService(policyService);
 
   policyService

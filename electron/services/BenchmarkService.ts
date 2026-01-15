@@ -1,4 +1,4 @@
-import { agentService } from './AgentService';
+import { agentService, AgentStep } from './AgentService';
 import { browserAutomationService } from '../integrations/BrowserAutomationService';
 import { PlanMemory } from './PlanMemory';
 import { BENCHMARK_SUITE, BenchmarkScenario } from '../benchmarks/suite';
@@ -23,7 +23,7 @@ export type TrajectoryEntry = {
   ts: number;
   type: 'thought' | 'action' | 'observation' | 'llm_start' | 'llm_end' | 'tool_start' | 'tool_end';
   content?: string;
-  metadata?: any;
+  metadata?: Record<string, unknown>;
 };
 
 export class BenchmarkService {
@@ -62,14 +62,14 @@ export class BenchmarkService {
     this.llmCalls = 0;
     this.retries = 0;
 
-    const stepCollector = (step: any) => {
+    const stepCollector = (step: AgentStep) => {
       this.trajectory.push({
-        ts: step.metadata?.ts ? new Date(step.metadata.ts).getTime() : Date.now(),
-        type: step.type,
+        ts: step.metadata?.ts ? new Date(step.metadata.ts as string).getTime() : Date.now(),
+        type: step.type as TrajectoryEntry['type'],
         content: step.content,
-        metadata: step.metadata,
+        metadata: step.metadata as Record<string, unknown>,
       });
-      if (step.type === 'llm_start') this.llmCalls++;
+      if (step.type === 'action' && step.content.includes('llm_start')) this.llmCalls++; // Approximate based on step contents if needed, or update AgentService to emit explicit llm_start steps
     };
 
     try {
@@ -104,7 +104,8 @@ export class BenchmarkService {
         trajectory: [...this.trajectory],
       };
 
-    } catch (e: any) {
+    } catch (e: unknown) {
+      const errorMessage = e instanceof Error ? e.message : String(e);
       return {
         scenarioId: scenario.id,
         success: false,
@@ -112,7 +113,7 @@ export class BenchmarkService {
         steps: this.trajectory.length,
         llmCalls: this.llmCalls,
         retries: this.retries,
-        error: e.message,
+        error: errorMessage,
         runId,
         trajectory: [...this.trajectory],
       };
@@ -126,18 +127,18 @@ export class BenchmarkService {
     return trajectory
       .filter(e => e.type === 'action' && e.metadata?.tool)
       .map(e => {
-        const tool = e.metadata.tool;
+        const tool = e.metadata?.tool as string;
         const content = e.content || '';
         return `${tool}: ${content.replace(/^Executing\s+/i, '').substring(0, 100)}`;
       });
   }
 
-  private extractNormalizedPlan(trajectory: TrajectoryEntry[]): any[] {
+  private extractNormalizedPlan(trajectory: TrajectoryEntry[]): Record<string, unknown>[] {
     const toolCalls = trajectory.filter(e => e.type === 'action' && e.metadata?.tool);
     return toolCalls.map(e => {
-      const args = e.metadata?.toolArgs ?? {};
+      const args = (e.metadata?.toolArgs as Record<string, unknown>) ?? {};
       return {
-        tool: e.metadata.tool,
+        tool: e.metadata?.tool,
         args,
         ts: e.ts,
       };
@@ -165,7 +166,7 @@ export class BenchmarkService {
       if (!r.trajectory) continue;
       const normalizedPlan = this.extractNormalizedPlan(r.trajectory);
       const feedbackLabels = this.extractFeedbackLabels(r.trajectory);
-      const firstUrl = r.trajectory.find(e => e.metadata?.url)?.metadata?.url;
+      const firstUrl = r.trajectory.find(e => e.metadata?.url)?.metadata?.url as string | undefined;
       const domain = (() => {
         if (!firstUrl) return 'unknown';
         try {

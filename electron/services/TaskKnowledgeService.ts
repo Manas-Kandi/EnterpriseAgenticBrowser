@@ -12,11 +12,16 @@ dotenv.config();
 export type SkillFeedbackLabel = 'worked' | 'failed' | 'partial';
 
 export type SkillStep = {
-  action: 'navigate' | 'click' | 'type' | 'select' | 'wait';
+  action: 'navigate' | 'click' | 'type' | 'select' | 'wait' | 'open_tab' | 'workflow_task';
   url?: string;
   selector?: string;
   value?: string;
   text?: string;
+  id?: string;
+  name?: string;
+  dependencies?: string[];
+  tool?: string;
+  args?: Record<string, unknown>;
 };
 
 export type Skill = {
@@ -26,6 +31,7 @@ export type Skill = {
   domain: string; // e.g. "localhost:3000" or "jira.atlassian.com"
   fingerprint?: string; // Optional URL pattern
   steps: SkillStep[];
+  isWorkflow?: boolean; // Whether this is a DAG-based workflow
   currentVersion: number;
   embedding?: number[];
   stats: {
@@ -47,6 +53,7 @@ export type Skill = {
   versions: Array<{
     version: number;
     steps: SkillStep[];
+    isWorkflow?: boolean;
     createdAt: number;
   }>;
   tags: string[];
@@ -60,13 +67,18 @@ const SkillSchema = z.object({
   fingerprint: z.string().optional(),
   steps: z.array(
     z.object({
-      action: z.enum(['navigate', 'click', 'type', 'select', 'wait']),
+      action: z.enum(['navigate', 'click', 'type', 'select', 'wait', 'open_tab', 'workflow_task']),
       url: z.string().optional(),
       selector: z.string().optional(),
       value: z.string().optional(),
       text: z.string().optional(),
+      id: z.string().optional(),
+      dependencies: z.array(z.string()).optional(),
+      tool: z.string().optional(),
+      args: z.any().optional(),
     })
   ),
+  isWorkflow: z.boolean().optional(),
   currentVersion: z.number(),
   embedding: z.array(z.number()).optional(),
   stats: z.object({
@@ -94,13 +106,18 @@ const SkillSchema = z.object({
       version: z.number(),
       steps: z.array(
         z.object({
-          action: z.enum(['navigate', 'click', 'type', 'select', 'wait']),
+          action: z.enum(['navigate', 'click', 'type', 'select', 'wait', 'open_tab', 'workflow_task']),
           url: z.string().optional(),
           selector: z.string().optional(),
           value: z.string().optional(),
           text: z.string().optional(),
+          id: z.string().optional(),
+          dependencies: z.array(z.string()).optional(),
+          tool: z.string().optional(),
+          args: z.any().optional(),
         })
       ),
+      isWorkflow: z.boolean().optional(),
       createdAt: z.number(),
     })
   ),
@@ -615,6 +632,7 @@ export class TaskKnowledgeService {
     description: string; 
     domain: string; 
     fingerprint?: string;
+    isWorkflow?: boolean;
     steps: SkillStep[]; 
     tags: string[] 
   }) {
@@ -630,6 +648,7 @@ export class TaskKnowledgeService {
       existing.versions.push({
         version: newVersion,
         steps: input.steps,
+        isWorkflow: input.isWorkflow,
         createdAt: Date.now()
       });
       // Update head
@@ -637,6 +656,7 @@ export class TaskKnowledgeService {
       existing.description = input.description;
       existing.domain = input.domain;
       existing.fingerprint = input.fingerprint ?? existing.fingerprint;
+      existing.isWorkflow = input.isWorkflow ?? existing.isWorkflow;
       existing.currentVersion = newVersion;
       existing.tags = Array.from(new Set([...existing.tags, ...input.tags]));
       existing.stats.lastUsed = Date.now();
@@ -654,6 +674,7 @@ export class TaskKnowledgeService {
         description: input.description,
         domain: input.domain,
         fingerprint: input.fingerprint,
+        isWorkflow: input.isWorkflow,
         steps: input.steps,
         currentVersion: 1,
         embedding: this.computeEmbedding(this.buildSkillText({
@@ -662,15 +683,16 @@ export class TaskKnowledgeService {
           description: input.description,
           domain: input.domain,
           fingerprint: input.fingerprint,
+          isWorkflow: input.isWorkflow,
           steps: input.steps,
           currentVersion: 1,
           stats: { successes: 1, failures: 0, partials: 0, lastUsed: Date.now(), lastOutcomeAt: Date.now(), lastOutcomeSuccess: true },
-          versions: [{ version: 1, steps: input.steps, createdAt: Date.now() }],
+          versions: [{ version: 1, steps: input.steps, isWorkflow: input.isWorkflow, createdAt: Date.now() }],
           tags: input.tags,
         } as Skill)),
         stats: { successes: 1, failures: 0, partials: 0, lastUsed: Date.now(), lastOutcomeAt: Date.now(), lastOutcomeSuccess: true },
         feedback: [],
-        versions: [{ version: 1, steps: input.steps, createdAt: Date.now() }],
+        versions: [{ version: 1, steps: input.steps, isWorkflow: input.isWorkflow, createdAt: Date.now() }],
         tags: input.tags,
       };
       this.skills.push(newSkill);
@@ -737,13 +759,18 @@ export class TaskKnowledgeService {
       description: z.string().describe('Description of what the skill does'),
       domain: z.string().optional().describe('Domain where this skill applies (e.g. "localhost:3000")'),
       fingerprint: z.string().optional().describe('Optional page fingerprint (e.g. "/jira" or "/aerocore/admin")'),
+      isWorkflow: z.boolean().optional().describe('Whether this is a DAG-based workflow'),
       steps: z.array(
         z.object({
-          action: z.enum(['navigate', 'click', 'type', 'select', 'wait']),
+          action: z.enum(['navigate', 'click', 'type', 'select', 'wait', 'open_tab', 'workflow_task']),
           url: z.string().optional(),
           selector: z.string().optional(),
           value: z.string().optional(),
           text: z.string().optional(),
+          id: z.string().optional(),
+          dependencies: z.array(z.string()).optional(),
+          tool: z.string().optional(),
+          args: z.any().optional(),
         })
       ),
       tags: z.array(z.string()).describe('Keywords for retrieval'),
@@ -751,7 +778,7 @@ export class TaskKnowledgeService {
 
     const saveSkillTool: AgentTool = {
       name: 'knowledge_save_skill',
-      description: 'Save a verified execution plan as a reusable skill.',
+      description: 'Save a verified execution plan or DAG-based workflow as a reusable skill.',
       schema: saveSkillSchema,
       execute: async (args: any) => {
         const input = saveSkillSchema.parse(args);
@@ -774,10 +801,11 @@ export class TaskKnowledgeService {
           description: input.description,
           domain,
           fingerprint,
+          isWorkflow: input.isWorkflow,
           steps: input.steps,
           tags: input.tags,
         });
-        return `Saved skill "${input.name}" for domain ${domain}.`;
+        return `Saved ${input.isWorkflow ? 'workflow' : 'skill'} "${input.name}" for domain ${domain}.`;
       },
     };
 

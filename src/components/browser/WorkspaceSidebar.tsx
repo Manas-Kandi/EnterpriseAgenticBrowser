@@ -43,6 +43,7 @@ export function WorkspaceSidebar() {
                 <div className="mt-auto">
                 <button
                     onClick={() => setSidebarPanel(activeSidebarPanel === 'agent' ? null : 'agent')}
+                    data-testid="toggle-agent-panel"
                     className={cn(
                         "relative w-9 h-9 flex items-center justify-center rounded-lg transition-all group",
                         activeSidebarPanel === 'agent'

@@ -22,12 +22,13 @@ export type ApprovalHandlerResult =
       reason?: 'timeout' | 'denied';
     };
 
-export type ApprovalHandler = (toolName: string, args: any) => Promise<ApprovalHandlerResult>;
+export type ApprovalHandler = (toolName: string, args: Record<string, unknown>) => Promise<ApprovalHandlerResult>;
 
 export type PolicyAwareApprovalHandler = (context: PolicyContext) => Promise<boolean>;
 
 export class ToolRegistry {
   private tools: Map<string, AgentTool> = new Map();
+  private langChainToolsCache: Map<string, StructuredTool> = new Map();
   private approvalHandler: ApprovalHandler | null = null;
   private policyService: PolicyService | null = null;
 
@@ -43,26 +44,57 @@ export class ToolRegistry {
     return this.policyService;
   }
 
-  register(tool: AgentTool) {
+  public register(tool: AgentTool) {
     if (this.tools.has(tool.name)) {
       console.warn(`Tool with name ${tool.name} is already registered. Overwriting.`);
     }
     this.tools.set(tool.name, tool);
+    this.langChainToolsCache.delete(tool.name);
   }
 
-  getTool(name: string): AgentTool | undefined {
+  public getTool(name: string): AgentTool | undefined {
     return this.tools.get(name);
   }
 
-  getAllTools(): AgentTool[] {
+  public getAllTools(): AgentTool[] {
     return Array.from(this.tools.values());
   }
 
-  private async invokeToolInternal(tool: AgentTool, arg: any): Promise<string> {
+  public getLangChainTool(name: string): StructuredTool | undefined {
+    const cached = this.langChainToolsCache.get(name);
+    if (cached) return cached;
+
+    const tool = this.tools.get(name);
+    if (!tool) return undefined;
+
+    const registry = this;
+    const currentTool = tool;
+    const structuredTool = new (class extends StructuredTool {
+      name = currentTool.name;
+      description = currentTool.description;
+      schema = currentTool.schema;
+
+      async _call(arg: Record<string, unknown>): Promise<string> {
+        return registry.invokeToolInternal(currentTool, arg);
+      }
+    })();
+
+    this.langChainToolsCache.set(name, structuredTool);
+    return structuredTool;
+  }
+
+  public async invokeTool(toolName: string, arg: Record<string, unknown>): Promise<string> {
+    const tool = this.tools.get(toolName);
+    if (!tool) return `Error: Tool '${toolName}' not found.`;
+    return this.invokeToolInternal(tool, arg);
+  }
+
+  private async invokeToolInternal(tool: AgentTool, arg: unknown): Promise<string> {
     const runId = agentRunContext.getRunId() ?? undefined;
     try {
       agentRunContext.recordToolCall(tool.name, arg);
     } catch {
+      // ignore
     }
     const argsJson = (() => {
       try {
@@ -96,7 +128,7 @@ export class ToolRegistry {
           details: { runId, toolName: tool.name, toolCallId, argsHash },
           status: 'pending',
         })
-        .catch(() => undefined);
+        .catch(() => {});
     } catch {
       // ignore
     }
@@ -108,7 +140,7 @@ export class ToolRegistry {
       const browserContext = agentRunContext.getBrowserContext();
       const context: PolicyContext = {
         toolName: tool.name,
-        args: arg,
+        args: arg as Record<string, unknown>,
         url: browserContext?.url,
         domain: browserContext?.domain,
         userMode: 'standard',
@@ -141,7 +173,7 @@ export class ToolRegistry {
               details: { runId, toolName: tool.name, toolCallId, reason: policyEvaluation.reason },
               status: 'failure',
             })
-            .catch(() => undefined);
+            .catch(() => {});
         } catch {
           // ignore
         }
@@ -162,7 +194,7 @@ export class ToolRegistry {
                 details: { runId, toolName: tool.name, toolCallId, reason: 'YOLO mode' },
                 status: 'success',
               })
-              .catch(() => undefined);
+              .catch(() => {});
           } catch {
             // ignore
           }
@@ -188,12 +220,12 @@ export class ToolRegistry {
                 details: { runId, toolName: tool.name, toolCallId, argsHash, reason: policyEvaluation.reason },
                 status: 'pending',
               })
-              .catch(() => undefined);
+              .catch(() => {});
           } catch {
             // ignore
           }
 
-          const approvalResult = await approvalHandler(tool.name, arg);
+          const approvalResult = await approvalHandler(tool.name, arg as Record<string, unknown>);
           const approved =
             typeof approvalResult === 'boolean'
               ? approvalResult
@@ -201,7 +233,7 @@ export class ToolRegistry {
           const approvalReason =
             typeof approvalResult === 'boolean'
               ? (approved ? undefined : 'denied')
-              : approvalResult?.reason;
+              : (approvalResult as any)?.reason;
 
           try {
             await telemetryService.emit({
@@ -224,7 +256,7 @@ export class ToolRegistry {
                 details: { runId, toolName: tool.name, toolCallId, argsHash, approved, reason: approvalReason },
                 status: approved ? 'success' : 'failure',
               })
-              .catch(() => undefined);
+              .catch(() => {});
           } catch {
             // ignore
           }
@@ -253,7 +285,7 @@ export class ToolRegistry {
                   details: { runId, toolName: tool.name, toolCallId },
                   status: 'failure',
                 })
-                .catch(() => undefined);
+                .catch(() => {});
             } catch {
               // ignore
             }
@@ -277,7 +309,7 @@ export class ToolRegistry {
               details: { runId, toolName: tool.name, toolCallId, reason: 'YOLO mode' },
               status: 'success',
             })
-            .catch(() => undefined);
+            .catch(() => {});
         } catch {
           // ignore
         }
@@ -303,12 +335,12 @@ export class ToolRegistry {
               details: { runId, toolName: tool.name, toolCallId, argsHash },
               status: 'pending',
             })
-            .catch(() => undefined);
+            .catch(() => {});
         } catch {
           // ignore
         }
 
-        const approvalResult = await approvalHandler(tool.name, arg);
+        const approvalResult = await approvalHandler(tool.name, arg as Record<string, unknown>);
         const approved =
           typeof approvalResult === 'boolean'
             ? approvalResult
@@ -316,7 +348,7 @@ export class ToolRegistry {
         const approvalReason =
           typeof approvalResult === 'boolean'
             ? (approved ? undefined : 'denied')
-            : approvalResult?.reason;
+            : (approvalResult as any)?.reason;
 
         try {
           await telemetryService.emit({
@@ -339,7 +371,7 @@ export class ToolRegistry {
               details: { runId, toolName: tool.name, toolCallId, argsHash, approved, reason: approvalReason },
               status: approved ? 'success' : 'failure',
             })
-            .catch(() => undefined);
+            .catch(() => {});
         } catch {
           // ignore
         }
@@ -368,7 +400,7 @@ export class ToolRegistry {
                 details: { runId, toolName: tool.name, toolCallId },
                 status: 'failure',
               })
-              .catch(() => undefined);
+              .catch(() => {});
           } catch {
             // ignore
           }
@@ -400,12 +432,12 @@ export class ToolRegistry {
               details: { runId, toolName: tool.name, toolCallId, argsHash },
               status: 'pending',
             })
-            .catch(() => undefined);
+            .catch(() => {});
         } catch {
           // ignore
         }
 
-        const approvalResult = await approvalHandler(tool.name, arg);
+        const approvalResult = await approvalHandler(tool.name, arg as Record<string, unknown>);
         const approved =
           typeof approvalResult === 'boolean'
             ? approvalResult
@@ -413,7 +445,7 @@ export class ToolRegistry {
         const approvalReason =
           typeof approvalResult === 'boolean'
             ? (approved ? undefined : 'denied')
-            : approvalResult?.reason;
+            : (approvalResult as any)?.reason;
 
         try {
           await telemetryService.emit({
@@ -436,7 +468,7 @@ export class ToolRegistry {
               details: { runId, toolName: tool.name, toolCallId, argsHash, approved, reason: approvalReason },
               status: approved ? 'success' : 'failure',
             })
-            .catch(() => undefined);
+            .catch(() => {});
         } catch {
           // ignore
         }
@@ -465,7 +497,7 @@ export class ToolRegistry {
                 details: { runId, toolName: tool.name, toolCallId },
                 status: 'failure',
               })
-              .catch(() => undefined);
+              .catch(() => {});
           } catch {
             // ignore
           }
@@ -502,14 +534,15 @@ export class ToolRegistry {
             details: { runId, toolName: tool.name, toolCallId, durationMs },
             status: 'success',
           })
-          .catch(() => undefined);
+          .catch(() => {});
       } catch {
         // ignore
       }
 
       return result;
-    } catch (e: any) {
+    } catch (e: unknown) {
       const durationMs = Date.now() - startedAt;
+      const errorMessage = e instanceof Error ? e.message : String(e);
       try {
         await telemetryService.emit({
           eventId: uuidv4(),
@@ -517,7 +550,7 @@ export class ToolRegistry {
           ts: new Date().toISOString(),
           type: 'tool_call_end',
           name: tool.name,
-          data: { toolCallId, argsHash, durationMs, error: String(e?.message ?? e) },
+          data: { toolCallId, argsHash, durationMs, error: errorMessage },
         });
       } catch {
         // ignore
@@ -528,39 +561,21 @@ export class ToolRegistry {
           .log({
             actor: 'agent',
             action: 'tool_call_end',
-            details: { runId, toolName: tool.name, toolCallId, durationMs, error: String(e?.message ?? e) },
+            details: { runId, toolName: tool.name, toolCallId, durationMs, error: errorMessage },
             status: 'failure',
           })
-          .catch(() => undefined);
+          .catch(() => {});
       } catch {
         // ignore
       }
 
-      return `Tool execution failed: ${String(e?.message ?? e)}`;
+      return `Tool execution failed: ${errorMessage}`;
     }
-  }
-
-  async invokeTool(toolName: string, arg: any): Promise<string> {
-    const tool = this.tools.get(toolName);
-    if (!tool) return `Error: Tool '${toolName}' not found.`;
-    return this.invokeToolInternal(tool, arg);
   }
 
   // Convert to LangChain tools format
   toLangChainTools(): StructuredTool[] {
-    const registry = this;
-
-    return this.getAllTools().map(tool => {
-      return new (class extends StructuredTool {
-        name = tool.name;
-        description = tool.description;
-        schema = tool.schema;
-
-        async _call(arg: any): Promise<string> {
-          return registry.invokeToolInternal(tool, arg);
-        }
-      })();
-    });
+    return this.getAllTools().map(tool => this.getLangChainTool(tool.name)!);
   }
 }
 

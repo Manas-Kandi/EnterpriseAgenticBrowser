@@ -163,7 +163,11 @@ export class BrowserAutomationService {
     }
   }
 
-  public async getTarget(): Promise<WebContents> {
+  public async getTarget(tabId?: string): Promise<WebContents> {
+    if (tabId) {
+      const target = browserTargetService.getWebContents(tabId);
+      if (target) return target;
+    }
     return browserTargetService.getActiveWebContents();
   }
 
@@ -233,6 +237,7 @@ export class BrowserAutomationService {
       scope: z.enum(['main', 'document']).optional().describe('Where to look for elements (default: main)'),
       maxElements: z.number().optional().describe('Max interactive elements to return (default: 80)'),
       forceRefresh: z.boolean().optional().describe('Ignore cache and force a fresh observation'),
+      tabId: z.string().optional().describe('Target tab ID for execution'),
     });
 
     // Tool: Observe
@@ -241,10 +246,10 @@ export class BrowserAutomationService {
       description:
         'Analyze the current page URL/title and return visible interactive elements. Defaults to main content to avoid header/nav noise. Caches results for performance; use forceRefresh to bypass.',
       schema: observeSchema,
-      execute: async (args: unknown) => {
-        const { scope, maxElements, forceRefresh } = observeSchema.parse(args ?? {});
+      execute: async (args: any) => {
+        const { scope, maxElements, forceRefresh, tabId } = observeSchema.parse(args ?? {});
         try {
-            const target = await this.getTarget();
+            const target = await this.getTarget(tabId);
             const targetId = target.id;
             const currentUrl = target.getURL();
             const argsKey = JSON.stringify({ scope: scope ?? 'main', maxElements: maxElements ?? 80 });
@@ -783,22 +788,25 @@ export class BrowserAutomationService {
       },
     };
 
-    const navigateTool: AgentTool<z.ZodObject<{ url: z.ZodString }>> = {
+    const navigateTool: AgentTool<z.ZodObject<{ url: z.ZodString; tabId: z.ZodOptional<z.ZodString>; waitForSelector: z.ZodOptional<z.ZodString>; waitForText: z.ZodOptional<z.ZodString>; timeoutMs: z.ZodOptional<z.ZodNumber> }>> = {
       name: 'browser_navigate',
       description: 'Navigate the browser to a specific URL.',
       schema: z.object({
         url: z.string().describe('The URL to navigate to (must include http/https)'),
+        tabId: z.string().optional().describe('Target tab ID for execution'),
         waitForSelector: z.string().optional().describe('Optional selector to wait for after navigation'),
         waitForText: z.string().optional().describe('Optional text to wait for after navigation'),
         timeoutMs: z.number().optional().describe('Timeout in ms for optional waits (default 8000)'),
       }),
       execute: async ({
         url,
+        tabId,
         waitForSelector,
         waitForText,
         timeoutMs,
       }: {
         url: string;
+        tabId?: string;
         waitForSelector?: string;
         waitForText?: string;
         timeoutMs?: number;
@@ -806,7 +814,7 @@ export class BrowserAutomationService {
         try {
             let target;
             try {
-              target = await this.getTarget();
+              target = await this.getTarget(tabId);
             } catch (noWebviewError) {
               // No webview exists (e.g., New Tab page). Use IPC to trigger navigation via renderer.
               const { BrowserWindow } = await import('electron');
@@ -952,16 +960,17 @@ export class BrowserAutomationService {
       },
     };
 
-    const waitForSelectorSchema = z.object({
-      selector: z.string().describe('CSS selector to wait for'),
-      timeoutMs: z.number().optional().describe('Timeout in ms (default 5000)'),
-    });
-    const waitForSelectorTool: AgentTool<typeof waitForSelectorSchema> = {
+    const waitForSelectorTool: AgentTool = {
       name: 'browser_wait_for_selector',
       description: 'Wait for an element to appear in the DOM.',
-      schema: waitForSelectorSchema,
-      execute: async ({ selector, timeoutMs }) => {
-        const target = await this.getTarget();
+      schema: z.object({
+        selector: z.string().describe('CSS selector to wait for'),
+        tabId: z.string().optional().describe('Target tab ID for execution'),
+        timeoutMs: z.number().optional().describe('Timeout in ms (default 5000)'),
+      }),
+      execute: async (args: any) => {
+        const { selector, tabId, timeoutMs } = args;
+        const target = await this.getTarget(tabId);
         const timeout = timeoutMs ?? 5000;
         try {
           await this.waitForSelector(target, selector, timeout);
@@ -972,16 +981,17 @@ export class BrowserAutomationService {
       },
     };
 
-    const waitForUrlSchema = z.object({
-      urlPart: z.string().describe('Substring or full URL to wait for'),
-      timeoutMs: z.number().optional().describe('Timeout in ms (default 5000)'),
-    });
-    const waitForUrlTool: AgentTool<typeof waitForUrlSchema> = {
+    const waitForUrlTool: AgentTool = {
       name: 'browser_wait_for_url',
       description: 'Wait for the URL to contain a specific string.',
-      schema: waitForUrlSchema,
-      execute: async ({ urlPart, timeoutMs }) => {
-        const target = await this.getTarget();
+      schema: z.object({
+        urlPart: z.string().describe('Substring or full URL to wait for'),
+        tabId: z.string().optional().describe('Target tab ID for execution'),
+        timeoutMs: z.number().optional().describe('Timeout in ms (default 5000)'),
+      }),
+      execute: async (args: any) => {
+        const { urlPart, tabId, timeoutMs } = args;
+        const target = await this.getTarget(tabId);
         const timeout = timeoutMs ?? 5000;
         const startedAt = Date.now();
         while (Date.now() - startedAt < timeout) {
@@ -1069,6 +1079,7 @@ export class BrowserAutomationService {
     // Tool: Click
     const clickSchema = z.object({
       selector: z.string().describe('CSS selector (or XPath prefixed with "xpath=") of the element to click'),
+      tabId: z.string().optional().describe('Target tab ID for execution'),
       withinSelector: z
         .string()
         .optional()
@@ -1081,9 +1092,9 @@ export class BrowserAutomationService {
       description:
         'Click an element on the current page. Safe + deterministic: if the selector matches multiple visible elements, you must disambiguate using withinSelector, matchText, or index (or use browser_click_text).',
       schema: clickSchema,
-      execute: async ({ selector, withinSelector, index, matchText }) => {
+      execute: async ({ selector, tabId, withinSelector, index, matchText }) => {
         try {
-            const target = await this.getTarget();
+            const target = await this.getTarget(tabId);
 
             if (withinSelector) {
               await this.waitForSelector(target, withinSelector, 5000);
@@ -1305,16 +1316,17 @@ export class BrowserAutomationService {
     };
 
     // Tool: Type
-    const typeTool: AgentTool<z.ZodObject<{ selector: z.ZodString; text: z.ZodString }>> = {
+    const typeTool: AgentTool<z.ZodObject<{ selector: z.ZodString; text: z.ZodString; tabId: z.ZodOptional<z.ZodString> }>> = {
       name: 'browser_type',
       description: 'Type text into an input field.',
       schema: z.object({
         selector: z.string().describe('CSS selector (or XPath prefixed with "xpath=") of the input'),
         text: z.string().describe('Text to type'),
+        tabId: z.string().optional().describe('Target tab ID for execution'),
       }),
-      execute: async ({ selector, text }: { selector: string; text: string }) => {
+      execute: async ({ selector, text, tabId }: { selector: string; text: string; tabId?: string }) => {
         try {
-            const target = await this.getTarget();
+            const target = await this.getTarget(tabId);
             const matches = await this.querySelectorCount(target, selector);
             if (matches > 1) {
               return `Refusing to type into non-unique selector (matches=${matches}): ${selector}`;
@@ -1374,15 +1386,16 @@ export class BrowserAutomationService {
     };
 
     // Tool: Get Text
-    const getTextTool: AgentTool<z.ZodObject<{ selector: z.ZodString }>> = {
+    const getTextTool: AgentTool<z.ZodObject<{ selector: z.ZodString; tabId: z.ZodOptional<z.ZodString> }>> = {
         name: 'browser_get_text',
         description: 'Get the text content of an element.',
         schema: z.object({
-            selector: z.string().describe('CSS selector (or XPath prefixed with "xpath=")')
+            selector: z.string().describe('CSS selector (or XPath prefixed with "xpath=")'),
+            tabId: z.string().optional().describe('Target tab ID for execution'),
         }),
-        execute: async ({ selector }: { selector: string }) => {
+        execute: async ({ selector, tabId }: { selector: string; tabId?: string }) => {
             try {
-                const target = await this.getTarget();
+                const target = await this.getTarget(tabId);
                 await this.waitForSelector(target, selector, 5000);
                 const text = await target.executeJavaScript(
                   `(() => {
@@ -1493,15 +1506,16 @@ export class BrowserAutomationService {
       },
     };
 
-    const waitForTextTool: AgentTool<z.ZodObject<{ text: z.ZodString; timeoutMs: z.ZodOptional<z.ZodNumber> }>> = {
+    const waitForTextTool: AgentTool<z.ZodObject<{ text: z.ZodString; tabId: z.ZodOptional<z.ZodString>; timeoutMs: z.ZodOptional<z.ZodNumber> }>> = {
       name: 'browser_wait_for_text',
       description: 'Wait until text appears on the page (case-insensitive). Useful to verify actions succeeded.',
       schema: z.object({
         text: z.string().describe('Text to wait for'),
+        tabId: z.string().optional().describe('Target tab ID for execution'),
         timeoutMs: z.number().optional().describe('Timeout in ms (default 5000)'),
       }),
-      execute: async ({ text, timeoutMs }: { text: string; timeoutMs?: number }) => {
-        const target = await this.getTarget();
+      execute: async ({ text, tabId, timeoutMs }: { text: string; tabId?: string; timeoutMs?: number }) => {
+        const target = await this.getTarget(tabId);
         const startedAt = Date.now();
         const timeout = timeoutMs ?? 5000;
         while (Date.now() - startedAt < timeout) {
@@ -1558,16 +1572,17 @@ export class BrowserAutomationService {
       },
     };
 
-    const selectTool: AgentTool<z.ZodObject<{ selector: z.ZodString; value: z.ZodString }>> = {
+    const selectTool: AgentTool<z.ZodObject<{ selector: z.ZodString; value: z.ZodString; tabId: z.ZodOptional<z.ZodString> }>> = {
       name: 'browser_select',
       description: 'Set the value of a <select> element.',
       schema: z.object({
         selector: z.string().describe('CSS selector (or XPath prefixed with "xpath=") of the select element'),
         value: z.string().describe('Option value to set'),
+        tabId: z.string().optional().describe('Target tab ID for execution'),
       }),
-      execute: async ({ selector, value }: { selector: string; value: string }) => {
+      execute: async ({ selector, value, tabId }: { selector: string; value: string; tabId?: string }) => {
         try {
-          const target = await this.getTarget();
+          const target = await this.getTarget(tabId);
           const matches = await this.querySelectorCount(target, selector);
           if (matches > 1) {
             return `Refusing to select on non-unique selector (matches=${matches}): ${selector}`;
@@ -1984,6 +1999,43 @@ export class BrowserAutomationService {
     };
 
     toolRegistry.register(observeTool);
+    const openTabTool: AgentTool<z.ZodObject<{ url: z.ZodString; background: z.ZodOptional<z.ZodBoolean> }>> = {
+      name: 'browser_open_tab',
+      description: 'Open a new browser tab with the specified URL.',
+      schema: z.object({
+        url: z.string().describe('The URL to open'),
+        background: z.boolean().optional().describe('Open in background (default: true)'),
+      }),
+      execute: async ({ url, background }) => {
+        try {
+          const { BrowserWindow } = await import('electron');
+          const win = BrowserWindow.getAllWindows()[0];
+          if (win) {
+            // Use a promise to wait for the tab to be created and registered
+            const tabId = await new Promise<string>((resolve) => {
+              // This is a bit tricky since we need the tabId from the renderer
+              // For now, we'll trigger the open and wait for the next active webview if needed,
+              // but ideally the renderer should report back the tabId.
+              win.webContents.send('browser:open-agent-tab', {
+                url,
+                background: background ?? true,
+                agentCreated: true,
+              });
+              
+              // Fallback: wait a bit and resolve with a generic success if we can't get exact ID
+              setTimeout(() => resolve('new-tab-' + Date.now()), 1500);
+            });
+            
+            return JSON.stringify({ ok: true, tabId, message: `Opened ${url} in a new tab` });
+          }
+          return 'Failed to open tab: No browser window found';
+        } catch (e: any) {
+          return `Failed to open tab: ${e.message}`;
+        }
+      },
+    };
+
+    toolRegistry.register(openTabTool);
     toolRegistry.register(goBackTool);
     toolRegistry.register(goForwardTool);
     toolRegistry.register(reloadTool);

@@ -1,12 +1,14 @@
 /** @type {import('jest').Config} */
 export default {
-  preset: 'ts-jest',
+  preset: 'ts-jest/presets/default-esm',
   testEnvironment: 'node',
   roots: ['<rootDir>/tests'],
   testMatch: ['**/*.test.ts'],
   setupFilesAfterEnv: ['<rootDir>/tests/setupTests.ts'],
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
+    '^(\\.{1,2}/.*)\\.js$': '$1',
+    '^electron$': '<rootDir>/tests/mocks/electron.ts',
   },
   transform: {
     '^.+\\.tsx?$': ['ts-jest', {
@@ -14,8 +16,9 @@ export default {
       useESM: true,
     }],
   },
+  extensionsToTreatAsEsm: ['.ts', '.tsx'],
   transformIgnorePatterns: [
-    'node_modules/(?!(uuid|zod)/)',
+    'node_modules/(?!(@langchain|langchain|uuid|zod|@toon-format)/)',
   ],
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],
   collectCoverageFrom: [

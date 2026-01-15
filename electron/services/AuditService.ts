@@ -10,7 +10,7 @@ interface AuditLogEntry {
   timestamp: string;
   actor: 'user' | 'agent' | 'system';
   action: string;
-  details: any; // Will be JSON stringified and encrypted
+  details: Record<string, unknown> | string; // Will be JSON stringified and encrypted
   status: 'success' | 'failure' | 'pending';
 }
 
@@ -100,7 +100,7 @@ export class AuditService {
 
   private ensureColumn(name: string, type: string) {
     try {
-      const cols = this.db.prepare('PRAGMA table_info(audit_logs)').all() as any[];
+      const cols = this.db.prepare('PRAGMA table_info(audit_logs)').all() as { name: string }[];
       const exists = cols.some((c) => c && String(c.name) === name);
       if (!exists) {
         this.db.exec(`ALTER TABLE audit_logs ADD COLUMN ${name} ${type}`);
@@ -226,7 +226,7 @@ export class AuditService {
     const detailsStr = JSON.stringify(entry.details);
     const encryptedDetails = this.encrypt(detailsStr);
 
-    const last = this.db.prepare('SELECT hash FROM audit_logs ORDER BY rowid DESC LIMIT 1').get() as any;
+    const last = this.db.prepare('SELECT hash FROM audit_logs ORDER BY rowid DESC LIMIT 1').get() as { hash: string } | undefined;
     const prevHash = typeof last?.hash === 'string' ? last.hash : '';
     const rowHash = this.computeHash(prevHash || '', {
       id,
@@ -248,10 +248,12 @@ export class AuditService {
 
   getLogs(limit = 100): AuditLogEntry[] {
     const stmt = this.db.prepare('SELECT * FROM audit_logs ORDER BY timestamp DESC LIMIT ?');
-    const rows = stmt.all(limit) as any[];
+    const rows = stmt.all(limit) as (AuditLogRow & { details: string })[];
 
     return rows.map(row => ({
       ...row,
+      actor: row.actor as 'user' | 'agent' | 'system',
+      status: row.status as 'success' | 'failure' | 'pending',
       details: this.decrypt(row.details)
     }));
   }

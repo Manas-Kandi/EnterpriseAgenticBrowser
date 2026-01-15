@@ -17,37 +17,37 @@ import Database from "better-sqlite3";
 import fs$2 from "node:fs";
 import os$1 from "node:os";
 import * as vm from "vm";
-const byteToHex$1 = [];
+const byteToHex$2 = [];
 for (let i = 0; i < 256; ++i) {
-  byteToHex$1.push((i + 256).toString(16).slice(1));
+  byteToHex$2.push((i + 256).toString(16).slice(1));
 }
-function unsafeStringify$1(arr2, offset = 0) {
-  return (byteToHex$1[arr2[offset + 0]] + byteToHex$1[arr2[offset + 1]] + byteToHex$1[arr2[offset + 2]] + byteToHex$1[arr2[offset + 3]] + "-" + byteToHex$1[arr2[offset + 4]] + byteToHex$1[arr2[offset + 5]] + "-" + byteToHex$1[arr2[offset + 6]] + byteToHex$1[arr2[offset + 7]] + "-" + byteToHex$1[arr2[offset + 8]] + byteToHex$1[arr2[offset + 9]] + "-" + byteToHex$1[arr2[offset + 10]] + byteToHex$1[arr2[offset + 11]] + byteToHex$1[arr2[offset + 12]] + byteToHex$1[arr2[offset + 13]] + byteToHex$1[arr2[offset + 14]] + byteToHex$1[arr2[offset + 15]]).toLowerCase();
+function unsafeStringify$2(arr2, offset = 0) {
+  return (byteToHex$2[arr2[offset + 0]] + byteToHex$2[arr2[offset + 1]] + byteToHex$2[arr2[offset + 2]] + byteToHex$2[arr2[offset + 3]] + "-" + byteToHex$2[arr2[offset + 4]] + byteToHex$2[arr2[offset + 5]] + "-" + byteToHex$2[arr2[offset + 6]] + byteToHex$2[arr2[offset + 7]] + "-" + byteToHex$2[arr2[offset + 8]] + byteToHex$2[arr2[offset + 9]] + "-" + byteToHex$2[arr2[offset + 10]] + byteToHex$2[arr2[offset + 11]] + byteToHex$2[arr2[offset + 12]] + byteToHex$2[arr2[offset + 13]] + byteToHex$2[arr2[offset + 14]] + byteToHex$2[arr2[offset + 15]]).toLowerCase();
 }
-const rnds8Pool$1 = new Uint8Array(256);
-let poolPtr$1 = rnds8Pool$1.length;
-function rng$1() {
-  if (poolPtr$1 > rnds8Pool$1.length - 16) {
-    randomFillSync(rnds8Pool$1);
-    poolPtr$1 = 0;
+const rnds8Pool$2 = new Uint8Array(256);
+let poolPtr$2 = rnds8Pool$2.length;
+function rng$2() {
+  if (poolPtr$2 > rnds8Pool$2.length - 16) {
+    randomFillSync(rnds8Pool$2);
+    poolPtr$2 = 0;
   }
-  return rnds8Pool$1.slice(poolPtr$1, poolPtr$1 += 16);
+  return rnds8Pool$2.slice(poolPtr$2, poolPtr$2 += 16);
 }
-const native$1 = { randomUUID };
+const native$2 = { randomUUID };
 function _v4(options, buf, offset) {
   var _a3;
   options = options || {};
-  const rnds = options.random ?? ((_a3 = options.rng) == null ? void 0 : _a3.call(options)) ?? rng$1();
+  const rnds = options.random ?? ((_a3 = options.rng) == null ? void 0 : _a3.call(options)) ?? rng$2();
   if (rnds.length < 16) {
     throw new Error("Random bytes length must be >= 16");
   }
   rnds[6] = rnds[6] & 15 | 64;
   rnds[8] = rnds[8] & 63 | 128;
-  return unsafeStringify$1(rnds);
+  return unsafeStringify$2(rnds);
 }
-function v4$1(options, buf, offset) {
-  if (native$1.randomUUID && true && !options) {
-    return native$1.randomUUID();
+function v4$2(options, buf, offset) {
+  if (native$2.randomUUID && true && !options) {
+    return native$2.randomUUID();
   }
   return _v4(options);
 }
@@ -274,7 +274,7 @@ const safeJSON = (text) => {
   }
 };
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-const VERSION = "6.14.0";
+const VERSION = "6.10.0";
 const isRunningInBrowser = () => {
   return (
     // @ts-ignore
@@ -5660,12 +5660,10 @@ class Responses extends APIResource {
    *
    * @example
    * ```ts
-   * const compactedResponse = await client.responses.compact({
-   *   model: 'gpt-5.2',
-   * });
+   * const compactedResponse = await client.responses.compact();
    * ```
    */
-  compact(body, options) {
+  compact(body = {}, options) {
     return this._client.post("/responses/compact", { body, ...options });
   }
 }
@@ -7625,7 +7623,7 @@ function convertToPrettyString(message) {
         lines.push(`  ${tc.name} (${tc.id})`);
         lines.push(` Call ID: ${tc.id}`);
         lines.push("  Args:");
-        for (const [key, value] of Object.entries(tc.args)) lines.push(`    ${key}: ${typeof value === "object" ? JSON.stringify(value) : value}`);
+        for (const [key, value] of Object.entries(tc.args)) lines.push(`    ${key}: ${value}`);
       }
     }
   }
@@ -7846,8 +7844,8 @@ function _mergeLists(left, right) {
   }
 }
 function _mergeObj(left, right) {
-  if (left === void 0 && right === void 0) return void 0;
-  if (left === void 0 || right === void 0) return left ?? right;
+  if (!left && !right) throw new Error("Cannot merge two undefined objects.");
+  if (!left || !right) return left || right;
   else if (typeof left !== typeof right) throw new Error(`Cannot merge objects of different types.
 Left ${typeof left}
 Right ${typeof right}`);
@@ -9338,6 +9336,131 @@ function getEnvironmentVariable$1(name) {
     return void 0;
   }
 }
+const REGEX$1 = /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/i;
+function validate$3(uuid2) {
+  return typeof uuid2 === "string" && REGEX$1.test(uuid2);
+}
+const byteToHex$1 = [];
+for (let i = 0; i < 256; ++i) {
+  byteToHex$1.push((i + 256).toString(16).slice(1));
+}
+function unsafeStringify$1(arr2, offset = 0) {
+  return (byteToHex$1[arr2[offset + 0]] + byteToHex$1[arr2[offset + 1]] + byteToHex$1[arr2[offset + 2]] + byteToHex$1[arr2[offset + 3]] + "-" + byteToHex$1[arr2[offset + 4]] + byteToHex$1[arr2[offset + 5]] + "-" + byteToHex$1[arr2[offset + 6]] + byteToHex$1[arr2[offset + 7]] + "-" + byteToHex$1[arr2[offset + 8]] + byteToHex$1[arr2[offset + 9]] + "-" + byteToHex$1[arr2[offset + 10]] + byteToHex$1[arr2[offset + 11]] + byteToHex$1[arr2[offset + 12]] + byteToHex$1[arr2[offset + 13]] + byteToHex$1[arr2[offset + 14]] + byteToHex$1[arr2[offset + 15]]).toLowerCase();
+}
+const rnds8Pool$1 = new Uint8Array(256);
+let poolPtr$1 = rnds8Pool$1.length;
+function rng$1() {
+  if (poolPtr$1 > rnds8Pool$1.length - 16) {
+    crypto$2.randomFillSync(rnds8Pool$1);
+    poolPtr$1 = 0;
+  }
+  return rnds8Pool$1.slice(poolPtr$1, poolPtr$1 += 16);
+}
+const native$1 = {
+  randomUUID: crypto$2.randomUUID
+};
+function v4$1(options, buf, offset) {
+  if (native$1.randomUUID && true && !options) {
+    return native$1.randomUUID();
+  }
+  options = options || {};
+  const rnds = options.random || (options.rng || rng$1)();
+  rnds[6] = rnds[6] & 15 | 64;
+  rnds[8] = rnds[8] & 63 | 128;
+  return unsafeStringify$1(rnds);
+}
+var base_exports$2 = {};
+__export(base_exports$2, {
+  BaseCallbackHandler: () => BaseCallbackHandler,
+  callbackHandlerPrefersStreaming: () => callbackHandlerPrefersStreaming,
+  isBaseCallbackHandler: () => isBaseCallbackHandler
+});
+var BaseCallbackHandlerMethodsClass = class {
+};
+function callbackHandlerPrefersStreaming(x) {
+  return "lc_prefer_streaming" in x && x.lc_prefer_streaming;
+}
+var BaseCallbackHandler = class extends BaseCallbackHandlerMethodsClass {
+  constructor(input) {
+    super();
+    __publicField(this, "lc_serializable", false);
+    __publicField(this, "lc_kwargs");
+    __publicField(this, "ignoreLLM", false);
+    __publicField(this, "ignoreChain", false);
+    __publicField(this, "ignoreAgent", false);
+    __publicField(this, "ignoreRetriever", false);
+    __publicField(this, "ignoreCustomEvent", false);
+    __publicField(this, "raiseError", false);
+    __publicField(this, "awaitHandlers", getEnvironmentVariable$1("LANGCHAIN_CALLBACKS_BACKGROUND") === "false");
+    this.lc_kwargs = input || {};
+    if (input) {
+      this.ignoreLLM = input.ignoreLLM ?? this.ignoreLLM;
+      this.ignoreChain = input.ignoreChain ?? this.ignoreChain;
+      this.ignoreAgent = input.ignoreAgent ?? this.ignoreAgent;
+      this.ignoreRetriever = input.ignoreRetriever ?? this.ignoreRetriever;
+      this.ignoreCustomEvent = input.ignoreCustomEvent ?? this.ignoreCustomEvent;
+      this.raiseError = input.raiseError ?? this.raiseError;
+      this.awaitHandlers = this.raiseError || (input._awaitHandler ?? this.awaitHandlers);
+    }
+  }
+  get lc_namespace() {
+    return [
+      "langchain_core",
+      "callbacks",
+      this.name
+    ];
+  }
+  get lc_secrets() {
+    return void 0;
+  }
+  get lc_attributes() {
+    return void 0;
+  }
+  get lc_aliases() {
+    return void 0;
+  }
+  get lc_serializable_keys() {
+    return void 0;
+  }
+  /**
+  * The name of the serializable. Override to provide an alias or
+  * to preserve the serialized module name in minified environments.
+  *
+  * Implemented as a static method to support loading logic.
+  */
+  static lc_name() {
+    return this.name;
+  }
+  /**
+  * The final serialized identifier for the module.
+  */
+  get lc_id() {
+    return [...this.lc_namespace, get_lc_unique_name(this.constructor)];
+  }
+  copy() {
+    return new this.constructor(this);
+  }
+  toJSON() {
+    return Serializable.prototype.toJSON.call(this);
+  }
+  toJSONNotImplemented() {
+    return Serializable.prototype.toJSONNotImplemented.call(this);
+  }
+  static fromMethods(methods) {
+    class Handler extends BaseCallbackHandler {
+      constructor() {
+        super();
+        __publicField(this, "name", v4$1());
+        Object.assign(this, methods);
+      }
+    }
+    return new Handler();
+  }
+};
+const isBaseCallbackHandler = (x) => {
+  const callbackHandler = x;
+  return callbackHandler !== void 0 && typeof callbackHandler.copy === "function" && typeof callbackHandler.name === "string" && typeof callbackHandler.awaitHandlers === "boolean";
+};
 const REGEX = /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/i;
 function validate$2(uuid2) {
   return typeof uuid2 === "string" && REGEX.test(uuid2);
@@ -9513,98 +9636,6 @@ function v7(options, buf, offset) {
   b[i++] = rnds[15];
   return buf || unsafeStringify(b);
 }
-var base_exports$2 = {};
-__export(base_exports$2, {
-  BaseCallbackHandler: () => BaseCallbackHandler,
-  callbackHandlerPrefersStreaming: () => callbackHandlerPrefersStreaming,
-  isBaseCallbackHandler: () => isBaseCallbackHandler
-});
-var BaseCallbackHandlerMethodsClass = class {
-};
-function callbackHandlerPrefersStreaming(x) {
-  return "lc_prefer_streaming" in x && x.lc_prefer_streaming;
-}
-var BaseCallbackHandler = class extends BaseCallbackHandlerMethodsClass {
-  constructor(input) {
-    super();
-    __publicField(this, "lc_serializable", false);
-    __publicField(this, "lc_kwargs");
-    __publicField(this, "ignoreLLM", false);
-    __publicField(this, "ignoreChain", false);
-    __publicField(this, "ignoreAgent", false);
-    __publicField(this, "ignoreRetriever", false);
-    __publicField(this, "ignoreCustomEvent", false);
-    __publicField(this, "raiseError", false);
-    __publicField(this, "awaitHandlers", getEnvironmentVariable$1("LANGCHAIN_CALLBACKS_BACKGROUND") === "false");
-    this.lc_kwargs = input || {};
-    if (input) {
-      this.ignoreLLM = input.ignoreLLM ?? this.ignoreLLM;
-      this.ignoreChain = input.ignoreChain ?? this.ignoreChain;
-      this.ignoreAgent = input.ignoreAgent ?? this.ignoreAgent;
-      this.ignoreRetriever = input.ignoreRetriever ?? this.ignoreRetriever;
-      this.ignoreCustomEvent = input.ignoreCustomEvent ?? this.ignoreCustomEvent;
-      this.raiseError = input.raiseError ?? this.raiseError;
-      this.awaitHandlers = this.raiseError || (input._awaitHandler ?? this.awaitHandlers);
-    }
-  }
-  get lc_namespace() {
-    return [
-      "langchain_core",
-      "callbacks",
-      this.name
-    ];
-  }
-  get lc_secrets() {
-    return void 0;
-  }
-  get lc_attributes() {
-    return void 0;
-  }
-  get lc_aliases() {
-    return void 0;
-  }
-  get lc_serializable_keys() {
-    return void 0;
-  }
-  /**
-  * The name of the serializable. Override to provide an alias or
-  * to preserve the serialized module name in minified environments.
-  *
-  * Implemented as a static method to support loading logic.
-  */
-  static lc_name() {
-    return this.name;
-  }
-  /**
-  * The final serialized identifier for the module.
-  */
-  get lc_id() {
-    return [...this.lc_namespace, get_lc_unique_name(this.constructor)];
-  }
-  copy() {
-    return new this.constructor(this);
-  }
-  toJSON() {
-    return Serializable.prototype.toJSON.call(this);
-  }
-  toJSONNotImplemented() {
-    return Serializable.prototype.toJSONNotImplemented.call(this);
-  }
-  static fromMethods(methods) {
-    class Handler extends BaseCallbackHandler {
-      constructor() {
-        super();
-        __publicField(this, "name", v7());
-        Object.assign(this, methods);
-      }
-    }
-    return new Handler();
-  }
-};
-const isBaseCallbackHandler = (x) => {
-  const callbackHandler = x;
-  return callbackHandler !== void 0 && typeof callbackHandler.copy === "function" && typeof callbackHandler.name === "string" && typeof callbackHandler.awaitHandlers === "boolean";
-};
 const GEN_AI_OPERATION_NAME = "gen_ai.operation.name";
 const GEN_AI_SYSTEM = "gen_ai.system";
 const GEN_AI_REQUEST_MODEL = "gen_ai.request.model";
@@ -9682,7 +9713,7 @@ function uuid7FromTime(timestamp) {
   const msecs = typeof timestamp === "string" ? Date.parse(timestamp) : timestamp;
   return v7({ msecs, seq: 0 });
 }
-const __version__ = "0.4.0";
+const __version__ = "0.3.84";
 let globalEnv;
 const isBrowser = () => typeof window !== "undefined" && typeof window.document !== "undefined";
 const isWebWorker = () => typeof globalThis === "object" && globalThis.constructor && globalThis.constructor.name === "DedicatedWorkerGlobalScope";
@@ -12214,22 +12245,6 @@ class LangSmithConflictError extends Error {
     this.status = 409;
   }
 }
-class LangSmithNotFoundError extends Error {
-  constructor(message) {
-    super(message);
-    Object.defineProperty(this, "status", {
-      enumerable: true,
-      configurable: true,
-      writable: true,
-      value: void 0
-    });
-    this.name = "LangSmithNotFoundError";
-    this.status = 404;
-  }
-}
-function isLangSmithNotFoundError(error) {
-  return error != null && typeof error === "object" && "name" in error && (error == null ? void 0 : error.name) === "LangSmithNotFoundError";
-}
 async function raiseForStatus(response, context, consumeOnSuccess) {
   let errorBody;
   if (response.ok) {
@@ -12259,9 +12274,6 @@ async function raiseForStatus(response, context, consumeOnSuccess) {
     }
   }
   const fullMessage = `Failed to ${context}. Received status [${response.status}]: ${response.statusText}. Message: ${errorBody}`;
-  if (response.status === 404) {
-    throw new LangSmithNotFoundError(fullMessage);
-  }
   if (response.status === 409) {
     throw new LangSmithConflictError(fullMessage);
   }
@@ -12430,10 +12442,7 @@ function replaceGetterValues(replacer) {
     return replacer.call(this, key, val);
   };
 }
-function mergeRuntimeEnvIntoRun(run, cachedEnvVars, omitTracedRuntimeInfo) {
-  if (omitTracedRuntimeInfo) {
-    return run;
-  }
+function mergeRuntimeEnvIntoRun(run, cachedEnvVars) {
   const runtimeEnv = getRuntimeEnvironment();
   const envVars = cachedEnvVars ?? getLangSmithEnvVarsMetadata();
   const extra = run.extra ?? {};
@@ -12654,12 +12663,6 @@ class Client {
       writable: true,
       value: void 0
     });
-    Object.defineProperty(this, "omitTracedRuntimeInfo", {
-      enumerable: true,
-      configurable: true,
-      writable: true,
-      value: void 0
-    });
     Object.defineProperty(this, "tracingSampleRate", {
       enumerable: true,
       configurable: true,
@@ -12774,12 +12777,6 @@ class Client {
       writable: true,
       value: false
     });
-    Object.defineProperty(this, "_multipartDisabled", {
-      enumerable: true,
-      configurable: true,
-      writable: true,
-      value: false
-    });
     Object.defineProperty(this, "debug", {
       enumerable: true,
       configurable: true,
@@ -12821,7 +12818,6 @@ class Client {
     });
     this.hideInputs = config2.hideInputs ?? config2.anonymizer ?? defaultConfig.hideInputs;
     this.hideOutputs = config2.hideOutputs ?? config2.anonymizer ?? defaultConfig.hideOutputs;
-    this.omitTracedRuntimeInfo = config2.omitTracedRuntimeInfo ?? false;
     this.autoBatchTracing = config2.autoBatchTracing ?? this.autoBatchTracing;
     this.autoBatchQueue = new AutoBatchQueue(maxMemory);
     this.blockOnRootRunFinalization = config2.blockOnRootRunFinalization ?? this.blockOnRootRunFinalization;
@@ -13047,7 +13043,7 @@ class Client {
   async _getBatchSizeLimitBytes() {
     var _a3;
     const serverInfo = await this._ensureServerInfo();
-    return this.batchSizeBytesLimit ?? ((_a3 = serverInfo == null ? void 0 : serverInfo.batch_ingest_config) == null ? void 0 : _a3.size_limit_bytes) ?? DEFAULT_UNCOMPRESSED_BATCH_SIZE_LIMIT_BYTES;
+    return this.batchSizeBytesLimit ?? ((_a3 = serverInfo.batch_ingest_config) == null ? void 0 : _a3.size_limit_bytes) ?? DEFAULT_UNCOMPRESSED_BATCH_SIZE_LIMIT_BYTES;
   }
   /**
    * Get the maximum number of operations to batch in a single request.
@@ -13055,7 +13051,7 @@ class Client {
   async _getBatchSizeLimit() {
     var _a3;
     const serverInfo = await this._ensureServerInfo();
-    return this.batchSizeLimit ?? ((_a3 = serverInfo == null ? void 0 : serverInfo.batch_ingest_config) == null ? void 0 : _a3.size_limit) ?? DEFAULT_BATCH_SIZE_LIMIT;
+    return this.batchSizeLimit ?? ((_a3 = serverInfo.batch_ingest_config) == null ? void 0 : _a3.size_limit) ?? DEFAULT_BATCH_SIZE_LIMIT;
   }
   async _getDatasetExamplesMultiPartSupport() {
     var _a3;
@@ -13112,26 +13108,13 @@ class Client {
           runUpdates: batch.filter((item) => item.action === "update").map((item) => item.item)
         };
         const serverInfo = await this._ensureServerInfo();
-        const useMultipart = !this._multipartDisabled && (((_a3 = serverInfo == null ? void 0 : serverInfo.batch_ingest_config) == null ? void 0 : _a3.use_multipart_endpoint) ?? true);
-        if (useMultipart) {
+        if ((_a3 = serverInfo == null ? void 0 : serverInfo.batch_ingest_config) == null ? void 0 : _a3.use_multipart_endpoint) {
           const useGzip = (_b = serverInfo == null ? void 0 : serverInfo.instance_flags) == null ? void 0 : _b.gzip_body_enabled;
-          try {
-            await this.multipartIngestRuns(ingestParams, {
-              ...options,
-              useGzip,
-              sizeBytes: batchSizeBytes
-            });
-          } catch (e) {
-            if (isLangSmithNotFoundError(e)) {
-              this._multipartDisabled = true;
-              await this.batchIngestRuns(ingestParams, {
-                ...options,
-                sizeBytes: batchSizeBytes
-              });
-            } else {
-              throw e;
-            }
-          }
+          await this.multipartIngestRuns(ingestParams, {
+            ...options,
+            useGzip,
+            sizeBytes: batchSizeBytes
+          });
         } else {
           await this.batchIngestRuns(ingestParams, {
             ...options,
@@ -13173,7 +13156,7 @@ class Client {
   async processRunOperation(item) {
     clearTimeout(this.autoBatchTimeout);
     this.autoBatchTimeout = void 0;
-    item.item = mergeRuntimeEnvIntoRun(item.item, this.cachedLSEnvVarsForMetadata, this.omitTracedRuntimeInfo);
+    item.item = mergeRuntimeEnvIntoRun(item.item, this.cachedLSEnvVarsForMetadata);
     const itemPromise = this.autoBatchQueue.push(item);
     if (this.manualFlushMode) {
       return itemPromise;
@@ -13288,7 +13271,7 @@ class Client {
       }).catch(console.error);
       return;
     }
-    const mergedRunCreateParam = mergeRuntimeEnvIntoRun(runCreate, this.cachedLSEnvVarsForMetadata, this.omitTracedRuntimeInfo);
+    const mergedRunCreateParam = mergeRuntimeEnvIntoRun(runCreate, this.cachedLSEnvVarsForMetadata);
     if ((options == null ? void 0 : options.apiKey) !== void 0) {
       headers["x-api-key"] = options.apiKey;
     }
@@ -13611,9 +13594,6 @@ class Client {
         res = await sendWithRetry(buildBuffered);
       }
     } catch (e) {
-      if (isLangSmithNotFoundError(e)) {
-        throw e;
-      }
       console.warn(`${e.message.trim()}
 
 Context: ${context}`);
@@ -15100,6 +15080,26 @@ Message: ${Array.isArray(result.detail) ? result.detail.join("\n") : "Unspecifie
       return res;
     });
   }
+  /**
+   * @deprecated This method is deprecated and will be removed in future LangSmith versions, use `evaluate` from `langsmith/evaluation` instead.
+   */
+  async evaluateRun(run, evaluator, { sourceInfo, loadChildRuns, referenceExample } = { loadChildRuns: false }) {
+    warnOnce("This method is deprecated and will be removed in future LangSmith versions, use `evaluate` from `langsmith/evaluation` instead.");
+    let run_;
+    if (typeof run === "string") {
+      run_ = await this.readRun(run, { loadChildRuns });
+    } else if (typeof run === "object" && "id" in run) {
+      run_ = run;
+    } else {
+      throw new Error(`Invalid run type: ${typeof run}`);
+    }
+    if (run_.reference_example_id !== null && run_.reference_example_id !== void 0) {
+      referenceExample = await this.readExample(run_.reference_example_id);
+    }
+    const feedbackResult = await evaluator.evaluateRun(run_, referenceExample);
+    const [_, feedbacks] = await this._logEvaluationFeedback(feedbackResult, run_, sourceInfo);
+    return feedbacks[0];
+  }
   async createFeedback(runId, key, { score, value, correction, comment, sourceInfo, feedbackSourceType = "api", sourceRunId, feedbackId, feedbackConfig, projectId, comparativeExperimentId }) {
     var _a3;
     if (!runId && !projectId) {
@@ -16093,7 +16093,6 @@ Message: ${Array.isArray(result.detail) ? result.detail.join("\n") : "Unspecifie
       console.warn("[WARNING]: When tracing in manual flush mode, you must call `await client.flush()` manually to submit trace batches.");
       return Promise.resolve();
     }
-    await new Promise((resolve) => setTimeout(resolve, 1));
     await Promise.all([
       ...this.autoBatchQueue.items.map(({ itemPromise }) => itemPromise),
       this.batchIngestCaller.queue.onIdle()
@@ -16917,11 +16916,10 @@ function isCallbackManagerLike(x) {
   return typeof x === "object" && x != null && Array.isArray(x.handlers);
 }
 function isRunnableConfigLike(x) {
-  const callbacks = x == null ? void 0 : x.callbacks;
-  return x != null && typeof callbacks === "object" && // Callback manager with a langchain tracer
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (containsLangChainTracerLike(callbacks == null ? void 0 : callbacks.handlers) || // Or it's an array with a LangChainTracerLike object within it
-  containsLangChainTracerLike(callbacks));
+  var _a3;
+  return x != null && typeof x.callbacks === "object" && // Callback manager with a langchain tracer
+  (containsLangChainTracerLike((_a3 = x.callbacks) == null ? void 0 : _a3.handlers) || // Or it's an array with a LangChainTracerLike object within it
+  containsLangChainTracerLike(x.callbacks));
 }
 function _getWriteReplicasFromEnv() {
   const envVar = getEnvironmentVariable("LANGSMITH_RUNS_ENDPOINTS");
@@ -17057,16 +17055,17 @@ ${error.stack}` : "");
     const { dottedOrder: currentDottedOrder, microsecondPrecisionDatestring } = convertToDottedOrderFormat(new Date(run.start_time).getTime(), run.id, run.execution_order);
     const storedRun = { ...run };
     const parentRun = this.getRunById(storedRun.parent_run_id);
-    if (storedRun.parent_run_id !== void 0) if (parentRun) {
-      this._addChildRun(parentRun, storedRun);
-      parentRun.child_execution_order = Math.max(parentRun.child_execution_order, storedRun.child_execution_order);
-      storedRun.trace_id = parentRun.trace_id;
-      if (parentRun.dotted_order !== void 0) {
-        storedRun.dotted_order = [parentRun.dotted_order, currentDottedOrder].join(".");
-        storedRun._serialized_start_time = microsecondPrecisionDatestring;
+    if (storedRun.parent_run_id !== void 0) {
+      if (parentRun) {
+        this._addChildRun(parentRun, storedRun);
+        parentRun.child_execution_order = Math.max(parentRun.child_execution_order, storedRun.child_execution_order);
+        storedRun.trace_id = parentRun.trace_id;
+        if (parentRun.dotted_order !== void 0) {
+          storedRun.dotted_order = [parentRun.dotted_order, currentDottedOrder].join(".");
+          storedRun._serialized_start_time = microsecondPrecisionDatestring;
+        }
       }
-    } else storedRun.parent_run_id = void 0;
-    else {
+    } else {
       storedRun.trace_id = storedRun.id;
       storedRun.dotted_order = currentDottedOrder;
       storedRun._serialized_start_time = microsecondPrecisionDatestring;
@@ -17210,7 +17209,7 @@ ${error.stack}` : "");
   * This must sometimes be done synchronously to avoid race conditions
   * when callbacks are backgrounded, so we expose it as a separate method here.
   */
-  _createRunForChainStart(chain, inputs, runId, parentRunId, tags, metadata, runType, name, extra) {
+  _createRunForChainStart(chain, inputs, runId, parentRunId, tags, metadata, runType, name) {
     const execution_order = this._getExecutionOrder(parentRunId);
     const start_time = Date.now();
     const run = {
@@ -17228,10 +17227,7 @@ ${error.stack}` : "");
       child_execution_order: execution_order,
       run_type: runType ?? "chain",
       child_runs: [],
-      extra: metadata ? {
-        ...extra,
-        metadata
-      } : { ...extra },
+      extra: metadata ? { metadata } : {},
       tags: tags || []
     };
     return this._addRunToRunMap(run);
@@ -17820,11 +17816,6 @@ function isTraceableFunction(x) {
 }
 var tracer_langchain_exports = {};
 __export(tracer_langchain_exports, { LangChainTracer: () => LangChainTracer });
-function _getUsageMetadataFromGenerations(generations) {
-  let output = void 0;
-  for (const generationBatch of generations) for (const generation of generationBatch) if (AIMessage.isInstance(generation.message) && generation.message.usage_metadata !== void 0) output = mergeUsageMetadata(output, generation.message.usage_metadata);
-  return output;
-}
 var LangChainTracer = class LangChainTracer2 extends BaseTracer {
   constructor(fields = {}) {
     super(fields);
@@ -17845,29 +17836,12 @@ var LangChainTracer = class LangChainTracer2 extends BaseTracer {
   async persistRun(_run) {
   }
   async onRunCreate(run) {
-    var _a3;
-    if (!((_a3 = run.extra) == null ? void 0 : _a3.lc_defers_inputs)) {
-      const runTree = this.getRunTreeWithTracingConfig(run.id);
-      await (runTree == null ? void 0 : runTree.postRun());
-    }
+    const runTree = this.getRunTreeWithTracingConfig(run.id);
+    await (runTree == null ? void 0 : runTree.postRun());
   }
   async onRunUpdate(run) {
-    var _a3;
     const runTree = this.getRunTreeWithTracingConfig(run.id);
-    if ((_a3 = run.extra) == null ? void 0 : _a3.lc_defers_inputs) await (runTree == null ? void 0 : runTree.postRun());
-    else await (runTree == null ? void 0 : runTree.patchRun());
-  }
-  onLLMEnd(run) {
-    const outputs = run.outputs;
-    if (outputs == null ? void 0 : outputs.generations) {
-      const usageMetadata = _getUsageMetadataFromGenerations(outputs.generations);
-      if (usageMetadata !== void 0) {
-        run.extra = run.extra ?? {};
-        const metadata = run.extra.metadata ?? {};
-        metadata.usage_metadata = usageMetadata;
-        run.extra.metadata = metadata;
-      }
-    }
+    await (runTree == null ? void 0 : runTree.patchRun());
   }
   getRun(id) {
     return this.runTreeMap.get(id);
@@ -18226,7 +18200,7 @@ var CallbackManager = class CallbackManager2 extends BaseCallbackManager {
   }
   async handleLLMStart(llm, prompts, runId = void 0, _parentRunId = void 0, extraParams = void 0, _tags = void 0, _metadata = void 0, runName = void 0) {
     return Promise.all(prompts.map(async (prompt, idx) => {
-      const runId_ = idx === 0 && runId ? runId : v7();
+      const runId_ = idx === 0 && runId ? runId : v4$1();
       await Promise.all(this.handlers.map((handler) => {
         if (handler.ignoreLLM) return;
         if (isBaseTracer(handler)) handler._createRunForLLMStart(llm, [prompt], runId_, this._parentRunId, extraParams, this.tags, this.metadata, runName);
@@ -18246,7 +18220,7 @@ var CallbackManager = class CallbackManager2 extends BaseCallbackManager {
   }
   async handleChatModelStart(llm, messages, runId = void 0, _parentRunId = void 0, extraParams = void 0, _tags = void 0, _metadata = void 0, runName = void 0) {
     return Promise.all(messages.map(async (messageGroup, idx) => {
-      const runId_ = idx === 0 && runId ? runId : v7();
+      const runId_ = idx === 0 && runId ? runId : v4$1();
       await Promise.all(this.handlers.map((handler) => {
         if (handler.ignoreLLM) return;
         if (isBaseTracer(handler)) handler._createRunForChatModelStart(llm, [messageGroup], runId_, this._parentRunId, extraParams, this.tags, this.metadata, runName);
@@ -18268,14 +18242,14 @@ var CallbackManager = class CallbackManager2 extends BaseCallbackManager {
       return new CallbackManagerForLLMRun(runId_, this.handlers, this.inheritableHandlers, this.tags, this.inheritableTags, this.metadata, this.inheritableMetadata, this._parentRunId);
     }));
   }
-  async handleChainStart(chain, inputs, runId = v7(), runType = void 0, _tags = void 0, _metadata = void 0, runName = void 0, _parentRunId = void 0, extra = void 0) {
+  async handleChainStart(chain, inputs, runId = v4$1(), runType = void 0, _tags = void 0, _metadata = void 0, runName = void 0) {
     await Promise.all(this.handlers.map((handler) => {
       if (handler.ignoreChain) return;
-      if (isBaseTracer(handler)) handler._createRunForChainStart(chain, inputs, runId, this._parentRunId, this.tags, this.metadata, runType, runName, extra);
+      if (isBaseTracer(handler)) handler._createRunForChainStart(chain, inputs, runId, this._parentRunId, this.tags, this.metadata, runType, runName);
       return consumeCallback(async () => {
         var _a3;
         try {
-          await ((_a3 = handler.handleChainStart) == null ? void 0 : _a3.call(handler, chain, inputs, runId, this._parentRunId, this.tags, this.metadata, runType, runName, extra));
+          await ((_a3 = handler.handleChainStart) == null ? void 0 : _a3.call(handler, chain, inputs, runId, this._parentRunId, this.tags, this.metadata, runType, runName));
         } catch (err) {
           const logFunction = handler.raiseError ? console.error : console.warn;
           logFunction(`Error in handler ${handler.constructor.name}, handleChainStart: ${err}`);
@@ -18285,7 +18259,7 @@ var CallbackManager = class CallbackManager2 extends BaseCallbackManager {
     }));
     return new CallbackManagerForChainRun(runId, this.handlers, this.inheritableHandlers, this.tags, this.inheritableTags, this.metadata, this.inheritableMetadata, this._parentRunId);
   }
-  async handleToolStart(tool2, input, runId = v7(), _parentRunId = void 0, _tags = void 0, _metadata = void 0, runName = void 0) {
+  async handleToolStart(tool2, input, runId = v4$1(), _parentRunId = void 0, _tags = void 0, _metadata = void 0, runName = void 0) {
     await Promise.all(this.handlers.map((handler) => {
       if (handler.ignoreAgent) return;
       if (isBaseTracer(handler)) handler._createRunForToolStart(tool2, input, runId, this._parentRunId, this.tags, this.metadata, runName);
@@ -18302,7 +18276,7 @@ var CallbackManager = class CallbackManager2 extends BaseCallbackManager {
     }));
     return new CallbackManagerForToolRun(runId, this.handlers, this.inheritableHandlers, this.tags, this.inheritableTags, this.metadata, this.inheritableMetadata, this._parentRunId);
   }
-  async handleRetrieverStart(retriever, query, runId = v7(), _parentRunId = void 0, _tags = void 0, _metadata = void 0, runName = void 0) {
+  async handleRetrieverStart(retriever, query, runId = v4$1(), _parentRunId = void 0, _tags = void 0, _metadata = void 0, runName = void 0) {
     await Promise.all(this.handlers.map((handler) => {
       if (handler.ignoreRetriever) return;
       if (isBaseTracer(handler)) handler._createRunForRetrieverStart(retriever, query, runId, this._parentRunId, this.tags, this.metadata, runName);
@@ -18393,7 +18367,7 @@ var CallbackManager = class CallbackManager2 extends BaseCallbackManager {
     class Handler extends BaseCallbackHandler {
       constructor() {
         super();
-        __publicField(this, "name", v7());
+        __publicField(this, "name", v4$1());
         Object.assign(this, handlers);
       }
     }
@@ -18612,10 +18586,7 @@ function ensureConfig(config2) {
   }
   if (empty2.timeout !== void 0) {
     if (empty2.timeout <= 0) throw new Error("Timeout must be a positive number");
-    const originalTimeoutMs = empty2.timeout;
-    const timeoutSignal = AbortSignal.timeout(originalTimeoutMs);
-    if (!empty2.metadata) empty2.metadata = {};
-    if (empty2.metadata.timeoutMs === void 0) empty2.metadata.timeoutMs = originalTimeoutMs;
+    const timeoutSignal = AbortSignal.timeout(empty2.timeout);
     if (empty2.signal !== void 0) {
       if ("any" in AbortSignal) empty2.signal = AbortSignal.any([empty2.signal, timeoutSignal]);
     } else empty2.signal = timeoutSignal;
@@ -18955,17 +18926,12 @@ __export(core_exports, {
 });
 const JsonPatchError = PatchError;
 const deepClone = _deepClone;
-function isDangerousKey(key) {
-  return Object.getOwnPropertyNames(Object.prototype).includes(key);
-}
 const objOps = {
   add: function(obj, key, document) {
-    if (isDangerousKey(key)) throw new TypeError("JSON-Patch: modifying `__proto__`, `constructor`, or `prototype` prop is banned for security reasons");
     obj[key] = this.value;
     return { newDocument: document };
   },
   remove: function(obj, key, document) {
-    if (isDangerousKey(key)) throw new TypeError("JSON-Patch: modifying `__proto__`, `constructor`, or `prototype` prop is banned for security reasons");
     var removed = obj[key];
     delete obj[key];
     return {
@@ -18974,7 +18940,6 @@ const objOps = {
     };
   },
   replace: function(obj, key, document) {
-    if (isDangerousKey(key)) throw new TypeError("JSON-Patch: modifying `__proto__`, `constructor`, or `prototype` prop is banned for security reasons");
     var removed = obj[key];
     obj[key] = this.value;
     return {
@@ -19580,7 +19545,6 @@ var EventStreamCallbackHandler = class extends BaseTracer {
     __publicField(this, "transformStream");
     __publicField(this, "writer");
     __publicField(this, "receiveStream");
-    __publicField(this, "readableStreamClosed", false);
     __publicField(this, "name", "event_stream_tracer");
     __publicField(this, "lc_prefer_streaming", true);
     this.autoClose = (fields == null ? void 0 : fields.autoClose) ?? true;
@@ -19590,9 +19554,7 @@ var EventStreamCallbackHandler = class extends BaseTracer {
     this.excludeNames = fields == null ? void 0 : fields.excludeNames;
     this.excludeTypes = fields == null ? void 0 : fields.excludeTypes;
     this.excludeTags = fields == null ? void 0 : fields.excludeTags;
-    this.transformStream = new TransformStream({ flush: () => {
-      this.readableStreamClosed = true;
-    } });
+    this.transformStream = new TransformStream();
     this.writer = this.transformStream.writable.getWriter();
     this.receiveStream = IterableReadableStream.fromReadableStream(this.transformStream.readable);
   }
@@ -19667,7 +19629,6 @@ var EventStreamCallbackHandler = class extends BaseTracer {
     }
   }
   async send(payload, run) {
-    if (this.readableStreamClosed) return;
     if (this._includeRun(run)) await this.writer.write(payload);
   }
   async sendEndEvent(payload, run) {
@@ -21312,8 +21273,8 @@ class Doc {
 }
 const version$2 = {
   major: 4,
-  minor: 2,
-  patch: 1
+  minor: 1,
+  patch: 13
 };
 const $ZodType = /* @__PURE__ */ $constructor("$ZodType", (inst, def) => {
   var _a4;
@@ -21770,6 +21731,10 @@ const $ZodBoolean = /* @__PURE__ */ $constructor("$ZodBoolean", (inst, def) => {
     return payload;
   };
 });
+const $ZodAny = /* @__PURE__ */ $constructor("$ZodAny", (inst, def) => {
+  $ZodType.init(inst, def);
+  inst._zod.parse = (payload) => payload;
+});
 const $ZodUnknown = /* @__PURE__ */ $constructor("$ZodUnknown", (inst, def) => {
   $ZodType.init(inst, def);
   inst._zod.parse = (payload) => payload;
@@ -22091,73 +22056,6 @@ const $ZodUnion = /* @__PURE__ */ $constructor("$ZodUnion", (inst, def) => {
     });
   };
 });
-const $ZodDiscriminatedUnion = /* @__PURE__ */ $constructor("$ZodDiscriminatedUnion", (inst, def) => {
-  def.inclusive = false;
-  $ZodUnion.init(inst, def);
-  const _super = inst._zod.parse;
-  defineLazy(inst._zod, "propValues", () => {
-    const propValues = {};
-    for (const option of def.options) {
-      const pv = option._zod.propValues;
-      if (!pv || Object.keys(pv).length === 0)
-        throw new Error(`Invalid discriminated union option at index "${def.options.indexOf(option)}"`);
-      for (const [k, v] of Object.entries(pv)) {
-        if (!propValues[k])
-          propValues[k] = /* @__PURE__ */ new Set();
-        for (const val of v) {
-          propValues[k].add(val);
-        }
-      }
-    }
-    return propValues;
-  });
-  const disc = cached(() => {
-    var _a3;
-    const opts = def.options;
-    const map = /* @__PURE__ */ new Map();
-    for (const o of opts) {
-      const values = (_a3 = o._zod.propValues) == null ? void 0 : _a3[def.discriminator];
-      if (!values || values.size === 0)
-        throw new Error(`Invalid discriminated union option at index "${def.options.indexOf(o)}"`);
-      for (const v of values) {
-        if (map.has(v)) {
-          throw new Error(`Duplicate discriminator value "${String(v)}"`);
-        }
-        map.set(v, o);
-      }
-    }
-    return map;
-  });
-  inst._zod.parse = (payload, ctx) => {
-    const input = payload.value;
-    if (!isObject$1(input)) {
-      payload.issues.push({
-        code: "invalid_type",
-        expected: "object",
-        input,
-        inst
-      });
-      return payload;
-    }
-    const opt = disc.value.get(input == null ? void 0 : input[def.discriminator]);
-    if (opt) {
-      return opt._zod.run(payload, ctx);
-    }
-    if (def.unionFallback) {
-      return _super(payload, ctx);
-    }
-    payload.issues.push({
-      code: "invalid_union",
-      errors: [],
-      note: "No matching discriminator",
-      discriminator: def.discriminator,
-      input,
-      path: [def.discriminator],
-      inst
-    });
-    return payload;
-  };
-});
 const $ZodIntersection = /* @__PURE__ */ $constructor("$ZodIntersection", (inst, def) => {
   $ZodType.init(inst, def);
   inst._zod.parse = (payload, ctx) => {
@@ -22295,18 +22193,15 @@ const $ZodRecord = /* @__PURE__ */ $constructor("$ZodRecord", (inst, def) => {
           throw new Error("Async schemas not supported in object keys currently");
         }
         if (keyResult.issues.length) {
-          if (def.mode === "loose") {
-            payload.value[key] = input[key];
-          } else {
-            payload.issues.push({
-              code: "invalid_key",
-              origin: "record",
-              issues: keyResult.issues.map((iss) => finalizeIssue(iss, ctx, config$1())),
-              input: key,
-              path: [key],
-              inst
-            });
-          }
+          payload.issues.push({
+            code: "invalid_key",
+            origin: "record",
+            issues: keyResult.issues.map((iss) => finalizeIssue(iss, ctx, config$1())),
+            input: key,
+            path: [key],
+            inst
+          });
+          payload.value[keyResult.value] = keyResult.value;
           continue;
         }
         const result = def.valueType._zod.run({ value: input[key], issues: [] }, ctx);
@@ -22345,28 +22240,6 @@ const $ZodEnum = /* @__PURE__ */ $constructor("$ZodEnum", (inst, def) => {
     payload.issues.push({
       code: "invalid_value",
       values,
-      input,
-      inst
-    });
-    return payload;
-  };
-});
-const $ZodLiteral = /* @__PURE__ */ $constructor("$ZodLiteral", (inst, def) => {
-  $ZodType.init(inst, def);
-  if (def.values.length === 0) {
-    throw new Error("Cannot create literal schema with no valid values");
-  }
-  const values = new Set(def.values);
-  inst._zod.values = values;
-  inst._zod.pattern = new RegExp(`^(${def.values.map((o) => typeof o === "string" ? escapeRegex$1(o) : o ? escapeRegex$1(o.toString()) : String(o)).join("|")})$`);
-  inst._zod.parse = (payload, _ctx) => {
-    const input = payload.value;
-    if (values.has(input)) {
-      return payload;
-    }
-    payload.issues.push({
-      code: "invalid_value",
-      values: def.values,
       input,
       inst
     });
@@ -22947,6 +22820,11 @@ function _boolean(Class, params) {
     ...normalizeParams(params)
   });
 }
+function _any(Class) {
+  return new Class({
+    type: "any"
+  });
+}
 function _unknown(Class) {
   return new Class({
     type: "unknown"
@@ -23133,246 +23011,724 @@ function _check(fn, params) {
   ch._zod.check = fn;
   return ch;
 }
-function initializeContext(params) {
-  let target = (params == null ? void 0 : params.target) ?? "draft-2020-12";
-  if (target === "draft-4")
-    target = "draft-04";
-  if (target === "draft-7")
-    target = "draft-07";
-  return {
-    processors: params.processors ?? {},
-    metadataRegistry: (params == null ? void 0 : params.metadata) ?? globalRegistry,
-    target,
-    unrepresentable: (params == null ? void 0 : params.unrepresentable) ?? "throw",
-    override: (params == null ? void 0 : params.override) ?? (() => {
-    }),
-    io: (params == null ? void 0 : params.io) ?? "output",
-    counter: 0,
-    seen: /* @__PURE__ */ new Map(),
-    cycles: (params == null ? void 0 : params.cycles) ?? "ref",
-    reused: (params == null ? void 0 : params.reused) ?? "inline",
-    external: (params == null ? void 0 : params.external) ?? void 0
-  };
-}
-function process$1(schema, ctx, _params = { path: [], schemaPath: [] }) {
-  var _a4, _b;
-  var _a3;
-  const def = schema._zod.def;
-  const seen = ctx.seen.get(schema);
-  if (seen) {
-    seen.count++;
-    const isCycle = _params.schemaPath.includes(schema);
-    if (isCycle) {
-      seen.cycle = _params.path;
-    }
-    return seen.schema;
+class JSONSchemaGenerator {
+  constructor(params) {
+    this.counter = 0;
+    this.metadataRegistry = (params == null ? void 0 : params.metadata) ?? globalRegistry;
+    this.target = (params == null ? void 0 : params.target) ?? "draft-2020-12";
+    this.unrepresentable = (params == null ? void 0 : params.unrepresentable) ?? "throw";
+    this.override = (params == null ? void 0 : params.override) ?? (() => {
+    });
+    this.io = (params == null ? void 0 : params.io) ?? "output";
+    this.seen = /* @__PURE__ */ new Map();
   }
-  const result = { schema: {}, count: 1, cycle: void 0, path: _params.path };
-  ctx.seen.set(schema, result);
-  const overrideSchema = (_b = (_a4 = schema._zod).toJSONSchema) == null ? void 0 : _b.call(_a4);
-  if (overrideSchema) {
-    result.schema = overrideSchema;
-  } else {
-    const params = {
-      ..._params,
-      schemaPath: [..._params.schemaPath, schema],
-      path: _params.path
+  process(schema, _params = { path: [], schemaPath: [] }) {
+    var _a4, _b, _c;
+    var _a3;
+    const def = schema._zod.def;
+    const formatMap = {
+      guid: "uuid",
+      url: "uri",
+      datetime: "date-time",
+      json_string: "json-string",
+      regex: ""
+      // do not set
     };
-    const parent = schema._zod.parent;
-    if (parent) {
-      result.ref = parent;
-      process$1(parent, ctx, params);
-      ctx.seen.get(parent).isParent = true;
-    } else if (schema._zod.processJSONSchema) {
-      schema._zod.processJSONSchema(ctx, result.schema, params);
+    const seen = this.seen.get(schema);
+    if (seen) {
+      seen.count++;
+      const isCycle = _params.schemaPath.includes(schema);
+      if (isCycle) {
+        seen.cycle = _params.path;
+      }
+      return seen.schema;
+    }
+    const result = { schema: {}, count: 1, cycle: void 0, path: _params.path };
+    this.seen.set(schema, result);
+    const overrideSchema = (_b = (_a4 = schema._zod).toJSONSchema) == null ? void 0 : _b.call(_a4);
+    if (overrideSchema) {
+      result.schema = overrideSchema;
     } else {
-      const _json = result.schema;
-      const processor = ctx.processors[def.type];
-      if (!processor) {
-        throw new Error(`[toJSONSchema]: Non-representable type encountered: ${def.type}`);
+      const params = {
+        ..._params,
+        schemaPath: [..._params.schemaPath, schema],
+        path: _params.path
+      };
+      const parent = schema._zod.parent;
+      if (parent) {
+        result.ref = parent;
+        this.process(parent, params);
+        this.seen.get(parent).isParent = true;
+      } else {
+        const _json = result.schema;
+        switch (def.type) {
+          case "string": {
+            const json = _json;
+            json.type = "string";
+            const { minimum, maximum, format: format2, patterns, contentEncoding } = schema._zod.bag;
+            if (typeof minimum === "number")
+              json.minLength = minimum;
+            if (typeof maximum === "number")
+              json.maxLength = maximum;
+            if (format2) {
+              json.format = formatMap[format2] ?? format2;
+              if (json.format === "")
+                delete json.format;
+            }
+            if (contentEncoding)
+              json.contentEncoding = contentEncoding;
+            if (patterns && patterns.size > 0) {
+              const regexes = [...patterns];
+              if (regexes.length === 1)
+                json.pattern = regexes[0].source;
+              else if (regexes.length > 1) {
+                result.schema.allOf = [
+                  ...regexes.map((regex2) => ({
+                    ...this.target === "draft-7" || this.target === "draft-4" || this.target === "openapi-3.0" ? { type: "string" } : {},
+                    pattern: regex2.source
+                  }))
+                ];
+              }
+            }
+            break;
+          }
+          case "number": {
+            const json = _json;
+            const { minimum, maximum, format: format2, multipleOf, exclusiveMaximum, exclusiveMinimum } = schema._zod.bag;
+            if (typeof format2 === "string" && format2.includes("int"))
+              json.type = "integer";
+            else
+              json.type = "number";
+            if (typeof exclusiveMinimum === "number") {
+              if (this.target === "draft-4" || this.target === "openapi-3.0") {
+                json.minimum = exclusiveMinimum;
+                json.exclusiveMinimum = true;
+              } else {
+                json.exclusiveMinimum = exclusiveMinimum;
+              }
+            }
+            if (typeof minimum === "number") {
+              json.minimum = minimum;
+              if (typeof exclusiveMinimum === "number" && this.target !== "draft-4") {
+                if (exclusiveMinimum >= minimum)
+                  delete json.minimum;
+                else
+                  delete json.exclusiveMinimum;
+              }
+            }
+            if (typeof exclusiveMaximum === "number") {
+              if (this.target === "draft-4" || this.target === "openapi-3.0") {
+                json.maximum = exclusiveMaximum;
+                json.exclusiveMaximum = true;
+              } else {
+                json.exclusiveMaximum = exclusiveMaximum;
+              }
+            }
+            if (typeof maximum === "number") {
+              json.maximum = maximum;
+              if (typeof exclusiveMaximum === "number" && this.target !== "draft-4") {
+                if (exclusiveMaximum <= maximum)
+                  delete json.maximum;
+                else
+                  delete json.exclusiveMaximum;
+              }
+            }
+            if (typeof multipleOf === "number")
+              json.multipleOf = multipleOf;
+            break;
+          }
+          case "boolean": {
+            const json = _json;
+            json.type = "boolean";
+            break;
+          }
+          case "bigint": {
+            if (this.unrepresentable === "throw") {
+              throw new Error("BigInt cannot be represented in JSON Schema");
+            }
+            break;
+          }
+          case "symbol": {
+            if (this.unrepresentable === "throw") {
+              throw new Error("Symbols cannot be represented in JSON Schema");
+            }
+            break;
+          }
+          case "null": {
+            if (this.target === "openapi-3.0") {
+              _json.type = "string";
+              _json.nullable = true;
+              _json.enum = [null];
+            } else
+              _json.type = "null";
+            break;
+          }
+          case "any": {
+            break;
+          }
+          case "unknown": {
+            break;
+          }
+          case "undefined": {
+            if (this.unrepresentable === "throw") {
+              throw new Error("Undefined cannot be represented in JSON Schema");
+            }
+            break;
+          }
+          case "void": {
+            if (this.unrepresentable === "throw") {
+              throw new Error("Void cannot be represented in JSON Schema");
+            }
+            break;
+          }
+          case "never": {
+            _json.not = {};
+            break;
+          }
+          case "date": {
+            if (this.unrepresentable === "throw") {
+              throw new Error("Date cannot be represented in JSON Schema");
+            }
+            break;
+          }
+          case "array": {
+            const json = _json;
+            const { minimum, maximum } = schema._zod.bag;
+            if (typeof minimum === "number")
+              json.minItems = minimum;
+            if (typeof maximum === "number")
+              json.maxItems = maximum;
+            json.type = "array";
+            json.items = this.process(def.element, { ...params, path: [...params.path, "items"] });
+            break;
+          }
+          case "object": {
+            const json = _json;
+            json.type = "object";
+            json.properties = {};
+            const shape = def.shape;
+            for (const key in shape) {
+              json.properties[key] = this.process(shape[key], {
+                ...params,
+                path: [...params.path, "properties", key]
+              });
+            }
+            const allKeys = new Set(Object.keys(shape));
+            const requiredKeys = new Set([...allKeys].filter((key) => {
+              const v = def.shape[key]._zod;
+              if (this.io === "input") {
+                return v.optin === void 0;
+              } else {
+                return v.optout === void 0;
+              }
+            }));
+            if (requiredKeys.size > 0) {
+              json.required = Array.from(requiredKeys);
+            }
+            if (((_c = def.catchall) == null ? void 0 : _c._zod.def.type) === "never") {
+              json.additionalProperties = false;
+            } else if (!def.catchall) {
+              if (this.io === "output")
+                json.additionalProperties = false;
+            } else if (def.catchall) {
+              json.additionalProperties = this.process(def.catchall, {
+                ...params,
+                path: [...params.path, "additionalProperties"]
+              });
+            }
+            break;
+          }
+          case "union": {
+            const json = _json;
+            const isDiscriminated = def.discriminator !== void 0;
+            const options = def.options.map((x, i) => this.process(x, {
+              ...params,
+              path: [...params.path, isDiscriminated ? "oneOf" : "anyOf", i]
+            }));
+            if (isDiscriminated) {
+              json.oneOf = options;
+            } else {
+              json.anyOf = options;
+            }
+            break;
+          }
+          case "intersection": {
+            const json = _json;
+            const a = this.process(def.left, {
+              ...params,
+              path: [...params.path, "allOf", 0]
+            });
+            const b = this.process(def.right, {
+              ...params,
+              path: [...params.path, "allOf", 1]
+            });
+            const isSimpleIntersection = (val) => "allOf" in val && Object.keys(val).length === 1;
+            const allOf = [
+              ...isSimpleIntersection(a) ? a.allOf : [a],
+              ...isSimpleIntersection(b) ? b.allOf : [b]
+            ];
+            json.allOf = allOf;
+            break;
+          }
+          case "tuple": {
+            const json = _json;
+            json.type = "array";
+            const prefixPath = this.target === "draft-2020-12" ? "prefixItems" : "items";
+            const restPath = this.target === "draft-2020-12" ? "items" : this.target === "openapi-3.0" ? "items" : "additionalItems";
+            const prefixItems = def.items.map((x, i) => this.process(x, {
+              ...params,
+              path: [...params.path, prefixPath, i]
+            }));
+            const rest = def.rest ? this.process(def.rest, {
+              ...params,
+              path: [...params.path, restPath, ...this.target === "openapi-3.0" ? [def.items.length] : []]
+            }) : null;
+            if (this.target === "draft-2020-12") {
+              json.prefixItems = prefixItems;
+              if (rest) {
+                json.items = rest;
+              }
+            } else if (this.target === "openapi-3.0") {
+              json.items = {
+                anyOf: prefixItems
+              };
+              if (rest) {
+                json.items.anyOf.push(rest);
+              }
+              json.minItems = prefixItems.length;
+              if (!rest) {
+                json.maxItems = prefixItems.length;
+              }
+            } else {
+              json.items = prefixItems;
+              if (rest) {
+                json.additionalItems = rest;
+              }
+            }
+            const { minimum, maximum } = schema._zod.bag;
+            if (typeof minimum === "number")
+              json.minItems = minimum;
+            if (typeof maximum === "number")
+              json.maxItems = maximum;
+            break;
+          }
+          case "record": {
+            const json = _json;
+            json.type = "object";
+            if (this.target === "draft-7" || this.target === "draft-2020-12") {
+              json.propertyNames = this.process(def.keyType, {
+                ...params,
+                path: [...params.path, "propertyNames"]
+              });
+            }
+            json.additionalProperties = this.process(def.valueType, {
+              ...params,
+              path: [...params.path, "additionalProperties"]
+            });
+            break;
+          }
+          case "map": {
+            if (this.unrepresentable === "throw") {
+              throw new Error("Map cannot be represented in JSON Schema");
+            }
+            break;
+          }
+          case "set": {
+            if (this.unrepresentable === "throw") {
+              throw new Error("Set cannot be represented in JSON Schema");
+            }
+            break;
+          }
+          case "enum": {
+            const json = _json;
+            const values = getEnumValues(def.entries);
+            if (values.every((v) => typeof v === "number"))
+              json.type = "number";
+            if (values.every((v) => typeof v === "string"))
+              json.type = "string";
+            json.enum = values;
+            break;
+          }
+          case "literal": {
+            const json = _json;
+            const vals = [];
+            for (const val of def.values) {
+              if (val === void 0) {
+                if (this.unrepresentable === "throw") {
+                  throw new Error("Literal `undefined` cannot be represented in JSON Schema");
+                }
+              } else if (typeof val === "bigint") {
+                if (this.unrepresentable === "throw") {
+                  throw new Error("BigInt literals cannot be represented in JSON Schema");
+                } else {
+                  vals.push(Number(val));
+                }
+              } else {
+                vals.push(val);
+              }
+            }
+            if (vals.length === 0) ;
+            else if (vals.length === 1) {
+              const val = vals[0];
+              json.type = val === null ? "null" : typeof val;
+              if (this.target === "draft-4" || this.target === "openapi-3.0") {
+                json.enum = [val];
+              } else {
+                json.const = val;
+              }
+            } else {
+              if (vals.every((v) => typeof v === "number"))
+                json.type = "number";
+              if (vals.every((v) => typeof v === "string"))
+                json.type = "string";
+              if (vals.every((v) => typeof v === "boolean"))
+                json.type = "string";
+              if (vals.every((v) => v === null))
+                json.type = "null";
+              json.enum = vals;
+            }
+            break;
+          }
+          case "file": {
+            const json = _json;
+            const file = {
+              type: "string",
+              format: "binary",
+              contentEncoding: "binary"
+            };
+            const { minimum, maximum, mime } = schema._zod.bag;
+            if (minimum !== void 0)
+              file.minLength = minimum;
+            if (maximum !== void 0)
+              file.maxLength = maximum;
+            if (mime) {
+              if (mime.length === 1) {
+                file.contentMediaType = mime[0];
+                Object.assign(json, file);
+              } else {
+                json.anyOf = mime.map((m) => {
+                  const mFile = { ...file, contentMediaType: m };
+                  return mFile;
+                });
+              }
+            } else {
+              Object.assign(json, file);
+            }
+            break;
+          }
+          case "transform": {
+            if (this.unrepresentable === "throw") {
+              throw new Error("Transforms cannot be represented in JSON Schema");
+            }
+            break;
+          }
+          case "nullable": {
+            const inner = this.process(def.innerType, params);
+            if (this.target === "openapi-3.0") {
+              result.ref = def.innerType;
+              _json.nullable = true;
+            } else {
+              _json.anyOf = [inner, { type: "null" }];
+            }
+            break;
+          }
+          case "nonoptional": {
+            this.process(def.innerType, params);
+            result.ref = def.innerType;
+            break;
+          }
+          case "success": {
+            const json = _json;
+            json.type = "boolean";
+            break;
+          }
+          case "default": {
+            this.process(def.innerType, params);
+            result.ref = def.innerType;
+            _json.default = JSON.parse(JSON.stringify(def.defaultValue));
+            break;
+          }
+          case "prefault": {
+            this.process(def.innerType, params);
+            result.ref = def.innerType;
+            if (this.io === "input")
+              _json._prefault = JSON.parse(JSON.stringify(def.defaultValue));
+            break;
+          }
+          case "catch": {
+            this.process(def.innerType, params);
+            result.ref = def.innerType;
+            let catchValue;
+            try {
+              catchValue = def.catchValue(void 0);
+            } catch {
+              throw new Error("Dynamic catch values are not supported in JSON Schema");
+            }
+            _json.default = catchValue;
+            break;
+          }
+          case "nan": {
+            if (this.unrepresentable === "throw") {
+              throw new Error("NaN cannot be represented in JSON Schema");
+            }
+            break;
+          }
+          case "template_literal": {
+            const json = _json;
+            const pattern = schema._zod.pattern;
+            if (!pattern)
+              throw new Error("Pattern not found in template literal");
+            json.type = "string";
+            json.pattern = pattern.source;
+            break;
+          }
+          case "pipe": {
+            const innerType = this.io === "input" ? def.in._zod.def.type === "transform" ? def.out : def.in : def.out;
+            this.process(innerType, params);
+            result.ref = innerType;
+            break;
+          }
+          case "readonly": {
+            this.process(def.innerType, params);
+            result.ref = def.innerType;
+            _json.readOnly = true;
+            break;
+          }
+          case "promise": {
+            this.process(def.innerType, params);
+            result.ref = def.innerType;
+            break;
+          }
+          case "optional": {
+            this.process(def.innerType, params);
+            result.ref = def.innerType;
+            break;
+          }
+          case "lazy": {
+            const innerType = schema._zod.innerType;
+            this.process(innerType, params);
+            result.ref = innerType;
+            break;
+          }
+          case "custom": {
+            if (this.unrepresentable === "throw") {
+              throw new Error("Custom types cannot be represented in JSON Schema");
+            }
+            break;
+          }
+          case "function": {
+            if (this.unrepresentable === "throw") {
+              throw new Error("Function types cannot be represented in JSON Schema");
+            }
+            break;
+          }
+        }
       }
-      processor(schema, ctx, _json, params);
     }
+    const meta = this.metadataRegistry.get(schema);
+    if (meta)
+      Object.assign(result.schema, meta);
+    if (this.io === "input" && isTransforming(schema)) {
+      delete result.schema.examples;
+      delete result.schema.default;
+    }
+    if (this.io === "input" && result.schema._prefault)
+      (_a3 = result.schema).default ?? (_a3.default = result.schema._prefault);
+    delete result.schema._prefault;
+    const _result = this.seen.get(schema);
+    return _result.schema;
   }
-  const meta = ctx.metadataRegistry.get(schema);
-  if (meta)
-    Object.assign(result.schema, meta);
-  if (ctx.io === "input" && isTransforming(schema)) {
-    delete result.schema.examples;
-    delete result.schema.default;
-  }
-  if (ctx.io === "input" && result.schema._prefault)
-    (_a3 = result.schema).default ?? (_a3.default = result.schema._prefault);
-  delete result.schema._prefault;
-  const _result = ctx.seen.get(schema);
-  return _result.schema;
-}
-function extractDefs(ctx, schema) {
-  var _a3, _b, _c;
-  const root = ctx.seen.get(schema);
-  if (!root)
-    throw new Error("Unprocessed schema. This is a bug in Zod.");
-  const makeURI = (entry) => {
-    var _a4;
-    const defsSegment = ctx.target === "draft-2020-12" ? "$defs" : "definitions";
-    if (ctx.external) {
-      const externalId = (_a4 = ctx.external.registry.get(entry[0])) == null ? void 0 : _a4.id;
-      const uriGenerator = ctx.external.uri ?? ((id2) => id2);
-      if (externalId) {
-        return { ref: uriGenerator(externalId) };
+  emit(schema, _params) {
+    var _a3, _b, _c, _d, _e, _f;
+    const params = {
+      cycles: (_params == null ? void 0 : _params.cycles) ?? "ref",
+      reused: (_params == null ? void 0 : _params.reused) ?? "inline",
+      // unrepresentable: _params?.unrepresentable ?? "throw",
+      // uri: _params?.uri ?? ((id) => `${id}`),
+      external: (_params == null ? void 0 : _params.external) ?? void 0
+    };
+    const root = this.seen.get(schema);
+    if (!root)
+      throw new Error("Unprocessed schema. This is a bug in Zod.");
+    const makeURI = (entry) => {
+      var _a4;
+      const defsSegment = this.target === "draft-2020-12" ? "$defs" : "definitions";
+      if (params.external) {
+        const externalId = (_a4 = params.external.registry.get(entry[0])) == null ? void 0 : _a4.id;
+        const uriGenerator = params.external.uri ?? ((id2) => id2);
+        if (externalId) {
+          return { ref: uriGenerator(externalId) };
+        }
+        const id = entry[1].defId ?? entry[1].schema.id ?? `schema${this.counter++}`;
+        entry[1].defId = id;
+        return { defId: id, ref: `${uriGenerator("__shared")}#/${defsSegment}/${id}` };
       }
-      const id = entry[1].defId ?? entry[1].schema.id ?? `schema${ctx.counter++}`;
-      entry[1].defId = id;
-      return { defId: id, ref: `${uriGenerator("__shared")}#/${defsSegment}/${id}` };
-    }
-    if (entry[1] === root) {
-      return { ref: "#" };
-    }
-    const uriPrefix = `#`;
-    const defUriPrefix = `${uriPrefix}/${defsSegment}/`;
-    const defId = entry[1].schema.id ?? `__schema${ctx.counter++}`;
-    return { defId, ref: defUriPrefix + defId };
-  };
-  const extractToDef = (entry) => {
-    if (entry[1].schema.$ref) {
-      return;
-    }
-    const seen = entry[1];
-    const { ref, defId } = makeURI(entry);
-    seen.def = { ...seen.schema };
-    if (defId)
-      seen.defId = defId;
-    const schema2 = seen.schema;
-    for (const key in schema2) {
-      delete schema2[key];
-    }
-    schema2.$ref = ref;
-  };
-  if (ctx.cycles === "throw") {
-    for (const entry of ctx.seen.entries()) {
+      if (entry[1] === root) {
+        return { ref: "#" };
+      }
+      const uriPrefix = `#`;
+      const defUriPrefix = `${uriPrefix}/${defsSegment}/`;
+      const defId = entry[1].schema.id ?? `__schema${this.counter++}`;
+      return { defId, ref: defUriPrefix + defId };
+    };
+    const extractToDef = (entry) => {
+      if (entry[1].schema.$ref) {
+        return;
+      }
       const seen = entry[1];
-      if (seen.cycle) {
-        throw new Error(`Cycle detected: #/${(_a3 = seen.cycle) == null ? void 0 : _a3.join("/")}/<root>
+      const { ref, defId } = makeURI(entry);
+      seen.def = { ...seen.schema };
+      if (defId)
+        seen.defId = defId;
+      const schema2 = seen.schema;
+      for (const key in schema2) {
+        delete schema2[key];
+      }
+      schema2.$ref = ref;
+    };
+    if (params.cycles === "throw") {
+      for (const entry of this.seen.entries()) {
+        const seen = entry[1];
+        if (seen.cycle) {
+          throw new Error(`Cycle detected: #/${(_a3 = seen.cycle) == null ? void 0 : _a3.join("/")}/<root>
 
 Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.`);
+        }
       }
     }
-  }
-  for (const entry of ctx.seen.entries()) {
-    const seen = entry[1];
-    if (schema === entry[0]) {
-      extractToDef(entry);
-      continue;
-    }
-    if (ctx.external) {
-      const ext = (_b = ctx.external.registry.get(entry[0])) == null ? void 0 : _b.id;
-      if (schema !== entry[0] && ext) {
+    for (const entry of this.seen.entries()) {
+      const seen = entry[1];
+      if (schema === entry[0]) {
         extractToDef(entry);
         continue;
       }
-    }
-    const id = (_c = ctx.metadataRegistry.get(entry[0])) == null ? void 0 : _c.id;
-    if (id) {
-      extractToDef(entry);
-      continue;
-    }
-    if (seen.cycle) {
-      extractToDef(entry);
-      continue;
-    }
-    if (seen.count > 1) {
-      if (ctx.reused === "ref") {
+      if (params.external) {
+        const ext = (_b = params.external.registry.get(entry[0])) == null ? void 0 : _b.id;
+        if (schema !== entry[0] && ext) {
+          extractToDef(entry);
+          continue;
+        }
+      }
+      const id = (_c = this.metadataRegistry.get(entry[0])) == null ? void 0 : _c.id;
+      if (id) {
         extractToDef(entry);
         continue;
       }
+      if (seen.cycle) {
+        extractToDef(entry);
+        continue;
+      }
+      if (seen.count > 1) {
+        if (params.reused === "ref") {
+          extractToDef(entry);
+          continue;
+        }
+      }
+    }
+    const flattenRef = (zodSchema, params2) => {
+      const seen = this.seen.get(zodSchema);
+      const schema2 = seen.def ?? seen.schema;
+      const _cached = { ...schema2 };
+      if (seen.ref === null) {
+        return;
+      }
+      const ref = seen.ref;
+      seen.ref = null;
+      if (ref) {
+        flattenRef(ref, params2);
+        const refSchema = this.seen.get(ref).schema;
+        if (refSchema.$ref && (params2.target === "draft-7" || params2.target === "draft-4" || params2.target === "openapi-3.0")) {
+          schema2.allOf = schema2.allOf ?? [];
+          schema2.allOf.push(refSchema);
+        } else {
+          Object.assign(schema2, refSchema);
+          Object.assign(schema2, _cached);
+        }
+      }
+      if (!seen.isParent)
+        this.override({
+          zodSchema,
+          jsonSchema: schema2,
+          path: seen.path ?? []
+        });
+    };
+    for (const entry of [...this.seen.entries()].reverse()) {
+      flattenRef(entry[0], { target: this.target });
+    }
+    const result = {};
+    if (this.target === "draft-2020-12") {
+      result.$schema = "https://json-schema.org/draft/2020-12/schema";
+    } else if (this.target === "draft-7") {
+      result.$schema = "http://json-schema.org/draft-07/schema#";
+    } else if (this.target === "draft-4") {
+      result.$schema = "http://json-schema.org/draft-04/schema#";
+    } else if (this.target === "openapi-3.0") ;
+    else {
+      console.warn(`Invalid target: ${this.target}`);
+    }
+    if ((_d = params.external) == null ? void 0 : _d.uri) {
+      const id = (_e = params.external.registry.get(schema)) == null ? void 0 : _e.id;
+      if (!id)
+        throw new Error("Schema is missing an `id` property");
+      result.$id = params.external.uri(id);
+    }
+    Object.assign(result, root.def);
+    const defs = ((_f = params.external) == null ? void 0 : _f.defs) ?? {};
+    for (const entry of this.seen.entries()) {
+      const seen = entry[1];
+      if (seen.def && seen.defId) {
+        defs[seen.defId] = seen.def;
+      }
+    }
+    if (params.external) ;
+    else {
+      if (Object.keys(defs).length > 0) {
+        if (this.target === "draft-2020-12") {
+          result.$defs = defs;
+        } else {
+          result.definitions = defs;
+        }
+      }
+    }
+    try {
+      return JSON.parse(JSON.stringify(result));
+    } catch (_err) {
+      throw new Error("Error converting schema to JSON.");
     }
   }
 }
-function finalize(ctx, schema) {
-  var _a3, _b, _c;
-  const root = ctx.seen.get(schema);
-  if (!root)
-    throw new Error("Unprocessed schema. This is a bug in Zod.");
-  const flattenRef = (zodSchema) => {
-    const seen = ctx.seen.get(zodSchema);
-    const schema2 = seen.def ?? seen.schema;
-    const _cached = { ...schema2 };
-    if (seen.ref === null) {
-      return;
+function toJSONSchema(input, _params) {
+  if (input instanceof $ZodRegistry) {
+    const gen2 = new JSONSchemaGenerator(_params);
+    const defs = {};
+    for (const entry of input._idmap.entries()) {
+      const [_, schema] = entry;
+      gen2.process(schema);
     }
-    const ref = seen.ref;
-    seen.ref = null;
-    if (ref) {
-      flattenRef(ref);
-      const refSchema = ctx.seen.get(ref).schema;
-      if (refSchema.$ref && (ctx.target === "draft-07" || ctx.target === "draft-04" || ctx.target === "openapi-3.0")) {
-        schema2.allOf = schema2.allOf ?? [];
-        schema2.allOf.push(refSchema);
-      } else {
-        Object.assign(schema2, refSchema);
-        Object.assign(schema2, _cached);
-      }
-    }
-    if (!seen.isParent)
-      ctx.override({
-        zodSchema,
-        jsonSchema: schema2,
-        path: seen.path ?? []
+    const schemas = {};
+    const external = {
+      registry: input,
+      uri: _params == null ? void 0 : _params.uri,
+      defs
+    };
+    for (const entry of input._idmap.entries()) {
+      const [key, schema] = entry;
+      schemas[key] = gen2.emit(schema, {
+        ..._params,
+        external
       });
-  };
-  for (const entry of [...ctx.seen.entries()].reverse()) {
-    flattenRef(entry[0]);
-  }
-  const result = {};
-  if (ctx.target === "draft-2020-12") {
-    result.$schema = "https://json-schema.org/draft/2020-12/schema";
-  } else if (ctx.target === "draft-07") {
-    result.$schema = "http://json-schema.org/draft-07/schema#";
-  } else if (ctx.target === "draft-04") {
-    result.$schema = "http://json-schema.org/draft-04/schema#";
-  } else if (ctx.target === "openapi-3.0") ;
-  else ;
-  if ((_a3 = ctx.external) == null ? void 0 : _a3.uri) {
-    const id = (_b = ctx.external.registry.get(schema)) == null ? void 0 : _b.id;
-    if (!id)
-      throw new Error("Schema is missing an `id` property");
-    result.$id = ctx.external.uri(id);
-  }
-  Object.assign(result, root.def ?? root.schema);
-  const defs = ((_c = ctx.external) == null ? void 0 : _c.defs) ?? {};
-  for (const entry of ctx.seen.entries()) {
-    const seen = entry[1];
-    if (seen.def && seen.defId) {
-      defs[seen.defId] = seen.def;
     }
-  }
-  if (ctx.external) ;
-  else {
     if (Object.keys(defs).length > 0) {
-      if (ctx.target === "draft-2020-12") {
-        result.$defs = defs;
-      } else {
-        result.definitions = defs;
-      }
+      const defsSegment = gen2.target === "draft-2020-12" ? "$defs" : "definitions";
+      schemas.__shared = {
+        [defsSegment]: defs
+      };
     }
+    return { schemas };
   }
-  try {
-    const finalized = JSON.parse(JSON.stringify(result));
-    Object.defineProperty(finalized, "~standard", {
-      value: {
-        ...schema["~standard"],
-        jsonSchema: {
-          input: createStandardJSONSchemaMethod(schema, "input"),
-          output: createStandardJSONSchemaMethod(schema, "output")
-        }
-      },
-      enumerable: false,
-      writable: false
-    });
-    return finalized;
-  } catch (_err) {
-    throw new Error("Error converting schema to JSON.");
-  }
+  const gen = new JSONSchemaGenerator(_params);
+  gen.process(input);
+  return gen.emit(input, _params);
 }
 function isTransforming(_schema, _ctx) {
   const ctx = _ctx ?? { seen: /* @__PURE__ */ new Set() };
@@ -23424,546 +23780,6 @@ function isTransforming(_schema, _ctx) {
     return false;
   }
   return false;
-}
-const createToJSONSchemaMethod = (schema, processors = {}) => (params) => {
-  const ctx = initializeContext({ ...params, processors });
-  process$1(schema, ctx);
-  extractDefs(ctx, schema);
-  return finalize(ctx, schema);
-};
-const createStandardJSONSchemaMethod = (schema, io) => (params) => {
-  const { libraryOptions, target } = params ?? {};
-  const ctx = initializeContext({ ...libraryOptions ?? {}, target, io, processors: {} });
-  process$1(schema, ctx);
-  extractDefs(ctx, schema);
-  return finalize(ctx, schema);
-};
-const formatMap = {
-  guid: "uuid",
-  url: "uri",
-  datetime: "date-time",
-  json_string: "json-string",
-  regex: ""
-  // do not set
-};
-const stringProcessor = (schema, ctx, _json, _params) => {
-  const json = _json;
-  json.type = "string";
-  const { minimum, maximum, format: format2, patterns, contentEncoding } = schema._zod.bag;
-  if (typeof minimum === "number")
-    json.minLength = minimum;
-  if (typeof maximum === "number")
-    json.maxLength = maximum;
-  if (format2) {
-    json.format = formatMap[format2] ?? format2;
-    if (json.format === "")
-      delete json.format;
-  }
-  if (contentEncoding)
-    json.contentEncoding = contentEncoding;
-  if (patterns && patterns.size > 0) {
-    const regexes = [...patterns];
-    if (regexes.length === 1)
-      json.pattern = regexes[0].source;
-    else if (regexes.length > 1) {
-      json.allOf = [
-        ...regexes.map((regex2) => ({
-          ...ctx.target === "draft-07" || ctx.target === "draft-04" || ctx.target === "openapi-3.0" ? { type: "string" } : {},
-          pattern: regex2.source
-        }))
-      ];
-    }
-  }
-};
-const numberProcessor = (schema, ctx, _json, _params) => {
-  const json = _json;
-  const { minimum, maximum, format: format2, multipleOf, exclusiveMaximum, exclusiveMinimum } = schema._zod.bag;
-  if (typeof format2 === "string" && format2.includes("int"))
-    json.type = "integer";
-  else
-    json.type = "number";
-  if (typeof exclusiveMinimum === "number") {
-    if (ctx.target === "draft-04" || ctx.target === "openapi-3.0") {
-      json.minimum = exclusiveMinimum;
-      json.exclusiveMinimum = true;
-    } else {
-      json.exclusiveMinimum = exclusiveMinimum;
-    }
-  }
-  if (typeof minimum === "number") {
-    json.minimum = minimum;
-    if (typeof exclusiveMinimum === "number" && ctx.target !== "draft-04") {
-      if (exclusiveMinimum >= minimum)
-        delete json.minimum;
-      else
-        delete json.exclusiveMinimum;
-    }
-  }
-  if (typeof exclusiveMaximum === "number") {
-    if (ctx.target === "draft-04" || ctx.target === "openapi-3.0") {
-      json.maximum = exclusiveMaximum;
-      json.exclusiveMaximum = true;
-    } else {
-      json.exclusiveMaximum = exclusiveMaximum;
-    }
-  }
-  if (typeof maximum === "number") {
-    json.maximum = maximum;
-    if (typeof exclusiveMaximum === "number" && ctx.target !== "draft-04") {
-      if (exclusiveMaximum <= maximum)
-        delete json.maximum;
-      else
-        delete json.exclusiveMaximum;
-    }
-  }
-  if (typeof multipleOf === "number")
-    json.multipleOf = multipleOf;
-};
-const booleanProcessor = (_schema, _ctx, json, _params) => {
-  json.type = "boolean";
-};
-const bigintProcessor = (_schema, ctx, _json, _params) => {
-  if (ctx.unrepresentable === "throw") {
-    throw new Error("BigInt cannot be represented in JSON Schema");
-  }
-};
-const symbolProcessor = (_schema, ctx, _json, _params) => {
-  if (ctx.unrepresentable === "throw") {
-    throw new Error("Symbols cannot be represented in JSON Schema");
-  }
-};
-const nullProcessor = (_schema, ctx, json, _params) => {
-  if (ctx.target === "openapi-3.0") {
-    json.type = "string";
-    json.nullable = true;
-    json.enum = [null];
-  } else {
-    json.type = "null";
-  }
-};
-const undefinedProcessor = (_schema, ctx, _json, _params) => {
-  if (ctx.unrepresentable === "throw") {
-    throw new Error("Undefined cannot be represented in JSON Schema");
-  }
-};
-const voidProcessor = (_schema, ctx, _json, _params) => {
-  if (ctx.unrepresentable === "throw") {
-    throw new Error("Void cannot be represented in JSON Schema");
-  }
-};
-const neverProcessor = (_schema, _ctx, json, _params) => {
-  json.not = {};
-};
-const anyProcessor = (_schema, _ctx, _json, _params) => {
-};
-const unknownProcessor = (_schema, _ctx, _json, _params) => {
-};
-const dateProcessor = (_schema, ctx, _json, _params) => {
-  if (ctx.unrepresentable === "throw") {
-    throw new Error("Date cannot be represented in JSON Schema");
-  }
-};
-const enumProcessor = (schema, _ctx, json, _params) => {
-  const def = schema._zod.def;
-  const values = getEnumValues(def.entries);
-  if (values.every((v) => typeof v === "number"))
-    json.type = "number";
-  if (values.every((v) => typeof v === "string"))
-    json.type = "string";
-  json.enum = values;
-};
-const literalProcessor = (schema, ctx, json, _params) => {
-  const def = schema._zod.def;
-  const vals = [];
-  for (const val of def.values) {
-    if (val === void 0) {
-      if (ctx.unrepresentable === "throw") {
-        throw new Error("Literal `undefined` cannot be represented in JSON Schema");
-      }
-    } else if (typeof val === "bigint") {
-      if (ctx.unrepresentable === "throw") {
-        throw new Error("BigInt literals cannot be represented in JSON Schema");
-      } else {
-        vals.push(Number(val));
-      }
-    } else {
-      vals.push(val);
-    }
-  }
-  if (vals.length === 0) ;
-  else if (vals.length === 1) {
-    const val = vals[0];
-    json.type = val === null ? "null" : typeof val;
-    if (ctx.target === "draft-04" || ctx.target === "openapi-3.0") {
-      json.enum = [val];
-    } else {
-      json.const = val;
-    }
-  } else {
-    if (vals.every((v) => typeof v === "number"))
-      json.type = "number";
-    if (vals.every((v) => typeof v === "string"))
-      json.type = "string";
-    if (vals.every((v) => typeof v === "boolean"))
-      json.type = "boolean";
-    if (vals.every((v) => v === null))
-      json.type = "null";
-    json.enum = vals;
-  }
-};
-const nanProcessor = (_schema, ctx, _json, _params) => {
-  if (ctx.unrepresentable === "throw") {
-    throw new Error("NaN cannot be represented in JSON Schema");
-  }
-};
-const templateLiteralProcessor = (schema, _ctx, json, _params) => {
-  const _json = json;
-  const pattern = schema._zod.pattern;
-  if (!pattern)
-    throw new Error("Pattern not found in template literal");
-  _json.type = "string";
-  _json.pattern = pattern.source;
-};
-const fileProcessor = (schema, _ctx, json, _params) => {
-  const _json = json;
-  const file = {
-    type: "string",
-    format: "binary",
-    contentEncoding: "binary"
-  };
-  const { minimum, maximum, mime } = schema._zod.bag;
-  if (minimum !== void 0)
-    file.minLength = minimum;
-  if (maximum !== void 0)
-    file.maxLength = maximum;
-  if (mime) {
-    if (mime.length === 1) {
-      file.contentMediaType = mime[0];
-      Object.assign(_json, file);
-    } else {
-      _json.anyOf = mime.map((m) => {
-        const mFile = { ...file, contentMediaType: m };
-        return mFile;
-      });
-    }
-  } else {
-    Object.assign(_json, file);
-  }
-};
-const successProcessor = (_schema, _ctx, json, _params) => {
-  json.type = "boolean";
-};
-const customProcessor = (_schema, ctx, _json, _params) => {
-  if (ctx.unrepresentable === "throw") {
-    throw new Error("Custom types cannot be represented in JSON Schema");
-  }
-};
-const functionProcessor = (_schema, ctx, _json, _params) => {
-  if (ctx.unrepresentable === "throw") {
-    throw new Error("Function types cannot be represented in JSON Schema");
-  }
-};
-const transformProcessor = (_schema, ctx, _json, _params) => {
-  if (ctx.unrepresentable === "throw") {
-    throw new Error("Transforms cannot be represented in JSON Schema");
-  }
-};
-const mapProcessor = (_schema, ctx, _json, _params) => {
-  if (ctx.unrepresentable === "throw") {
-    throw new Error("Map cannot be represented in JSON Schema");
-  }
-};
-const setProcessor = (_schema, ctx, _json, _params) => {
-  if (ctx.unrepresentable === "throw") {
-    throw new Error("Set cannot be represented in JSON Schema");
-  }
-};
-const arrayProcessor = (schema, ctx, _json, params) => {
-  const json = _json;
-  const def = schema._zod.def;
-  const { minimum, maximum } = schema._zod.bag;
-  if (typeof minimum === "number")
-    json.minItems = minimum;
-  if (typeof maximum === "number")
-    json.maxItems = maximum;
-  json.type = "array";
-  json.items = process$1(def.element, ctx, { ...params, path: [...params.path, "items"] });
-};
-const objectProcessor = (schema, ctx, _json, params) => {
-  var _a3;
-  const json = _json;
-  const def = schema._zod.def;
-  json.type = "object";
-  json.properties = {};
-  const shape = def.shape;
-  for (const key in shape) {
-    json.properties[key] = process$1(shape[key], ctx, {
-      ...params,
-      path: [...params.path, "properties", key]
-    });
-  }
-  const allKeys = new Set(Object.keys(shape));
-  const requiredKeys = new Set([...allKeys].filter((key) => {
-    const v = def.shape[key]._zod;
-    if (ctx.io === "input") {
-      return v.optin === void 0;
-    } else {
-      return v.optout === void 0;
-    }
-  }));
-  if (requiredKeys.size > 0) {
-    json.required = Array.from(requiredKeys);
-  }
-  if (((_a3 = def.catchall) == null ? void 0 : _a3._zod.def.type) === "never") {
-    json.additionalProperties = false;
-  } else if (!def.catchall) {
-    if (ctx.io === "output")
-      json.additionalProperties = false;
-  } else if (def.catchall) {
-    json.additionalProperties = process$1(def.catchall, ctx, {
-      ...params,
-      path: [...params.path, "additionalProperties"]
-    });
-  }
-};
-const unionProcessor = (schema, ctx, json, params) => {
-  const def = schema._zod.def;
-  const isExclusive = def.inclusive === false;
-  const options = def.options.map((x, i) => process$1(x, ctx, {
-    ...params,
-    path: [...params.path, isExclusive ? "oneOf" : "anyOf", i]
-  }));
-  if (isExclusive) {
-    json.oneOf = options;
-  } else {
-    json.anyOf = options;
-  }
-};
-const intersectionProcessor = (schema, ctx, json, params) => {
-  const def = schema._zod.def;
-  const a = process$1(def.left, ctx, {
-    ...params,
-    path: [...params.path, "allOf", 0]
-  });
-  const b = process$1(def.right, ctx, {
-    ...params,
-    path: [...params.path, "allOf", 1]
-  });
-  const isSimpleIntersection = (val) => "allOf" in val && Object.keys(val).length === 1;
-  const allOf = [
-    ...isSimpleIntersection(a) ? a.allOf : [a],
-    ...isSimpleIntersection(b) ? b.allOf : [b]
-  ];
-  json.allOf = allOf;
-};
-const tupleProcessor = (schema, ctx, _json, params) => {
-  const json = _json;
-  const def = schema._zod.def;
-  json.type = "array";
-  const prefixPath = ctx.target === "draft-2020-12" ? "prefixItems" : "items";
-  const restPath = ctx.target === "draft-2020-12" ? "items" : ctx.target === "openapi-3.0" ? "items" : "additionalItems";
-  const prefixItems = def.items.map((x, i) => process$1(x, ctx, {
-    ...params,
-    path: [...params.path, prefixPath, i]
-  }));
-  const rest = def.rest ? process$1(def.rest, ctx, {
-    ...params,
-    path: [...params.path, restPath, ...ctx.target === "openapi-3.0" ? [def.items.length] : []]
-  }) : null;
-  if (ctx.target === "draft-2020-12") {
-    json.prefixItems = prefixItems;
-    if (rest) {
-      json.items = rest;
-    }
-  } else if (ctx.target === "openapi-3.0") {
-    json.items = {
-      anyOf: prefixItems
-    };
-    if (rest) {
-      json.items.anyOf.push(rest);
-    }
-    json.minItems = prefixItems.length;
-    if (!rest) {
-      json.maxItems = prefixItems.length;
-    }
-  } else {
-    json.items = prefixItems;
-    if (rest) {
-      json.additionalItems = rest;
-    }
-  }
-  const { minimum, maximum } = schema._zod.bag;
-  if (typeof minimum === "number")
-    json.minItems = minimum;
-  if (typeof maximum === "number")
-    json.maxItems = maximum;
-};
-const recordProcessor = (schema, ctx, _json, params) => {
-  const json = _json;
-  const def = schema._zod.def;
-  json.type = "object";
-  if (ctx.target === "draft-07" || ctx.target === "draft-2020-12") {
-    json.propertyNames = process$1(def.keyType, ctx, {
-      ...params,
-      path: [...params.path, "propertyNames"]
-    });
-  }
-  json.additionalProperties = process$1(def.valueType, ctx, {
-    ...params,
-    path: [...params.path, "additionalProperties"]
-  });
-};
-const nullableProcessor = (schema, ctx, json, params) => {
-  const def = schema._zod.def;
-  const inner = process$1(def.innerType, ctx, params);
-  const seen = ctx.seen.get(schema);
-  if (ctx.target === "openapi-3.0") {
-    seen.ref = def.innerType;
-    json.nullable = true;
-  } else {
-    json.anyOf = [inner, { type: "null" }];
-  }
-};
-const nonoptionalProcessor = (schema, ctx, _json, params) => {
-  const def = schema._zod.def;
-  process$1(def.innerType, ctx, params);
-  const seen = ctx.seen.get(schema);
-  seen.ref = def.innerType;
-};
-const defaultProcessor = (schema, ctx, json, params) => {
-  const def = schema._zod.def;
-  process$1(def.innerType, ctx, params);
-  const seen = ctx.seen.get(schema);
-  seen.ref = def.innerType;
-  json.default = JSON.parse(JSON.stringify(def.defaultValue));
-};
-const prefaultProcessor = (schema, ctx, json, params) => {
-  const def = schema._zod.def;
-  process$1(def.innerType, ctx, params);
-  const seen = ctx.seen.get(schema);
-  seen.ref = def.innerType;
-  if (ctx.io === "input")
-    json._prefault = JSON.parse(JSON.stringify(def.defaultValue));
-};
-const catchProcessor = (schema, ctx, json, params) => {
-  const def = schema._zod.def;
-  process$1(def.innerType, ctx, params);
-  const seen = ctx.seen.get(schema);
-  seen.ref = def.innerType;
-  let catchValue;
-  try {
-    catchValue = def.catchValue(void 0);
-  } catch {
-    throw new Error("Dynamic catch values are not supported in JSON Schema");
-  }
-  json.default = catchValue;
-};
-const pipeProcessor = (schema, ctx, _json, params) => {
-  const def = schema._zod.def;
-  const innerType = ctx.io === "input" ? def.in._zod.def.type === "transform" ? def.out : def.in : def.out;
-  process$1(innerType, ctx, params);
-  const seen = ctx.seen.get(schema);
-  seen.ref = innerType;
-};
-const readonlyProcessor = (schema, ctx, json, params) => {
-  const def = schema._zod.def;
-  process$1(def.innerType, ctx, params);
-  const seen = ctx.seen.get(schema);
-  seen.ref = def.innerType;
-  json.readOnly = true;
-};
-const promiseProcessor = (schema, ctx, _json, params) => {
-  const def = schema._zod.def;
-  process$1(def.innerType, ctx, params);
-  const seen = ctx.seen.get(schema);
-  seen.ref = def.innerType;
-};
-const optionalProcessor = (schema, ctx, _json, params) => {
-  const def = schema._zod.def;
-  process$1(def.innerType, ctx, params);
-  const seen = ctx.seen.get(schema);
-  seen.ref = def.innerType;
-};
-const lazyProcessor = (schema, ctx, _json, params) => {
-  const innerType = schema._zod.innerType;
-  process$1(innerType, ctx, params);
-  const seen = ctx.seen.get(schema);
-  seen.ref = innerType;
-};
-const allProcessors = {
-  string: stringProcessor,
-  number: numberProcessor,
-  boolean: booleanProcessor,
-  bigint: bigintProcessor,
-  symbol: symbolProcessor,
-  null: nullProcessor,
-  undefined: undefinedProcessor,
-  void: voidProcessor,
-  never: neverProcessor,
-  any: anyProcessor,
-  unknown: unknownProcessor,
-  date: dateProcessor,
-  enum: enumProcessor,
-  literal: literalProcessor,
-  nan: nanProcessor,
-  template_literal: templateLiteralProcessor,
-  file: fileProcessor,
-  success: successProcessor,
-  custom: customProcessor,
-  function: functionProcessor,
-  transform: transformProcessor,
-  map: mapProcessor,
-  set: setProcessor,
-  array: arrayProcessor,
-  object: objectProcessor,
-  union: unionProcessor,
-  intersection: intersectionProcessor,
-  tuple: tupleProcessor,
-  record: recordProcessor,
-  nullable: nullableProcessor,
-  nonoptional: nonoptionalProcessor,
-  default: defaultProcessor,
-  prefault: prefaultProcessor,
-  catch: catchProcessor,
-  pipe: pipeProcessor,
-  readonly: readonlyProcessor,
-  promise: promiseProcessor,
-  optional: optionalProcessor,
-  lazy: lazyProcessor
-};
-function toJSONSchema(input, params) {
-  if ("_idmap" in input) {
-    const registry2 = input;
-    const ctx2 = initializeContext({ ...params, processors: allProcessors });
-    const defs = {};
-    for (const entry of registry2._idmap.entries()) {
-      const [_, schema] = entry;
-      process$1(schema, ctx2);
-    }
-    const schemas = {};
-    const external = {
-      registry: registry2,
-      uri: params == null ? void 0 : params.uri,
-      defs
-    };
-    ctx2.external = external;
-    for (const entry of registry2._idmap.entries()) {
-      const [key, schema] = entry;
-      extractDefs(ctx2, schema);
-      schemas[key] = finalize(ctx2, schema);
-    }
-    if (Object.keys(defs).length > 0) {
-      const defsSegment = ctx2.target === "draft-2020-12" ? "$defs" : "definitions";
-      schemas.__shared = {
-        [defsSegment]: defs
-      };
-    }
-    return { schemas };
-  }
-  const ctx = initializeContext({ ...params, processors: allProcessors });
-  process$1(input, ctx);
-  extractDefs(ctx, input);
-  return finalize(ctx, input);
 }
 function isZodSchemaV4(schema) {
   if (typeof schema !== "object" || schema === null) return false;
@@ -24223,7 +24039,7 @@ function interopZodTransformInputSchemaImpl(schema, recursive, cache2) {
     if (isZodTransformV4(schema)) outputSchema = interopZodTransformInputSchemaImpl(schema._zod.def.in, recursive, cache2);
     if (recursive) {
       if (isZodObjectV4(outputSchema)) {
-        const outputShape = {};
+        const outputShape = outputSchema._zod.def.shape;
         for (const [key, keySchema] of Object.entries(outputSchema._zod.def.shape)) outputShape[key] = interopZodTransformInputSchemaImpl(keySchema, recursive, cache2);
         outputSchema = clone(outputSchema, {
           ...outputSchema._zod.def,
@@ -24331,22 +24147,15 @@ graph TD;
     edgeGroups[commonPrefix].push(edge);
   }
   const seenSubgraphs = /* @__PURE__ */ new Set();
-  function sortPrefixesByDepth(prefixes) {
-    return [...prefixes].sort((a, b) => {
-      return a.split(":").length - b.split(":").length;
-    });
-  }
   function addSubgraph(edges$1, prefix) {
     const selfLoop = edges$1.length === 1 && edges$1[0].source === edges$1[0].target;
     if (prefix && !selfLoop) {
       const subgraph = prefix.split(":").pop();
-      if (seenSubgraphs.has(prefix)) throw new Error(`Found duplicate subgraph '${subgraph}' at '${prefix} -- this likely means that you're reusing a subgraph node with the same name. Please adjust your graph to have subgraph nodes with unique names.`);
-      seenSubgraphs.add(prefix);
+      if (seenSubgraphs.has(subgraph)) throw new Error(`Found duplicate subgraph '${subgraph}' -- this likely means that you're reusing a subgraph node with the same name. Please adjust your graph to have subgraph nodes with unique names.`);
+      seenSubgraphs.add(subgraph);
       mermaidGraph += `	subgraph ${subgraph}
 `;
     }
-    const nestedPrefixes = sortPrefixesByDepth(Object.keys(edgeGroups).filter((nestedPrefix) => nestedPrefix.startsWith(`${prefix}:`) && nestedPrefix !== prefix && nestedPrefix.split(":").length === prefix.split(":").length + 1));
-    for (const nestedPrefix of nestedPrefixes) addSubgraph(edgeGroups[nestedPrefix], nestedPrefix);
     for (const edge of edges$1) {
       const { source, target, data, conditional } = edge;
       let edgeLabel = "";
@@ -24359,6 +24168,7 @@ graph TD;
       mermaidGraph += `	${_escapeNodeLabel(source)}${edgeLabel}${_escapeNodeLabel(target)};
 `;
     }
+    for (const nestedPrefix in edgeGroups) if (nestedPrefix.startsWith(`${prefix}:`) && nestedPrefix !== prefix) addSubgraph(edgeGroups[nestedPrefix], nestedPrefix);
     if (prefix && !selfLoop) mermaidGraph += "	end\n";
   }
   addSubgraph(edgeGroups[""] ?? [], "");
@@ -26502,7 +26312,7 @@ ZodNull.create = (params) => {
     ...processCreateParams(params)
   });
 };
-class ZodAny extends ZodType$1 {
+let ZodAny$1 = class ZodAny extends ZodType$1 {
   constructor() {
     super(...arguments);
     this._any = true;
@@ -26510,9 +26320,9 @@ class ZodAny extends ZodType$1 {
   _parse(input) {
     return OK(input.data);
   }
-}
-ZodAny.create = (params) => {
-  return new ZodAny({
+};
+ZodAny$1.create = (params) => {
+  return new ZodAny$1({
     typeName: ZodFirstPartyTypeKind.ZodAny,
     ...processCreateParams(params)
   });
@@ -27453,7 +27263,7 @@ ZodLazy.create = (getter, params) => {
     ...processCreateParams(params)
   });
 };
-let ZodLiteral$1 = class ZodLiteral extends ZodType$1 {
+class ZodLiteral extends ZodType$1 {
   _parse(input) {
     if (input.data !== this._def.value) {
       const ctx = this._getOrReturnCtx(input);
@@ -27469,9 +27279,9 @@ let ZodLiteral$1 = class ZodLiteral extends ZodType$1 {
   get value() {
     return this._def.value;
   }
-};
-ZodLiteral$1.create = (value, params) => {
-  return new ZodLiteral$1({
+}
+ZodLiteral.create = (value, params) => {
+  return new ZodLiteral({
     value,
     typeName: ZodFirstPartyTypeKind.ZodLiteral,
     ...processCreateParams(params)
@@ -28024,7 +27834,7 @@ var ZodFirstPartyTypeKind;
   ZodFirstPartyTypeKind2["ZodReadonly"] = "ZodReadonly";
 })(ZodFirstPartyTypeKind || (ZodFirstPartyTypeKind = {}));
 const stringType = ZodString$1.create;
-const anyType = ZodAny.create;
+const anyType = ZodAny$1.create;
 ZodNever$1.create;
 ZodArray$1.create;
 const objectType = ZodObject$1.create;
@@ -28311,8 +28121,8 @@ function parseStringDef$1(def, refs) {
   }
   return res;
 }
-function escapeLiteralCheckValue(literal2, refs) {
-  return refs.patternStrategy === "escape" ? escapeNonAlphaNumeric$1(literal2) : literal2;
+function escapeLiteralCheckValue(literal, refs) {
+  return refs.patternStrategy === "escape" ? escapeNonAlphaNumeric$1(literal) : literal;
 }
 const ALPHA_NUMERIC = /* @__PURE__ */ new Set("ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvxyz0123456789");
 function escapeNonAlphaNumeric$1(source) {
@@ -30025,13 +29835,13 @@ __export(json_schema_exports, {
   toJsonSchema: () => toJsonSchema,
   validatesOnlyStrings: () => validatesOnlyStrings
 });
-function toJsonSchema(schema, params) {
+function toJsonSchema(schema) {
   if (isZodSchemaV4(schema)) {
     const inputSchema = interopZodTransformInputSchema(schema, true);
     if (isZodObjectV4(inputSchema)) {
       const strictSchema = interopZodObjectStrict(inputSchema, true);
-      return toJSONSchema(strictSchema, params);
-    } else return toJSONSchema(schema, params);
+      return toJSONSchema(strictSchema);
+    } else return toJSONSchema(schema);
   }
   if (isZodSchemaV3(schema)) return zodToJsonSchema$1(schema);
   return schema;
@@ -30062,7 +29872,7 @@ function validatesOnlyStrings(schema) {
 var graph_exports = {};
 __export(graph_exports, { Graph: () => Graph });
 function nodeDataStr(id, data) {
-  if (id !== void 0 && !validate$2(id)) return id;
+  if (id !== void 0 && !validate$3(id)) return id;
   else if (isRunnableInterface(data)) try {
     let dataStr = data.getName();
     dataStr = dataStr.startsWith("Runnable") ? dataStr.slice(8) : dataStr;
@@ -30098,7 +29908,7 @@ var Graph = class Graph2 {
   toJSON() {
     const stableNodeIds = {};
     Object.values(this.nodes).forEach((node, i) => {
-      stableNodeIds[node.id] = validate$2(node.id) ? i : node.id;
+      stableNodeIds[node.id] = validate$3(node.id) ? i : node.id;
     });
     return {
       nodes: Object.values(this.nodes).map((node) => ({
@@ -30118,7 +29928,7 @@ var Graph = class Graph2 {
   }
   addNode(data, id, metadata) {
     if (id !== void 0 && this.nodes[id] !== void 0) throw new Error(`Node with id ${id} already exists`);
-    const nodeId = id ?? v4();
+    const nodeId = id ?? v4$1();
     const node = {
       id: nodeId,
       data,
@@ -30157,7 +29967,7 @@ var Graph = class Graph2 {
   extend(graph, prefix = "") {
     let finalPrefix = prefix;
     const nodeIds = Object.values(graph.nodes).map((node) => node.id);
-    if (nodeIds.every(validate$2)) finalPrefix = "";
+    if (nodeIds.every(validate$3)) finalPrefix = "";
     const prefixed = (id) => {
       return finalPrefix ? `${finalPrefix}:${id}` : id;
     };
@@ -30205,7 +30015,7 @@ var Graph = class Graph2 {
     });
     const getNodeId = (nodeId) => {
       const label = nodeLabels[nodeId];
-      if (validate$2(nodeId) && nodeLabelCounts.get(label) === 1) return label;
+      if (validate$3(nodeId) && nodeLabelCounts.get(label) === 1) return label;
       else return nodeId;
     };
     return new Graph2({
@@ -30501,7 +30311,7 @@ var Runnable = class extends Serializable {
     }
     let runManager;
     try {
-      const pipe2 = await pipeGeneratorWithSetup(transformer.bind(this), wrapInputForTracing(), async () => callbackManager_ == null ? void 0 : callbackManager_.handleChainStart(this.toJSON(), { input: "" }, config2.runId, config2.runType, void 0, void 0, config2.runName ?? this.getName(), void 0, { lc_defers_inputs: true }), options == null ? void 0 : options.signal, config2);
+      const pipe2 = await pipeGeneratorWithSetup(transformer.bind(this), wrapInputForTracing(), async () => callbackManager_ == null ? void 0 : callbackManager_.handleChainStart(this.toJSON(), { input: "" }, config2.runId, config2.runType, void 0, void 0, config2.runName ?? this.getName()), options == null ? void 0 : options.signal, config2);
       delete config2.runId;
       runManager = pipe2.setup;
       const streamEventsHandler = runManager == null ? void 0 : runManager.handlers.find(isStreamEventsHandler);
@@ -30644,7 +30454,7 @@ var Runnable = class extends Serializable {
       autoClose: false
     });
     const config2 = ensureConfig(options);
-    const runId = config2.runId ?? v4();
+    const runId = config2.runId ?? v4$1();
     config2.runId = runId;
     const callbacks = config2.callbacks;
     if (callbacks === void 0) config2.callbacks = [eventStreamer];
@@ -32114,12 +31924,6 @@ function extractGenericMessageCustomRole(message) {
   if (message.role !== "system" && message.role !== "developer" && message.role !== "assistant" && message.role !== "user" && message.role !== "function" && message.role !== "tool") console.warn(`Unknown message role: ${message.role}`);
   return message.role;
 }
-function getRequiredFilenameFromMetadata(block) {
-  var _a3, _b, _c;
-  const filename = ((_a3 = block.metadata) == null ? void 0 : _a3.filename) ?? ((_b = block.metadata) == null ? void 0 : _b.name) ?? ((_c = block.metadata) == null ? void 0 : _c.title);
-  if (!filename) throw new Error("a filename or name or title is needed via meta-data for OpenAI when working with multimodal blocks");
-  return filename;
-}
 function messageToOpenAIRole(message) {
   const type = message._getType();
   switch (type) {
@@ -32139,9 +31943,6 @@ function messageToOpenAIRole(message) {
     default:
       throw new Error(`Unknown message type: ${type}`);
   }
-}
-function _modelPrefersResponsesAPI(model) {
-  return model.includes("gpt-5.2-pro");
 }
 function getEndpoint(config2) {
   const { azureOpenAIApiDeploymentName, azureOpenAIApiInstanceName, azureOpenAIApiKey, azureOpenAIBasePath, baseURL, azureADTokenProvider, azureOpenAIEndpoint } = config2;
@@ -32341,9 +32142,6 @@ function formatToOpenAIToolChoice(toolChoice) {
 function isBuiltInTool(tool2) {
   return "type" in tool2 && tool2.type !== "function";
 }
-function hasProviderToolDefinition(tool2) {
-  return typeof tool2 === "object" && tool2 !== null && "extras" in tool2 && typeof tool2.extras === "object" && tool2.extras !== null && "providerToolDefinition" in tool2.extras && typeof tool2.extras.providerToolDefinition === "object" && tool2.extras.providerToolDefinition !== null;
-}
 function isBuiltInToolChoice(tool_choice) {
   return tool_choice != null && typeof tool_choice === "object" && "type" in tool_choice && tool_choice.type !== "function";
 }
@@ -32365,23 +32163,8 @@ function parseCustomToolCall(rawToolCall) {
     args: { input: rawToolCall.input }
   };
 }
-function parseComputerCall(rawToolCall) {
-  if (rawToolCall.type !== "computer_call") return void 0;
-  return {
-    ...rawToolCall,
-    type: "tool_call",
-    call_id: rawToolCall.id,
-    id: rawToolCall.call_id,
-    name: "computer_use",
-    isComputerTool: true,
-    args: { action: rawToolCall.action }
-  };
-}
-function isComputerToolCall(toolCall) {
-  return typeof toolCall === "object" && toolCall !== null && "type" in toolCall && toolCall.type === "tool_call" && "isComputerTool" in toolCall && toolCall.isComputerTool === true;
-}
 function isCustomToolCall(toolCall) {
-  return typeof toolCall === "object" && toolCall !== null && "type" in toolCall && toolCall.type === "tool_call" && "isCustomTool" in toolCall && toolCall.isCustomTool === true;
+  return toolCall.type === "tool_call" && "isCustomTool" in toolCall && toolCall.isCustomTool === true;
 }
 function convertCompletionsCustomTool(tool2) {
   const getFormat = () => {
@@ -32502,13 +32285,6 @@ const safeEncodeAsync = /* @__PURE__ */ _safeEncodeAsync(ZodRealError);
 const safeDecodeAsync = /* @__PURE__ */ _safeDecodeAsync(ZodRealError);
 const ZodType2 = /* @__PURE__ */ $constructor("ZodType", (inst, def) => {
   $ZodType.init(inst, def);
-  Object.assign(inst["~standard"], {
-    jsonSchema: {
-      input: createStandardJSONSchemaMethod(inst, "input"),
-      output: createStandardJSONSchemaMethod(inst, "output")
-    }
-  });
-  inst.toJSONSchema = createToJSONSchemaMethod(inst, {});
   inst.def = def;
   inst.type = def.type;
   Object.defineProperty(inst, "_def", { value: def });
@@ -32582,7 +32358,6 @@ const ZodType2 = /* @__PURE__ */ $constructor("ZodType", (inst, def) => {
 const _ZodString = /* @__PURE__ */ $constructor("_ZodString", (inst, def) => {
   $ZodString.init(inst, def);
   ZodType2.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json, params) => stringProcessor(inst, ctx, json);
   const bag = inst._zod.bag;
   inst.format = bag.format ?? null;
   inst.minLength = bag.minimum ?? null;
@@ -32720,7 +32495,6 @@ const ZodJWT = /* @__PURE__ */ $constructor("ZodJWT", (inst, def) => {
 const ZodNumber2 = /* @__PURE__ */ $constructor("ZodNumber", (inst, def) => {
   $ZodNumber.init(inst, def);
   ZodType2.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json, params) => numberProcessor(inst, ctx, json);
   inst.gt = (value, params) => inst.check(_gt(value, params));
   inst.gte = (value, params) => inst.check(_gte(value, params));
   inst.min = (value, params) => inst.check(_gte(value, params));
@@ -32756,15 +32530,20 @@ function int(params) {
 const ZodBoolean2 = /* @__PURE__ */ $constructor("ZodBoolean", (inst, def) => {
   $ZodBoolean.init(inst, def);
   ZodType2.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json, params) => booleanProcessor(inst, ctx, json);
 });
 function boolean(params) {
   return _boolean(ZodBoolean2, params);
 }
+const ZodAny2 = /* @__PURE__ */ $constructor("ZodAny", (inst, def) => {
+  $ZodAny.init(inst, def);
+  ZodType2.init(inst, def);
+});
+function any() {
+  return _any(ZodAny2);
+}
 const ZodUnknown2 = /* @__PURE__ */ $constructor("ZodUnknown", (inst, def) => {
   $ZodUnknown.init(inst, def);
   ZodType2.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json, params) => unknownProcessor();
 });
 function unknown() {
   return _unknown(ZodUnknown2);
@@ -32772,7 +32551,6 @@ function unknown() {
 const ZodNever2 = /* @__PURE__ */ $constructor("ZodNever", (inst, def) => {
   $ZodNever.init(inst, def);
   ZodType2.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json, params) => neverProcessor(inst, ctx, json);
 });
 function never(params) {
   return _never(ZodNever2, params);
@@ -32780,7 +32558,6 @@ function never(params) {
 const ZodArray2 = /* @__PURE__ */ $constructor("ZodArray", (inst, def) => {
   $ZodArray.init(inst, def);
   ZodType2.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json, params) => arrayProcessor(inst, ctx, json, params);
   inst.element = def.element;
   inst.min = (minLength, params) => inst.check(_minLength(minLength, params));
   inst.nonempty = (params) => inst.check(_minLength(1, params));
@@ -32794,7 +32571,6 @@ function array(element, params) {
 const ZodObject2 = /* @__PURE__ */ $constructor("ZodObject", (inst, def) => {
   $ZodObjectJIT.init(inst, def);
   ZodType2.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json, params) => objectProcessor(inst, ctx, json, params);
   defineLazy(inst, "shape", () => {
     return def.shape;
   });
@@ -32827,7 +32603,6 @@ function object(shape, params) {
 const ZodUnion2 = /* @__PURE__ */ $constructor("ZodUnion", (inst, def) => {
   $ZodUnion.init(inst, def);
   ZodType2.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json, params) => unionProcessor(inst, ctx, json, params);
   inst.options = def.options;
 });
 function union(options, params) {
@@ -32837,22 +32612,9 @@ function union(options, params) {
     ...normalizeParams(params)
   });
 }
-const ZodDiscriminatedUnion = /* @__PURE__ */ $constructor("ZodDiscriminatedUnion", (inst, def) => {
-  ZodUnion2.init(inst, def);
-  $ZodDiscriminatedUnion.init(inst, def);
-});
-function discriminatedUnion(discriminator, options, params) {
-  return new ZodDiscriminatedUnion({
-    type: "union",
-    options,
-    discriminator,
-    ...normalizeParams(params)
-  });
-}
 const ZodIntersection2 = /* @__PURE__ */ $constructor("ZodIntersection", (inst, def) => {
   $ZodIntersection.init(inst, def);
   ZodType2.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json, params) => intersectionProcessor(inst, ctx, json, params);
 });
 function intersection(left, right) {
   return new ZodIntersection2({
@@ -32864,7 +32626,6 @@ function intersection(left, right) {
 const ZodRecord = /* @__PURE__ */ $constructor("ZodRecord", (inst, def) => {
   $ZodRecord.init(inst, def);
   ZodType2.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json, params) => recordProcessor(inst, ctx, json, params);
   inst.keyType = def.keyType;
   inst.valueType = def.valueType;
 });
@@ -32879,7 +32640,6 @@ function record(keyType, valueType, params) {
 const ZodEnum2 = /* @__PURE__ */ $constructor("ZodEnum", (inst, def) => {
   $ZodEnum.init(inst, def);
   ZodType2.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json, params) => enumProcessor(inst, ctx, json);
   inst.enum = def.entries;
   inst.options = Object.values(def.entries);
   const keys = new Set(Object.keys(def.entries));
@@ -32922,31 +32682,9 @@ function _enum(values, params) {
     ...normalizeParams(params)
   });
 }
-const ZodLiteral2 = /* @__PURE__ */ $constructor("ZodLiteral", (inst, def) => {
-  $ZodLiteral.init(inst, def);
-  ZodType2.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json, params) => literalProcessor(inst, ctx, json);
-  inst.values = new Set(def.values);
-  Object.defineProperty(inst, "value", {
-    get() {
-      if (def.values.length > 1) {
-        throw new Error("This schema contains multiple valid literal values. Use `.values` instead.");
-      }
-      return def.values[0];
-    }
-  });
-});
-function literal(value, params) {
-  return new ZodLiteral2({
-    type: "literal",
-    values: Array.isArray(value) ? value : [value],
-    ...normalizeParams(params)
-  });
-}
 const ZodTransform = /* @__PURE__ */ $constructor("ZodTransform", (inst, def) => {
   $ZodTransform.init(inst, def);
   ZodType2.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json, params) => transformProcessor(inst, ctx);
   inst._zod.parse = (payload, _ctx) => {
     if (_ctx.direction === "backward") {
       throw new $ZodEncodeError(inst.constructor.name);
@@ -32984,7 +32722,6 @@ function transform(fn) {
 const ZodOptional2 = /* @__PURE__ */ $constructor("ZodOptional", (inst, def) => {
   $ZodOptional.init(inst, def);
   ZodType2.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json, params) => optionalProcessor(inst, ctx, json, params);
   inst.unwrap = () => inst._zod.def.innerType;
 });
 function optional(innerType) {
@@ -32996,7 +32733,6 @@ function optional(innerType) {
 const ZodNullable2 = /* @__PURE__ */ $constructor("ZodNullable", (inst, def) => {
   $ZodNullable.init(inst, def);
   ZodType2.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json, params) => nullableProcessor(inst, ctx, json, params);
   inst.unwrap = () => inst._zod.def.innerType;
 });
 function nullable(innerType) {
@@ -33008,7 +32744,6 @@ function nullable(innerType) {
 const ZodDefault2 = /* @__PURE__ */ $constructor("ZodDefault", (inst, def) => {
   $ZodDefault.init(inst, def);
   ZodType2.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json, params) => defaultProcessor(inst, ctx, json, params);
   inst.unwrap = () => inst._zod.def.innerType;
   inst.removeDefault = inst.unwrap;
 });
@@ -33024,7 +32759,6 @@ function _default(innerType, defaultValue) {
 const ZodPrefault = /* @__PURE__ */ $constructor("ZodPrefault", (inst, def) => {
   $ZodPrefault.init(inst, def);
   ZodType2.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json, params) => prefaultProcessor(inst, ctx, json, params);
   inst.unwrap = () => inst._zod.def.innerType;
 });
 function prefault(innerType, defaultValue) {
@@ -33039,7 +32773,6 @@ function prefault(innerType, defaultValue) {
 const ZodNonOptional = /* @__PURE__ */ $constructor("ZodNonOptional", (inst, def) => {
   $ZodNonOptional.init(inst, def);
   ZodType2.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json, params) => nonoptionalProcessor(inst, ctx, json, params);
   inst.unwrap = () => inst._zod.def.innerType;
 });
 function nonoptional(innerType, params) {
@@ -33052,7 +32785,6 @@ function nonoptional(innerType, params) {
 const ZodCatch2 = /* @__PURE__ */ $constructor("ZodCatch", (inst, def) => {
   $ZodCatch.init(inst, def);
   ZodType2.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json, params) => catchProcessor(inst, ctx, json, params);
   inst.unwrap = () => inst._zod.def.innerType;
   inst.removeCatch = inst.unwrap;
 });
@@ -33066,7 +32798,6 @@ function _catch(innerType, catchValue) {
 const ZodPipe = /* @__PURE__ */ $constructor("ZodPipe", (inst, def) => {
   $ZodPipe.init(inst, def);
   ZodType2.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json, params) => pipeProcessor(inst, ctx, json, params);
   inst.in = def.in;
   inst.out = def.out;
 });
@@ -33081,7 +32812,6 @@ function pipe(in_, out) {
 const ZodReadonly2 = /* @__PURE__ */ $constructor("ZodReadonly", (inst, def) => {
   $ZodReadonly.init(inst, def);
   ZodType2.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json, params) => readonlyProcessor(inst, ctx, json, params);
   inst.unwrap = () => inst._zod.def.innerType;
 });
 function readonly(innerType) {
@@ -33093,7 +32823,6 @@ function readonly(innerType) {
 const ZodCustom = /* @__PURE__ */ $constructor("ZodCustom", (inst, def) => {
   $ZodCustom.init(inst, def);
   ZodType2.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json, params) => customProcessor(inst, ctx);
 });
 function refine(fn, _params = {}) {
   return _refine(ZodCustom, fn, _params);
@@ -34424,7 +34153,7 @@ function interopZodResponseFormat(zodSchema, name, props) {
       ...props,
       name,
       strict: true,
-      schema: toJsonSchema(zodSchema, {
+      schema: toJSONSchema(zodSchema, {
         cycles: "ref",
         reused: "ref",
         override(ctx) {
@@ -38995,10 +38724,6 @@ var BaseChatOpenAI = class extends BaseChatModel {
     */
     __publicField(this, "promptCacheKey");
     /**
-    * Used by OpenAI to set cache retention time
-    */
-    __publicField(this, "promptCacheRetention");
-    /**
     * The verbosity of the model's response.
     */
     __publicField(this, "verbosity");
@@ -39027,7 +38752,6 @@ var BaseChatOpenAI = class extends BaseChatModel {
     this.reasoning = fields == null ? void 0 : fields.reasoning;
     this.maxTokens = (fields == null ? void 0 : fields.maxCompletionTokens) ?? (fields == null ? void 0 : fields.maxTokens);
     this.promptCacheKey = (fields == null ? void 0 : fields.promptCacheKey) ?? this.promptCacheKey;
-    this.promptCacheRetention = (fields == null ? void 0 : fields.promptCacheRetention) ?? this.promptCacheRetention;
     this.verbosity = (fields == null ? void 0 : fields.verbosity) ?? this.verbosity;
     this.disableStreaming = (fields == null ? void 0 : fields.disableStreaming) === true;
     this.streaming = (fields == null ? void 0 : fields.streaming) === true;
@@ -39115,7 +38839,6 @@ var BaseChatOpenAI = class extends BaseChatModel {
       "zdrEnabled",
       "reasoning",
       "promptCacheKey",
-      "promptCacheRetention",
       "verbosity"
     ];
   }
@@ -39215,11 +38938,7 @@ var BaseChatOpenAI = class extends BaseChatModel {
     if ((kwargs == null ? void 0 : kwargs.strict) !== void 0) strict = kwargs.strict;
     else if (this.supportsStrictToolCalling !== void 0) strict = this.supportsStrictToolCalling;
     return this.withConfig({
-      tools: tools.map((tool2) => {
-        if (isBuiltInTool(tool2) || isCustomTool(tool2)) return tool2;
-        if (hasProviderToolDefinition(tool2)) return tool2.extras.providerToolDefinition;
-        return this._convertChatOpenAIToolToCompletionsTool(tool2, { strict });
-      }),
+      tools: tools.map((tool2) => isBuiltInTool(tool2) || isCustomTool(tool2) ? tool2 : this._convertChatOpenAIToolToCompletionsTool(tool2, { strict })),
       ...kwargs
     });
   }
@@ -39301,61 +39020,6 @@ var BaseChatOpenAI = class extends BaseChatModel {
     if (function_call === "none") tokens += 1;
     else if (typeof function_call === "object") tokens += await this.getNumTokens(function_call.name) + 4;
     return tokens;
-  }
-  /**
-  * Moderate content using OpenAI's Moderation API.
-  *
-  * This method checks whether content violates OpenAI's content policy by
-  * analyzing text for categories such as hate, harassment, self-harm,
-  * sexual content, violence, and more.
-  *
-  * @param input - The text or array of texts to moderate
-  * @param params - Optional parameters for the moderation request
-  * @param params.model - The moderation model to use. Defaults to "omni-moderation-latest".
-  * @param params.options - Additional options to pass to the underlying request
-  * @returns A promise that resolves to the moderation response containing results for each input
-  *
-  * @example
-  * ```typescript
-  * const model = new ChatOpenAI({ model: "gpt-4o-mini" });
-  *
-  * // Moderate a single text
-  * const result = await model.moderateContent("This is a test message");
-  * console.log(result.results[0].flagged); // false
-  * console.log(result.results[0].categories); // { hate: false, harassment: false, ... }
-  *
-  * // Moderate multiple texts
-  * const results = await model.moderateContent([
-  *   "Hello, how are you?",
-  *   "This is inappropriate content"
-  * ]);
-  * results.results.forEach((result, index) => {
-  *   console.log(`Text ${index + 1} flagged:`, result.flagged);
-  * });
-  *
-  * // Use a specific moderation model
-  * const stableResult = await model.moderateContent(
-  *   "Test content",
-  *   { model: "omni-moderation-latest" }
-  * );
-  * ```
-  */
-  async moderateContent(input, params) {
-    const clientOptions = this._getClientOptions(params == null ? void 0 : params.options);
-    const moderationModel = (params == null ? void 0 : params.model) ?? "omni-moderation-latest";
-    const moderationRequest = {
-      input,
-      model: moderationModel
-    };
-    return this.caller.call(async () => {
-      try {
-        const response = await this.client.moderations.create(moderationRequest, clientOptions);
-        return response;
-      } catch (e) {
-        const error = wrapOpenAIClientError(e);
-        throw error;
-      }
-    });
   }
   /**
   * Return profiling information for the model.
@@ -39604,29 +39268,25 @@ const completionsApiContentBlockConverter = {
     throw new Error(`Audio content blocks with source_type ${block.source_type} are not supported for ChatOpenAI`);
   },
   fromStandardFileBlock(block) {
-    var _a3, _b, _c, _d, _e;
+    var _a3, _b, _c, _d, _e, _f, _g, _h, _i, _j;
     if (block.source_type === "url") {
       const data = parseBase64DataUrl({ dataUrl: block.url });
-      const filename = getRequiredFilenameFromMetadata(block);
       if (!data) throw new Error(`URL file blocks with source_type ${block.source_type} must be formatted as a data URL for ChatOpenAI`);
       return {
         type: "file",
         file: {
           file_data: block.url,
-          ...((_a3 = block.metadata) == null ? void 0 : _a3.filename) || ((_b = block.metadata) == null ? void 0 : _b.name) ? { filename } : {}
+          ...((_a3 = block.metadata) == null ? void 0 : _a3.filename) || ((_b = block.metadata) == null ? void 0 : _b.name) ? { filename: ((_c = block.metadata) == null ? void 0 : _c.filename) || ((_d = block.metadata) == null ? void 0 : _d.name) } : {}
         }
       };
     }
-    if (block.source_type === "base64") {
-      const filename = getRequiredFilenameFromMetadata(block);
-      return {
-        type: "file",
-        file: {
-          file_data: `data:${block.mime_type ?? ""};base64,${block.data}`,
-          ...((_c = block.metadata) == null ? void 0 : _c.filename) || ((_d = block.metadata) == null ? void 0 : _d.name) || ((_e = block.metadata) == null ? void 0 : _e.title) ? { filename } : {}
-        }
-      };
-    }
+    if (block.source_type === "base64") return {
+      type: "file",
+      file: {
+        file_data: `data:${block.mime_type ?? ""};base64,${block.data}`,
+        ...((_e = block.metadata) == null ? void 0 : _e.filename) || ((_f = block.metadata) == null ? void 0 : _f.name) || ((_g = block.metadata) == null ? void 0 : _g.title) ? { filename: ((_h = block.metadata) == null ? void 0 : _h.filename) || ((_i = block.metadata) == null ? void 0 : _i.name) || ((_j = block.metadata) == null ? void 0 : _j.title) } : {}
+      }
+    };
     if (block.source_type === "id") return {
       type: "file",
       file: { file_id: block.id }
@@ -39766,16 +39426,10 @@ const convertStandardContentBlockToCompletionsContentPart = (block) => {
     }
   }
   if (block.type === "file") {
-    if (block.data) {
-      const filename = getRequiredFilenameFromMetadata(block);
-      return {
-        type: "file",
-        file: {
-          file_data: `data:${block.mimeType};base64,${block.data}`,
-          filename
-        }
-      };
-    }
+    if (block.data) return {
+      type: "file",
+      file: { file_data: block.data.toString() }
+    };
     if (block.fileId) return {
       type: "file",
       file: { file_id: block.fileId }
@@ -39838,9 +39492,14 @@ const convertMessagesToCompletionsMessageParams = ({ messages, model }) => {
       content
     };
     if (message.name != null) completionParam.name = message.name;
-    if (message.additional_kwargs.function_call != null) completionParam.function_call = message.additional_kwargs.function_call;
-    if (AIMessage.isInstance(message) && !!((_b = message.tool_calls) == null ? void 0 : _b.length)) completionParam.tool_calls = message.tool_calls.map(convertLangChainToolCallToOpenAI);
-    else {
+    if (message.additional_kwargs.function_call != null) {
+      completionParam.function_call = message.additional_kwargs.function_call;
+      completionParam.content = "";
+    }
+    if (AIMessage.isInstance(message) && !!((_b = message.tool_calls) == null ? void 0 : _b.length)) {
+      completionParam.tool_calls = message.tool_calls.map(convertLangChainToolCallToOpenAI);
+      completionParam.content = "";
+    } else {
       if (message.additional_kwargs.tool_calls != null) completionParam.tool_calls = message.additional_kwargs.tool_calls;
       if (ToolMessage.isInstance(message) && message.tool_call_id != null) completionParam.tool_call_id = message.tool_call_id;
     }
@@ -39889,7 +39548,6 @@ var ChatOpenAICompletions = class extends BaseChatOpenAI {
       ...this.modalities || (options == null ? void 0 : options.modalities) ? { modalities: this.modalities || (options == null ? void 0 : options.modalities) } : {},
       ...this.modelKwargs,
       prompt_cache_key: (options == null ? void 0 : options.promptCacheKey) ?? this.promptCacheKey,
-      prompt_cache_retention: (options == null ? void 0 : options.promptCacheRetention) ?? this.promptCacheRetention,
       verbosity: (options == null ? void 0 : options.verbosity) ?? this.verbosity
     };
     if ((options == null ? void 0 : options.prediction) !== void 0) params.prediction = options.prediction;
@@ -40174,10 +39832,6 @@ const convertResponsesMessageToAIMessage = (response) => {
     const parsed = parseCustomToolCall(item);
     if (parsed) tool_calls.push(parsed);
     else invalid_tool_calls.push(makeInvalidToolCall(item, "Malformed custom tool call"));
-  } else if (item.type === "computer_call") {
-    const parsed = parseComputerCall(item);
-    if (parsed) tool_calls.push(parsed);
-    else invalid_tool_calls.push(makeInvalidToolCall(item, "Malformed computer call"));
   } else {
     additional_kwargs.tool_outputs ?? (additional_kwargs.tool_outputs = []);
     additional_kwargs.tool_outputs.push(item);
@@ -40234,18 +39888,10 @@ const convertResponsesDeltaToChatGenerationChunk = (event) => {
       index: event.output_index
     });
     additional_kwargs[_FUNCTION_CALL_IDS_MAP_KEY] = { [event.item.call_id]: event.item.id };
-  } else if (event.type === "response.output_item.done" && event.item.type === "computer_call") {
-    tool_call_chunks.push({
-      type: "tool_call_chunk",
-      name: "computer_use",
-      args: JSON.stringify({ action: event.item.action }),
-      id: event.item.call_id,
-      index: event.output_index
-    });
-    additional_kwargs.tool_outputs = [event.item];
   } else if (event.type === "response.output_item.done" && [
     "web_search_call",
     "file_search_call",
+    "computer_call",
     "code_interpreter_call",
     "mcp_call",
     "mcp_list_tools",
@@ -40386,7 +40032,8 @@ const convertStandardContentMessageToResponsesInput = (message) => {
       return void 0;
     };
     const resolveFileItem = (block) => {
-      const filename = getRequiredFilenameFromMetadata(block);
+      var _a4, _b, _c;
+      const filename = ((_a4 = block.metadata) == null ? void 0 : _a4.filename) ?? ((_b = block.metadata) == null ? void 0 : _b.name) ?? ((_c = block.metadata) == null ? void 0 : _c.title);
       if (block.fileId && typeof filename === "string") return {
         type: "input_file",
         file_id: block.fileId,
@@ -40557,17 +40204,15 @@ const convertMessagesToResponsesInput = ({ messages, zdrEnabled, model }) => {
       if ((additional_kwargs == null ? void 0 : additional_kwargs.type) === "computer_call_output") {
         const output = (() => {
           if (typeof toolMessage.content === "string") return {
-            type: "input_image",
+            type: "computer_screenshot",
             image_url: toolMessage.content
           };
           if (Array.isArray(toolMessage.content)) {
-            const inputImage = toolMessage.content.find((i) => i.type === "input_image");
-            if (inputImage) return inputImage;
             const oaiScreenshot = toolMessage.content.find((i) => i.type === "computer_screenshot");
             if (oaiScreenshot) return oaiScreenshot;
             const lcImage = toolMessage.content.find((i) => i.type === "image_url");
             if (lcImage) return {
-              type: "input_image",
+              type: "computer_screenshot",
               image_url: typeof lcImage.image_url === "string" ? lcImage.image_url : lcImage.image_url.url
             };
           }
@@ -40635,12 +40280,6 @@ const convertMessagesToResponsesInput = ({ messages, zdrEnabled, model }) => {
           call_id: toolCall.id ?? "",
           input: toolCall.args.input,
           name: toolCall.name
-        };
-        if (isComputerToolCall(toolCall)) return {
-          type: "computer_call",
-          id: toolCall.call_id,
-          call_id: toolCall.id ?? "",
-          action: toolCall.args.action
         };
         return {
           type: "function_call",
@@ -40725,7 +40364,7 @@ var ChatOpenAIResponses = class extends BaseChatOpenAI {
     var _a3;
     let strict;
     if ((options == null ? void 0 : options.strict) !== void 0) strict = options.strict;
-    if (strict === void 0 && this.supportsStrictToolCalling !== void 0) strict = this.supportsStrictToolCalling;
+    else if (this.supportsStrictToolCalling !== void 0) strict = this.supportsStrictToolCalling;
     const params = {
       model: this.model,
       temperature: this.temperature,
@@ -40782,7 +40421,6 @@ var ChatOpenAIResponses = class extends BaseChatOpenAI {
       parallel_tool_calls: options == null ? void 0 : options.parallel_tool_calls,
       max_output_tokens: this.maxTokens === -1 ? void 0 : this.maxTokens,
       prompt_cache_key: (options == null ? void 0 : options.promptCacheKey) ?? this.promptCacheKey,
-      prompt_cache_retention: (options == null ? void 0 : options.promptCacheRetention) ?? this.promptCacheRetention,
       ...this.zdrEnabled ? { store: false } : {},
       ...this.modelKwargs
     };
@@ -40920,7 +40558,7 @@ var ChatOpenAI = class ChatOpenAI2 extends BaseChatOpenAI {
     const usesBuiltInTools = (_a3 = options == null ? void 0 : options.tools) == null ? void 0 : _a3.some(isBuiltInTool);
     const hasResponsesOnlyKwargs = (options == null ? void 0 : options.previous_response_id) != null || (options == null ? void 0 : options.text) != null || (options == null ? void 0 : options.truncation) != null || (options == null ? void 0 : options.include) != null || ((_b = options == null ? void 0 : options.reasoning) == null ? void 0 : _b.summary) != null || ((_c = this.reasoning) == null ? void 0 : _c.summary) != null;
     const hasCustomTools = ((_d = options == null ? void 0 : options.tools) == null ? void 0 : _d.some(isOpenAICustomTool)) || ((_e = options == null ? void 0 : options.tools) == null ? void 0 : _e.some(isCustomTool));
-    return this.useResponsesApi || usesBuiltInTools || hasResponsesOnlyKwargs || hasCustomTools || _modelPrefersResponsesAPI(this.model);
+    return this.useResponsesApi || usesBuiltInTools || hasResponsesOnlyKwargs || hasCustomTools;
   }
   getLsParams(options) {
     const optionsWithDefaults = this._combineCallOptions(options);
@@ -41526,107 +41164,6 @@ function _stringify(content) {
     return `${content}`;
   }
 }
-const ComputerUseScreenshotActionSchema = object({ type: literal("screenshot") });
-const ComputerUseClickActionSchema = object({
-  type: literal("click"),
-  x: number(),
-  y: number(),
-  button: _enum([
-    "left",
-    "right",
-    "wheel",
-    "back",
-    "forward"
-  ]).default("left")
-});
-const ComputerUseDoubleClickActionSchema = object({
-  type: literal("double_click"),
-  x: number(),
-  y: number(),
-  button: _enum([
-    "left",
-    "right",
-    "wheel",
-    "back",
-    "forward"
-  ]).default("left")
-});
-const ComputerUseDragActionSchema = object({
-  type: literal("drag"),
-  path: array(object({
-    x: number(),
-    y: number()
-  }))
-});
-const ComputerUseKeypressActionSchema = object({
-  type: literal("keypress"),
-  keys: array(string())
-});
-const ComputerUseMoveActionSchema = object({
-  type: literal("move"),
-  x: number(),
-  y: number()
-});
-const ComputerUseScrollActionSchema = object({
-  type: literal("scroll"),
-  x: number(),
-  y: number(),
-  scroll_x: number(),
-  scroll_y: number()
-});
-const ComputerUseTypeActionSchema = object({
-  type: literal("type"),
-  text: string()
-});
-const ComputerUseWaitActionSchema = object({
-  type: literal("wait"),
-  duration: number().optional()
-});
-const ComputerUseActionUnionSchema = discriminatedUnion("type", [
-  ComputerUseScreenshotActionSchema,
-  ComputerUseClickActionSchema,
-  ComputerUseDoubleClickActionSchema,
-  ComputerUseDragActionSchema,
-  ComputerUseKeypressActionSchema,
-  ComputerUseMoveActionSchema,
-  ComputerUseScrollActionSchema,
-  ComputerUseTypeActionSchema,
-  ComputerUseWaitActionSchema
-]);
-object({ action: ComputerUseActionUnionSchema });
-const LocalShellExecActionSchema = object({
-  type: literal("exec"),
-  command: array(string()),
-  env: record(string(), string()).optional(),
-  working_directory: string().optional(),
-  timeout_ms: number().optional(),
-  user: string().optional()
-});
-discriminatedUnion("type", [LocalShellExecActionSchema]);
-object({
-  commands: array(string()).describe("Array of shell commands to execute"),
-  timeout_ms: number().optional().describe("Optional timeout in milliseconds for the commands"),
-  max_output_length: number().optional().describe("Optional maximum number of characters to return from each command")
-});
-const ApplyPatchCreateFileOperationSchema = object({
-  type: literal("create_file"),
-  path: string(),
-  diff: string()
-});
-const ApplyPatchUpdateFileOperationSchema = object({
-  type: literal("update_file"),
-  path: string(),
-  diff: string()
-});
-const ApplyPatchDeleteFileOperationSchema = object({
-  type: literal("delete_file"),
-  path: string()
-});
-discriminatedUnion("type", [
-  ApplyPatchCreateFileOperationSchema,
-  ApplyPatchUpdateFileOperationSchema,
-  ApplyPatchDeleteFileOperationSchema
-]);
 var main = { exports: {} };
 const version$1 = "17.2.3";
 const require$$4 = {
@@ -42282,7 +41819,7 @@ class AuditService {
   async log(entry) {
     await this.ready;
     if (!this.encryptionKey) await this.loadOrGenerateKey();
-    const id = v4$1();
+    const id = v4$2();
     const timestamp = (/* @__PURE__ */ new Date()).toISOString();
     const detailsStr = JSON.stringify(entry.details);
     const encryptedDetails = this.encrypt(detailsStr);
@@ -42308,6 +41845,8 @@ class AuditService {
     const rows = stmt.all(limit2);
     return rows.map((row) => ({
       ...row,
+      actor: row.actor,
+      status: row.status,
       details: this.decrypt(row.details)
     }));
   }
@@ -42397,443 +41936,106 @@ var PolicyDecision = /* @__PURE__ */ ((PolicyDecision2) => {
   PolicyDecision2["NEEDS_APPROVAL"] = "needs_approval";
   return PolicyDecision2;
 })(PolicyDecision || {});
+const DOMAIN_RISK_LEVELS = {
+  "localhost:3000": "low",
+  "github.com": "low",
+  "google.com": "low",
+  "duckduckgo.com": "low",
+  "wikipedia.org": "low"
+  /* LOW */
+};
+const TOOL_RISK_LEVELS = {
+  "browser_observe": "low",
+  "browser_navigate": "medium",
+  "browser_click": "medium",
+  "browser_type": "high",
+  "browser_execute_plan": "high",
+  "browser_open_tab": "medium",
+  "api_web_search": "low"
+  /* LOW */
+};
 const RemotePolicySchema = object({
-  version: number().int().min(1).default(1),
-  fetchedAt: number().int().optional(),
+  version: number(),
+  fetchedAt: number().optional(),
   domainAllowlist: array(string()).optional(),
   domainBlocklist: array(string()).optional(),
   domainRiskOverrides: record(string(), _enum(["low", "medium", "high"])).optional(),
   toolRiskOverrides: record(string(), _enum(["low", "medium", "high"])).optional()
 });
-const TOOL_RISK_LEVELS = {
-  // Browser observation tools - LOW risk
-  "browser_observe": 0,
-  "browser_wait_for_selector": 0,
-  "browser_wait_for_url": 0,
-  "browser_wait_for_text": 0,
-  "browser_wait_for_text_in": 0,
-  "browser_find_text": 0,
-  "browser_get_text": 0,
-  "browser_extract_main_text": 1,
-  // Extraction is risky but read-only
-  // Browser navigation - LOW to MEDIUM risk
-  "browser_navigate": 0,
-  "browser_go_back": 0,
-  "browser_go_forward": 0,
-  "browser_reload": 0,
-  // Browser interaction - MEDIUM risk
-  "browser_click": 1,
-  "browser_click_text": 1,
-  "browser_type": 1,
-  "browser_select": 1,
-  "browser_scroll": 1,
-  "browser_press_key": 1,
-  "browser_focus": 1,
-  "browser_clear": 1,
-  // Complex browser operations - HIGH risk
-  "browser_execute_plan": 2,
-  "browser_screenshot": 1,
-  // Mock SaaS operations - MEDIUM to HIGH risk
-  "jira_create_issue": 2,
-  "jira_update_issue": 1,
-  "jira_delete_issue": 2,
-  "confluence_create_page": 2,
-  "confluence_update_page": 1,
-  "confluence_delete_page": 2,
-  "trello_create_card": 1,
-  "trello_move_card": 1,
-  "trello_delete_card": 2,
-  // Code and file operations - MEDIUM to HIGH risk
-  "code_read_file": 0,
-  "code_list_files": 0,
-  "code_search": 0,
-  "code_execute": 2,
-  "code_write_file": 2,
-  "code_delete_file": 2,
-  // System operations - HIGH risk
-  "system_execute": 2,
-  "system_write_file": 2,
-  "system_delete_file": 2
-  /* HIGH */
-};
-const DOMAIN_RISK_LEVELS = {
-  // Local development - LOW risk
-  "localhost": 0,
-  "127.0.0.1": 0,
-  "0.0.0.0": 0,
-  // Mock SaaS - LOW risk (sandboxed)
-  "mock-saas.com": 0,
-  "localhost:3000": 0,
-  // Trusted domains - LOW risk
-  "docs.example.com": 0,
-  "help.example.com": 0,
-  // Production domains - MEDIUM to HIGH risk
-  "app.example.com": 1,
-  "admin.example.com": 2,
-  "api.example.com": 1,
-  // External domains - HIGH risk
-  "github.com": 1,
-  "stackoverflow.com": 0,
-  "google.com": 0,
-  "duckduckgo.com": 0,
-  "icons.duckduckgo.com": 0
-  /* LOW */
-};
 class PolicyService {
-  constructor(telemetryService2, auditService2) {
+  constructor(auditServiceInstance = auditService, telemetryServiceInstance = telemetryService) {
     __publicField(this, "rules", []);
-    __publicField(this, "telemetryService");
-    __publicField(this, "auditService");
+    __publicField(this, "cacheFilePath");
     __publicField(this, "remotePolicy", null);
     __publicField(this, "remotePolicyUrl", null);
-    __publicField(this, "cacheFilePath");
-    __publicField(this, "developerOverrideEnabled", false);
-    this.telemetryService = telemetryService2;
-    this.auditService = auditService2;
-    this.cacheFilePath = path$2.join(app.getPath("userData"), "remote_policy_cache.json");
-    this.initializeDefaultRules();
+    __publicField(this, "remotePolicyAuthToken", null);
+    __publicField(this, "syncTimer", null);
+    __publicField(this, "syncStatus", "idle");
+    __publicField(this, "lastSyncError", null);
+    __publicField(this, "adminMessage", null);
+    __publicField(this, "developerOverride", false);
+    this.auditServiceInstance = auditServiceInstance;
+    this.telemetryServiceInstance = telemetryServiceInstance;
+    this.cacheFilePath = path$2.join(process.cwd(), "policy_cache.json");
+    this.setupDefaultRules();
+    this.loadCachedRemotePolicy();
   }
-  async init(opts) {
-    if (opts == null ? void 0 : opts.remotePolicyUrl) {
-      this.remotePolicyUrl = opts.remotePolicyUrl;
-    }
-    const envSecret = process.env.POLICY_DEV_OVERRIDE_SECRET;
-    if (typeof envSecret === "string" && envSecret.trim()) {
-      const existing = await vaultService.getSecret("policy_dev_override_secret").catch(() => null);
-      if (!existing) {
-        await vaultService.setSecret("policy_dev_override_secret", envSecret.trim()).catch(() => void 0);
-      }
-    }
-    await this.loadCachedRemotePolicy();
-    if (this.remotePolicyUrl) {
-      await this.fetchRemotePolicies(this.remotePolicyUrl).catch(() => void 0);
-    }
-  }
-  toRiskLevel(v) {
-    if (v === "low") return 0;
-    if (v === "medium") return 1;
-    return 2;
-  }
-  applyRemotePolicy(bundle) {
-    this.remotePolicy = bundle;
-    const domainOverrides = bundle.domainRiskOverrides ?? {};
-    for (const [domain, lvl] of Object.entries(domainOverrides)) {
-      this.updateDomainRiskLevel(domain, this.toRiskLevel(lvl));
-    }
-    const toolOverrides = bundle.toolRiskOverrides ?? {};
-    for (const [tool2, lvl] of Object.entries(toolOverrides)) {
-      this.updateToolRiskLevel(tool2, this.toRiskLevel(lvl));
-    }
-  }
-  async loadCachedRemotePolicy() {
-    try {
-      const raw = await fs$1.readFile(this.cacheFilePath, "utf8");
-      const parsed = JSON.parse(raw);
-      const validated = RemotePolicySchema.parse(parsed);
-      const bundle = {
-        version: validated.version,
-        fetchedAt: typeof validated.fetchedAt === "number" ? validated.fetchedAt : Date.now(),
-        domainAllowlist: validated.domainAllowlist,
-        domainBlocklist: validated.domainBlocklist,
-        domainRiskOverrides: validated.domainRiskOverrides,
-        toolRiskOverrides: validated.toolRiskOverrides
-      };
-      this.applyRemotePolicy(bundle);
-    } catch {
-    }
-  }
-  async saveCachedRemotePolicy(bundle) {
-    try {
-      await fs$1.writeFile(this.cacheFilePath, JSON.stringify(bundle, null, 2), "utf8");
-    } catch {
-    }
-  }
-  async fetchRemotePolicies(url) {
-    this.remotePolicyUrl = url;
-    const res = await fetch(url, { method: "GET" });
-    if (!res.ok) {
-      throw new Error(`Failed to fetch remote policy: HTTP ${res.status}`);
-    }
-    const json = await res.json();
-    const validated = RemotePolicySchema.parse(json);
-    const bundle = {
-      version: validated.version,
-      fetchedAt: Date.now(),
-      domainAllowlist: validated.domainAllowlist,
-      domainBlocklist: validated.domainBlocklist,
-      domainRiskOverrides: validated.domainRiskOverrides,
-      toolRiskOverrides: validated.toolRiskOverrides
-    };
-    this.applyRemotePolicy(bundle);
-    await this.saveCachedRemotePolicy(bundle);
-    return bundle;
-  }
-  getRemotePolicyStatus() {
-    const rp = this.remotePolicy;
-    return {
-      configuredUrl: this.remotePolicyUrl,
-      hasRemotePolicy: Boolean(rp),
-      version: (rp == null ? void 0 : rp.version) ?? null,
-      fetchedAt: (rp == null ? void 0 : rp.fetchedAt) ?? null,
-      allowlistCount: Array.isArray(rp == null ? void 0 : rp.domainAllowlist) ? rp.domainAllowlist.length : 0,
-      blocklistCount: Array.isArray(rp == null ? void 0 : rp.domainBlocklist) ? rp.domainBlocklist.length : 0,
-      developerOverrideEnabled: this.developerOverrideEnabled
-    };
-  }
-  async setDeveloperOverride(enabled, token) {
-    if (!enabled) {
-      this.developerOverrideEnabled = false;
-      return true;
-    }
-    const secret = await vaultService.getSecret("policy_dev_override_secret");
-    if (!secret) return false;
-    if (typeof token !== "string") return false;
-    if (token !== secret) return false;
-    this.developerOverrideEnabled = true;
-    return true;
-  }
-  initializeDefaultRules() {
+  setupDefaultRules() {
     this.addRule({
-      name: "developer-override",
-      description: "Developer override",
-      priority: 2e3,
-      match: () => this.developerOverrideEnabled,
-      evaluate: () => ({
-        decision: "allow",
-        riskLevel: 0,
-        reason: "Developer override enabled",
-        matchedRule: "developer-override"
-      })
-    });
-    this.addRule({
-      name: "remote-domain-blocklist",
-      description: "Blocklisted domains",
-      priority: 1100,
-      match: (ctx) => {
-        var _a3;
-        const list = (_a3 = this.remotePolicy) == null ? void 0 : _a3.domainBlocklist;
-        if (!ctx.domain) return false;
-        if (!Array.isArray(list) || list.length === 0) return false;
-        return list.includes(ctx.domain);
-      },
-      evaluate: (ctx) => ({
-        decision: "deny",
-        riskLevel: 2,
-        reason: `Domain blocked by remote policy: ${ctx.domain}`,
-        matchedRule: "remote-domain-blocklist"
-      })
-    });
-    this.addRule({
-      name: "remote-domain-allowlist",
-      description: "Allowlisted domains",
-      priority: 1090,
-      match: (ctx) => {
-        var _a3;
-        const list = (_a3 = this.remotePolicy) == null ? void 0 : _a3.domainAllowlist;
-        if (!ctx.domain) return false;
-        if (!Array.isArray(list) || list.length === 0) return false;
-        return !list.includes(ctx.domain);
-      },
-      evaluate: (ctx) => {
-        const tool2 = ctx.toolName;
-        const lowRiskTools = [
-          "browser_observe",
-          "browser_wait_for_selector",
-          "browser_wait_for_url",
-          "browser_wait_for_text",
-          "browser_wait_for_text_in",
-          "browser_get_text",
-          "browser_find_text",
-          "browser_screenshot",
-          "code_read_file",
-          "code_list_files",
-          "code_search"
-        ];
-        if (lowRiskTools.includes(tool2)) {
-          return {
-            decision: "allow",
-            riskLevel: 0,
-            reason: `Domain not allowlisted but tool is read-only: ${ctx.domain}`,
-            matchedRule: "remote-domain-allowlist"
-          };
-        }
-        if (tool2 === "browser_navigate") {
-          return {
-            decision: "deny",
-            riskLevel: 2,
-            reason: `Navigation denied to non-allowlisted domain: ${ctx.domain}`,
-            matchedRule: "remote-domain-allowlist"
-          };
-        }
-        return {
-          decision: "deny",
-          riskLevel: 2,
-          reason: `Tool denied on non-allowlisted domain: ${ctx.domain}`,
-          matchedRule: "remote-domain-allowlist"
-        };
-      }
-    });
-    this.addRule({
-      name: "observe-only-enforcement",
-      description: "Block state-modifying tools in observe-only mode",
-      priority: 1e3,
-      match: (ctx) => Boolean(ctx.observeOnly),
-      evaluate: (ctx) => {
-        const allowedTools = [
-          "browser_observe",
-          "browser_navigate",
-          // Allowed to move around to observe
-          "browser_go_back",
-          "browser_go_forward",
-          "browser_reload",
-          "browser_scroll",
-          "browser_wait_for_selector",
-          "browser_wait_for_url",
-          "browser_wait_for_text",
-          "browser_wait_for_text_in",
-          "browser_get_text",
-          "browser_find_text",
-          "browser_extract_main_text",
-          "browser_screenshot",
-          "code_read_file",
-          "code_list_files",
-          "code_search"
-        ];
-        if (!allowedTools.includes(ctx.toolName)) {
-          return {
-            decision: "deny",
-            riskLevel: 2,
-            reason: "Tool execution denied: Observe-only mode is active",
-            matchedRule: "observe-only-enforcement"
-          };
-        }
-        return {
-          decision: "allow",
-          riskLevel: 0,
-          reason: "Tool allowed in observe-only mode (pending further checks)",
-          matchedRule: "observe-only-enforcement"
-        };
-      }
-    });
-    this.addRule({
-      name: "dangerous-operations-deny",
-      description: "Deny dangerous system operations",
+      name: "domain-blocklist",
       priority: 100,
       match: (ctx) => {
-        const dangerousTools = ["system_execute", "system_delete_file", "code_execute"];
-        return dangerousTools.includes(ctx.toolName);
-      },
-      evaluate: (_ctx) => ({
-        decision: "deny",
-        riskLevel: 2,
-        reason: "Dangerous system operations are not allowed",
-        matchedRule: "dangerous-operations-deny"
-      })
-    });
-    this.addRule({
-      name: "admin-bypass",
-      description: "Allow low/medium risk operations in admin mode",
-      priority: 90,
-      match: (ctx) => ctx.userMode === "admin",
-      evaluate: (ctx) => {
-        const toolRisk = TOOL_RISK_LEVELS[ctx.toolName] || 1;
-        const domainRisk = ctx.domain ? DOMAIN_RISK_LEVELS[ctx.domain] || 1 : 1;
-        const finalRisk = toolRisk > domainRisk ? toolRisk : domainRisk;
-        if (finalRisk === 2) {
-          return {
-            decision: "needs_approval",
-            riskLevel: 2,
-            reason: "High risk operation requires approval even in admin mode",
-            matchedRule: "admin-bypass"
-          };
-        }
-        return {
-          decision: "allow",
-          riskLevel: finalRisk,
-          reason: "Allowed in admin mode",
-          matchedRule: "admin-bypass"
-        };
-      }
-    });
-    this.addRule({
-      name: "high-risk-domains",
-      description: "Require approval for operations on high-risk domains",
-      priority: 80,
-      match: (ctx) => {
-        const domainRisk = ctx.domain ? DOMAIN_RISK_LEVELS[ctx.domain] : 1;
-        return domainRisk === 2;
+        var _a3, _b;
+        if (!ctx.domain) return false;
+        return ((_b = (_a3 = this.remotePolicy) == null ? void 0 : _a3.domainBlocklist) == null ? void 0 : _b.includes(ctx.domain)) ?? false;
       },
       evaluate: (ctx) => ({
-        decision: "needs_approval",
-        riskLevel: 2,
-        reason: `High risk domain: ${ctx.domain}`,
-        matchedRule: "high-risk-domains"
+        decision: "deny",
+        riskLevel: "high",
+        reason: `Domain ${ctx.domain} is explicitly blocked by enterprise policy`,
+        matchedRule: "domain-blocklist"
       })
     });
     this.addRule({
-      name: "extract-main-text-gating",
-      description: "Gate browser_extract_main_text to reduce sensitive data exposure",
-      priority: 85,
-      match: (ctx) => ctx.toolName === "browser_extract_main_text",
-      evaluate: (ctx) => {
-        const domainRisk = ctx.domain ? DOMAIN_RISK_LEVELS[ctx.domain] : void 0;
-        const effectiveRisk = domainRisk === void 0 ? 2 : domainRisk;
-        if (effectiveRisk === 0) {
-          return {
-            decision: "needs_approval",
-            riskLevel: 1,
-            reason: "Extract main text requires approval",
-            matchedRule: "extract-main-text-gating"
-          };
-        }
-        return {
-          decision: "needs_approval",
-          riskLevel: 2,
-          reason: `Extract main text on non-low-risk domain: ${ctx.domain ?? "unknown"}`,
-          matchedRule: "extract-main-text-gating"
-        };
-      }
-    });
-    this.addRule({
-      name: "external-file-operations",
-      description: "File uploads/downloads on external domains need approval",
-      priority: 70,
+      name: "domain-allowlist",
+      priority: 90,
       match: (ctx) => {
-        const fileOps = ["code_write_file", "code_delete_file"];
-        const isExternal = Boolean(ctx.domain && !(ctx.domain in DOMAIN_RISK_LEVELS));
-        return fileOps.includes(ctx.toolName) && isExternal;
+        var _a3, _b;
+        if (!ctx.domain) return false;
+        return ((_b = (_a3 = this.remotePolicy) == null ? void 0 : _a3.domainAllowlist) == null ? void 0 : _b.includes(ctx.domain)) ?? false;
       },
-      evaluate: (_ctx) => ({
-        decision: "needs_approval",
-        riskLevel: 2,
-        reason: "File operations on external domains require approval",
-        matchedRule: "external-file-operations"
+      evaluate: (ctx) => ({
+        decision: "allow",
+        riskLevel: "low",
+        reason: `Domain ${ctx.domain} is explicitly allowed by enterprise policy`,
+        matchedRule: "domain-allowlist"
       })
     });
     this.addRule({
       name: "default-risk-evaluation",
-      description: "Default evaluation based on tool and domain risk",
       priority: 0,
       match: () => true,
-      // Always matches as fallback
+      // Catch-all
       evaluate: (ctx) => {
-        const toolRisk = TOOL_RISK_LEVELS[ctx.toolName] || 1;
-        const domainRisk = ctx.domain ? DOMAIN_RISK_LEVELS[ctx.domain] || 1 : 1;
-        const finalRisk = toolRisk > domainRisk ? toolRisk : domainRisk;
-        const argsRisk = this.evaluateArgsRisk(ctx);
-        const escalatedRisk = argsRisk > finalRisk ? argsRisk : finalRisk;
-        if (escalatedRisk === 2) {
+        const toolRisk = TOOL_RISK_LEVELS[ctx.toolName] ?? "medium";
+        const domainRisk = ctx.domain ? DOMAIN_RISK_LEVELS[ctx.domain] ?? "medium" : "medium";
+        let escalatedRisk = toolRisk;
+        if (domainRisk === "high") escalatedRisk = "high";
+        if (toolRisk === "high") escalatedRisk = "high";
+        const argRisk = this.evaluateArgsRisk(ctx);
+        if (argRisk === "high") escalatedRisk = "high";
+        if (escalatedRisk === "high") {
           return {
             decision: "needs_approval",
-            riskLevel: 2,
+            riskLevel: "high",
             reason: "High risk operation detected",
             matchedRule: "default-risk-evaluation"
           };
         }
-        if (escalatedRisk === 1 && ctx.userMode !== "developer") {
+        if (escalatedRisk === "medium" && ctx.userMode !== "developer" && ctx.userMode !== "admin") {
           return {
             decision: "needs_approval",
-            riskLevel: 1,
+            riskLevel: "medium",
             reason: "Medium risk operation requires approval in standard mode",
             matchedRule: "default-risk-evaluation"
           };
@@ -42849,40 +42051,41 @@ class PolicyService {
   }
   evaluateArgsRisk(context) {
     const { args } = context;
-    if (!args || typeof args !== "object") return 0;
+    if (!args || typeof args !== "object") return "low";
     if (context.toolName === "browser_navigate") {
-      if (args && typeof args.url === "string") {
+      const url = args.url;
+      if (url) {
         try {
-          const u = new URL(args.url);
+          const u = new URL(url);
           const domain = u.port ? `${u.hostname}:${u.port}` : u.hostname;
           const domainRisk = DOMAIN_RISK_LEVELS[domain];
-          if (domainRisk === 2 || domainRisk === void 0) {
-            return 2;
+          if (domainRisk === "high" || domainRisk === void 0) {
+            return "high";
           }
         } catch {
-          return 2;
+          return "high";
         }
       }
     }
-    if (context.toolName === "browser_execute_plan") {
+    if (context.toolName === "browser_execute_plan" || context.toolName === "workflow_task") {
       try {
-        const steps = Array.isArray(args == null ? void 0 : args.steps) ? args.steps : [];
+        const steps = Array.isArray(args.steps) ? args.steps : [];
         for (const step of steps) {
           if ((step == null ? void 0 : step.action) === "navigate" && typeof (step == null ? void 0 : step.url) === "string") {
             try {
               const u = new URL(step.url);
               const domain = u.port ? `${u.hostname}:${u.port}` : u.hostname;
               const domainRisk = DOMAIN_RISK_LEVELS[domain];
-              if (domainRisk === 2 || domainRisk === void 0) {
-                return 2;
+              if (domainRisk === "high" || domainRisk === void 0) {
+                return "high";
               }
             } catch {
-              return 2;
+              return "high";
             }
           }
         }
       } catch {
-        return 1;
+        return "medium";
       }
     }
     const riskyPatterns = [
@@ -42898,13 +42101,24 @@ class PolicyService {
     const argsStr = JSON.stringify(args).toLowerCase();
     for (const pattern of riskyPatterns) {
       if (pattern.test(argsStr)) {
-        return 2;
+        return "high";
       }
     }
     if (args.value && typeof args.value === "string" && args.value.length > 1e4) {
-      return 1;
+      return "medium";
     }
-    return 0;
+    return "low";
+  }
+  hashArgs(args) {
+    if (!args) return "";
+    const str2 = JSON.stringify(args);
+    let hash = 0;
+    for (let i = 0; i < str2.length; i++) {
+      const char = str2.charCodeAt(i);
+      hash = (hash << 5) - hash + char;
+      hash = hash & hash;
+    }
+    return Math.abs(hash).toString(16);
   }
   addRule(rule) {
     this.rules.push(rule);
@@ -42922,8 +42136,8 @@ class PolicyService {
         const durationMs = Date.now() - startTime;
         const argsHash = this.hashArgs(context.args);
         try {
-          await this.telemetryService.emit({
-            eventId: v4$1(),
+          await this.telemetryServiceInstance.emit({
+            eventId: v4$2(),
             runId,
             ts: (/* @__PURE__ */ new Date()).toISOString(),
             type: "policy_evaluation",
@@ -42942,7 +42156,7 @@ class PolicyService {
         } catch {
         }
         try {
-          await this.auditService.log({
+          await this.auditServiceInstance.log({
             actor: "system",
             action: "policy_evaluation",
             details: {
@@ -42958,7 +42172,7 @@ class PolicyService {
               argsHash
             },
             status: "success"
-          }).catch(() => void 0);
+          });
         } catch {
         }
         return evaluation;
@@ -42966,43 +42180,140 @@ class PolicyService {
     }
     return {
       decision: "needs_approval",
-      riskLevel: 1,
-      reason: "No policy rule matched"
+      riskLevel: "medium",
+      reason: "No policy rules matched",
+      matchedRule: "none"
     };
   }
-  hashArgs(args) {
-    if (!args) return "";
-    const str2 = JSON.stringify(args);
-    let hash = 0;
-    for (let i = 0; i < str2.length; i++) {
-      const char = str2.charCodeAt(i);
-      hash = (hash << 5) - hash + char;
-      hash = hash & hash;
-    }
-    return hash.toString(36);
-  }
-  // Helper methods for policy management
-  getRules() {
-    return [...this.rules];
-  }
   getToolRiskLevel(toolName) {
-    return TOOL_RISK_LEVELS[toolName] || 1;
+    return TOOL_RISK_LEVELS[toolName] || "medium";
   }
   getDomainRiskLevel(domain) {
-    return DOMAIN_RISK_LEVELS[domain] || 1;
+    return DOMAIN_RISK_LEVELS[domain] || "medium";
   }
-  // Update domain risk levels at runtime
   updateDomainRiskLevel(domain, riskLevel) {
     DOMAIN_RISK_LEVELS[domain] = riskLevel;
   }
-  // Update tool risk levels at runtime
   updateToolRiskLevel(toolName, riskLevel) {
     TOOL_RISK_LEVELS[toolName] = riskLevel;
   }
+  async syncPolicies() {
+    if (!this.remotePolicyUrl) return { success: false, error: "No remote policy URL configured" };
+    this.syncStatus = "syncing";
+    try {
+      const bundle = await this.fetchRemotePolicies(this.remotePolicyUrl);
+      this.applyRemotePolicy(bundle);
+      this.syncStatus = "synced";
+      this.lastSyncError = null;
+      return { success: true };
+    } catch (err) {
+      this.syncStatus = "error";
+      this.lastSyncError = err instanceof Error ? err.message : String(err);
+      return { success: false, error: this.lastSyncError };
+    }
+  }
+  async fetchRemotePolicies(url) {
+    const headers = { "Content-Type": "application/json" };
+    if (this.remotePolicyAuthToken) {
+      headers["Authorization"] = `Bearer ${this.remotePolicyAuthToken}`;
+    }
+    const response = await fetch(url, { headers });
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    const data = await response.json();
+    return RemotePolicySchema.parse(data);
+  }
+  applyRemotePolicy(bundle) {
+    this.remotePolicy = bundle;
+    if (bundle.domainRiskOverrides) {
+      for (const [domain, lvl] of Object.entries(bundle.domainRiskOverrides)) {
+        this.updateDomainRiskLevel(domain, this.toRiskLevel(lvl));
+      }
+    }
+    if (bundle.toolRiskOverrides) {
+      for (const [tool2, lvl] of Object.entries(bundle.toolRiskOverrides)) {
+        this.updateToolRiskLevel(tool2, this.toRiskLevel(lvl));
+      }
+    }
+    this.saveCachedRemotePolicy(bundle);
+  }
+  toRiskLevel(v) {
+    if (v === "low") return "low";
+    if (v === "medium") return "medium";
+    return "high";
+  }
+  async loadCachedRemotePolicy() {
+    try {
+      const raw = await fs$1.readFile(this.cacheFilePath, "utf8");
+      const bundle = RemotePolicySchema.parse(JSON.parse(raw));
+      this.applyRemotePolicy(bundle);
+    } catch {
+    }
+  }
+  async saveCachedRemotePolicy(bundle) {
+    try {
+      await fs$1.writeFile(this.cacheFilePath, JSON.stringify(bundle, null, 2), "utf8");
+    } catch {
+    }
+  }
+  configure(cfg) {
+    this.remotePolicyUrl = cfg.url;
+    this.remotePolicyAuthToken = cfg.authToken ?? null;
+  }
+  startPeriodicSync(intervalMs = 3e5) {
+    if (this.syncTimer) clearInterval(this.syncTimer);
+    this.syncTimer = setInterval(() => this.syncPolicies(), intervalMs);
+  }
+  async init(cfg) {
+    if (cfg == null ? void 0 : cfg.remotePolicyUrl) {
+      this.remotePolicyUrl = cfg.remotePolicyUrl;
+      await this.syncPolicies();
+    }
+  }
+  getRemotePolicyStatus() {
+    var _a3;
+    return {
+      configured: !!this.remotePolicyUrl,
+      url: this.remotePolicyUrl,
+      lastSync: ((_a3 = this.remotePolicy) == null ? void 0 : _a3.fetchedAt) ? new Date(this.remotePolicy.fetchedAt).toISOString() : null,
+      status: this.syncStatus
+    };
+  }
+  getSyncState() {
+    return {
+      status: this.syncStatus,
+      lastError: this.lastSyncError
+    };
+  }
+  async configureRemotePolicy(url, authToken) {
+    this.remotePolicyUrl = url;
+    this.remotePolicyAuthToken = authToken ?? null;
+    return this.syncPolicies();
+  }
+  async setAuthToken(token) {
+    this.remotePolicyAuthToken = token;
+  }
+  async clearAuthToken() {
+    this.remotePolicyAuthToken = null;
+  }
+  getAdminMessage() {
+    return this.adminMessage;
+  }
+  setAdminMessage(message) {
+    this.adminMessage = message;
+  }
+  async setDeveloperOverride(enabled, _token) {
+    this.developerOverride = enabled;
+    return true;
+  }
+  isDeveloperOverrideEnabled() {
+    return this.developerOverride;
+  }
 }
+new PolicyService();
 class ToolRegistry {
   constructor() {
     __publicField(this, "tools", /* @__PURE__ */ new Map());
+    __publicField(this, "langChainToolsCache", /* @__PURE__ */ new Map());
     __publicField(this, "approvalHandler", null);
     __publicField(this, "policyService", null);
   }
@@ -43020,12 +42331,39 @@ class ToolRegistry {
       console.warn(`Tool with name ${tool2.name} is already registered. Overwriting.`);
     }
     this.tools.set(tool2.name, tool2);
+    this.langChainToolsCache.delete(tool2.name);
   }
   getTool(name) {
     return this.tools.get(name);
   }
   getAllTools() {
     return Array.from(this.tools.values());
+  }
+  getLangChainTool(name) {
+    const cached2 = this.langChainToolsCache.get(name);
+    if (cached2) return cached2;
+    const tool2 = this.tools.get(name);
+    if (!tool2) return void 0;
+    const registry2 = this;
+    const currentTool = tool2;
+    const structuredTool = new class extends StructuredTool {
+      constructor() {
+        super(...arguments);
+        __publicField(this, "name", currentTool.name);
+        __publicField(this, "description", currentTool.description);
+        __publicField(this, "schema", currentTool.schema);
+      }
+      async _call(arg) {
+        return registry2.invokeToolInternal(currentTool, arg);
+      }
+    }();
+    this.langChainToolsCache.set(name, structuredTool);
+    return structuredTool;
+  }
+  async invokeTool(toolName, arg) {
+    const tool2 = this.tools.get(toolName);
+    if (!tool2) return `Error: Tool '${toolName}' not found.`;
+    return this.invokeToolInternal(tool2, arg);
   }
   async invokeToolInternal(tool2, arg) {
     var _a3;
@@ -43042,11 +42380,11 @@ class ToolRegistry {
       }
     })();
     const argsHash = crypto$2.createHash("sha256").update(argsJson).digest("hex");
-    const toolCallId = v4$1();
+    const toolCallId = v4$2();
     const startedAt = Date.now();
     try {
       await telemetryService.emit({
-        eventId: v4$1(),
+        eventId: v4$2(),
         runId,
         ts: (/* @__PURE__ */ new Date()).toISOString(),
         type: "tool_call_start",
@@ -43061,7 +42399,8 @@ class ToolRegistry {
         action: "tool_call_start",
         details: { runId, toolName: tool2.name, toolCallId, argsHash },
         status: "pending"
-      }).catch(() => void 0);
+      }).catch(() => {
+      });
     } catch {
     }
     const approvalHandler = this.approvalHandler;
@@ -43082,7 +42421,7 @@ class ToolRegistry {
         const durationMs = Date.now() - startedAt;
         try {
           await telemetryService.emit({
-            eventId: v4$1(),
+            eventId: v4$2(),
             runId,
             ts: (/* @__PURE__ */ new Date()).toISOString(),
             type: "tool_call_end",
@@ -43097,7 +42436,8 @@ class ToolRegistry {
             action: "tool_call_denied",
             details: { runId, toolName: tool2.name, toolCallId, reason: policyEvaluation.reason },
             status: "failure"
-          }).catch(() => void 0);
+          }).catch(() => {
+          });
         } catch {
         }
         return `Operation denied by policy: ${policyEvaluation.reason}`;
@@ -43111,13 +42451,14 @@ class ToolRegistry {
               action: "approval_auto_granted",
               details: { runId, toolName: tool2.name, toolCallId, reason: "YOLO mode" },
               status: "success"
-            }).catch(() => void 0);
+            }).catch(() => {
+            });
           } catch {
           }
         } else if (permissionMode === "permissions" || permissionMode === "manual") {
           try {
             await telemetryService.emit({
-              eventId: v4$1(),
+              eventId: v4$2(),
               runId,
               ts: (/* @__PURE__ */ new Date()).toISOString(),
               type: "approval_request",
@@ -43132,7 +42473,8 @@ class ToolRegistry {
               action: "approval_request",
               details: { runId, toolName: tool2.name, toolCallId, argsHash, reason: policyEvaluation.reason },
               status: "pending"
-            }).catch(() => void 0);
+            }).catch(() => {
+            });
           } catch {
           }
           const approvalResult = await approvalHandler(tool2.name, arg);
@@ -43140,7 +42482,7 @@ class ToolRegistry {
           const approvalReason = typeof approvalResult === "boolean" ? approved ? void 0 : "denied" : approvalResult == null ? void 0 : approvalResult.reason;
           try {
             await telemetryService.emit({
-              eventId: v4$1(),
+              eventId: v4$2(),
               runId,
               ts: (/* @__PURE__ */ new Date()).toISOString(),
               type: "approval_decision",
@@ -43155,7 +42497,8 @@ class ToolRegistry {
               action: "approval_decision",
               details: { runId, toolName: tool2.name, toolCallId, argsHash, approved, reason: approvalReason },
               status: approved ? "success" : "failure"
-            }).catch(() => void 0);
+            }).catch(() => {
+            });
           } catch {
           }
           if (!approved) {
@@ -43163,7 +42506,7 @@ class ToolRegistry {
             const isTimeout = approvalReason === "timeout";
             try {
               await telemetryService.emit({
-                eventId: v4$1(),
+                eventId: v4$2(),
                 runId,
                 ts: (/* @__PURE__ */ new Date()).toISOString(),
                 type: "tool_call_end",
@@ -43178,7 +42521,8 @@ class ToolRegistry {
                 action: isTimeout ? "approval_timeout" : "tool_call_denied",
                 details: { runId, toolName: tool2.name, toolCallId },
                 status: "failure"
-              }).catch(() => void 0);
+              }).catch(() => {
+              });
             } catch {
             }
             return isTimeout ? "Approval timed out for this tool." : "User denied execution of this tool.";
@@ -43194,13 +42538,14 @@ class ToolRegistry {
             action: "approval_auto_granted",
             details: { runId, toolName: tool2.name, toolCallId, reason: "YOLO mode" },
             status: "success"
-          }).catch(() => void 0);
+          }).catch(() => {
+          });
         } catch {
         }
       } else if (permissionMode === "permissions" || permissionMode === "manual") {
         try {
           await telemetryService.emit({
-            eventId: v4$1(),
+            eventId: v4$2(),
             runId,
             ts: (/* @__PURE__ */ new Date()).toISOString(),
             type: "approval_request",
@@ -43215,7 +42560,8 @@ class ToolRegistry {
             action: "approval_request",
             details: { runId, toolName: tool2.name, toolCallId, argsHash },
             status: "pending"
-          }).catch(() => void 0);
+          }).catch(() => {
+          });
         } catch {
         }
         const approvalResult = await approvalHandler(tool2.name, arg);
@@ -43223,7 +42569,7 @@ class ToolRegistry {
         const approvalReason = typeof approvalResult === "boolean" ? approved ? void 0 : "denied" : approvalResult == null ? void 0 : approvalResult.reason;
         try {
           await telemetryService.emit({
-            eventId: v4$1(),
+            eventId: v4$2(),
             runId,
             ts: (/* @__PURE__ */ new Date()).toISOString(),
             type: "approval_decision",
@@ -43238,7 +42584,8 @@ class ToolRegistry {
             action: "approval_decision",
             details: { runId, toolName: tool2.name, toolCallId, argsHash, approved, reason: approvalReason },
             status: approved ? "success" : "failure"
-          }).catch(() => void 0);
+          }).catch(() => {
+          });
         } catch {
         }
         if (!approved) {
@@ -43246,7 +42593,7 @@ class ToolRegistry {
           const isTimeout = approvalReason === "timeout";
           try {
             await telemetryService.emit({
-              eventId: v4$1(),
+              eventId: v4$2(),
               runId,
               ts: (/* @__PURE__ */ new Date()).toISOString(),
               type: "tool_call_end",
@@ -43261,7 +42608,8 @@ class ToolRegistry {
               action: isTimeout ? "approval_timeout" : "tool_call_denied",
               details: { runId, toolName: tool2.name, toolCallId },
               status: "failure"
-            }).catch(() => void 0);
+            }).catch(() => {
+            });
           } catch {
           }
           return isTimeout ? "Approval timed out for this tool." : "User denied execution of this tool.";
@@ -43269,7 +42617,7 @@ class ToolRegistry {
       } else {
         try {
           await telemetryService.emit({
-            eventId: v4$1(),
+            eventId: v4$2(),
             runId,
             ts: (/* @__PURE__ */ new Date()).toISOString(),
             type: "approval_request",
@@ -43284,7 +42632,8 @@ class ToolRegistry {
             action: "approval_request",
             details: { runId, toolName: tool2.name, toolCallId, argsHash },
             status: "pending"
-          }).catch(() => void 0);
+          }).catch(() => {
+          });
         } catch {
         }
         const approvalResult = await approvalHandler(tool2.name, arg);
@@ -43292,7 +42641,7 @@ class ToolRegistry {
         const approvalReason = typeof approvalResult === "boolean" ? approved ? void 0 : "denied" : approvalResult == null ? void 0 : approvalResult.reason;
         try {
           await telemetryService.emit({
-            eventId: v4$1(),
+            eventId: v4$2(),
             runId,
             ts: (/* @__PURE__ */ new Date()).toISOString(),
             type: "approval_decision",
@@ -43307,7 +42656,8 @@ class ToolRegistry {
             action: "approval_decision",
             details: { runId, toolName: tool2.name, toolCallId, argsHash, approved, reason: approvalReason },
             status: approved ? "success" : "failure"
-          }).catch(() => void 0);
+          }).catch(() => {
+          });
         } catch {
         }
         if (!approved) {
@@ -43315,7 +42665,7 @@ class ToolRegistry {
           const isTimeout = approvalReason === "timeout";
           try {
             await telemetryService.emit({
-              eventId: v4$1(),
+              eventId: v4$2(),
               runId,
               ts: (/* @__PURE__ */ new Date()).toISOString(),
               type: "tool_call_end",
@@ -43330,7 +42680,8 @@ class ToolRegistry {
               action: isTimeout ? "approval_timeout" : "tool_call_denied",
               details: { runId, toolName: tool2.name, toolCallId },
               status: "failure"
-            }).catch(() => void 0);
+            }).catch(() => {
+            });
           } catch {
           }
           return isTimeout ? "Approval timed out for this tool." : "User denied execution of this tool.";
@@ -43343,7 +42694,7 @@ class ToolRegistry {
       const durationMs = Date.now() - startedAt;
       try {
         await telemetryService.emit({
-          eventId: v4$1(),
+          eventId: v4$2(),
           runId,
           ts: (/* @__PURE__ */ new Date()).toISOString(),
           type: "tool_call_end",
@@ -43358,20 +42709,22 @@ class ToolRegistry {
           action: "tool_call_end",
           details: { runId, toolName: tool2.name, toolCallId, durationMs },
           status: "success"
-        }).catch(() => void 0);
+        }).catch(() => {
+        });
       } catch {
       }
       return result;
     } catch (e) {
       const durationMs = Date.now() - startedAt;
+      const errorMessage = e instanceof Error ? e.message : String(e);
       try {
         await telemetryService.emit({
-          eventId: v4$1(),
+          eventId: v4$2(),
           runId,
           ts: (/* @__PURE__ */ new Date()).toISOString(),
           type: "tool_call_end",
           name: tool2.name,
-          data: { toolCallId, argsHash, durationMs, error: String((e == null ? void 0 : e.message) ?? e) }
+          data: { toolCallId, argsHash, durationMs, error: errorMessage }
         });
       } catch {
       }
@@ -43379,35 +42732,18 @@ class ToolRegistry {
         auditService.log({
           actor: "agent",
           action: "tool_call_end",
-          details: { runId, toolName: tool2.name, toolCallId, durationMs, error: String((e == null ? void 0 : e.message) ?? e) },
+          details: { runId, toolName: tool2.name, toolCallId, durationMs, error: errorMessage },
           status: "failure"
-        }).catch(() => void 0);
+        }).catch(() => {
+        });
       } catch {
       }
-      return `Tool execution failed: ${String((e == null ? void 0 : e.message) ?? e)}`;
+      return `Tool execution failed: ${errorMessage}`;
     }
-  }
-  async invokeTool(toolName, arg) {
-    const tool2 = this.tools.get(toolName);
-    if (!tool2) return `Error: Tool '${toolName}' not found.`;
-    return this.invokeToolInternal(tool2, arg);
   }
   // Convert to LangChain tools format
   toLangChainTools() {
-    const registry2 = this;
-    return this.getAllTools().map((tool2) => {
-      return new class extends StructuredTool {
-        constructor() {
-          super(...arguments);
-          __publicField(this, "name", tool2.name);
-          __publicField(this, "description", tool2.description);
-          __publicField(this, "schema", tool2.schema);
-        }
-        async _call(arg) {
-          return registry2.invokeToolInternal(tool2, arg);
-        }
-      }();
-    });
+    return this.getAllTools().map((tool2) => this.getLangChainTool(tool2.name));
   }
 }
 const toolRegistry = new ToolRegistry();
@@ -43734,7 +43070,11 @@ class WebAPIService {
       throw new Error(`Skill library fetch failed: ${response.status} ${response.statusText}`);
     }
     const data = await response.json();
-    return Array.isArray(data) ? data : Array.isArray(data == null ? void 0 : data.skills) ? data.skills : [];
+    if (Array.isArray(data)) return data;
+    if (data && typeof data === "object" && "skills" in data && Array.isArray(data.skills)) {
+      return data.skills;
+    }
+    return [];
   }
   async upsertSkillLibrary(skills) {
     const base = this.getCloudBaseUrl();
@@ -43778,29 +43118,27 @@ class WebAPIService {
           }
           const data = await response.json();
           if (searchType === "repositories") {
-            const results = data.items.slice(0, limit2).map((repo) => {
-              var _a3;
-              return {
-                name: repo.full_name,
-                stars: repo.stargazers_count,
-                forks: repo.forks_count,
-                description: ((_a3 = repo.description) == null ? void 0 : _a3.slice(0, 100)) || "",
-                url: repo.html_url,
-                language: repo.language
-              };
-            });
+            const results = data.items.slice(0, limit2).map((repo) => ({
+              name: String(repo.full_name || ""),
+              stars: Number(repo.stargazers_count || 0),
+              forks: Number(repo.forks_count || 0),
+              description: String(repo.description || "").slice(0, 100),
+              url: String(repo.html_url || ""),
+              language: String(repo.language || "")
+            }));
             return JSON.stringify({ total_count: data.total_count, results }, null, 2);
           } else if (searchType === "users") {
             const results = data.items.slice(0, limit2).map((user) => ({
-              login: user.login,
-              url: user.html_url,
-              type: user.type
+              login: String(user.login || ""),
+              url: String(user.html_url || ""),
+              type: String(user.type || "")
             }));
             return JSON.stringify({ total_count: data.total_count, results }, null, 2);
           }
           return JSON.stringify({ total_count: data.total_count, items: data.items.slice(0, limit2) }, null, 2);
         } catch (e) {
-          return JSON.stringify({ error: `Failed to search GitHub: ${e.message}` });
+          const errorMessage = e instanceof Error ? e.message : String(e);
+          return JSON.stringify({ error: `Failed to search GitHub: ${errorMessage}` });
         }
       }
     };
@@ -43830,23 +43168,24 @@ class WebAPIService {
           }
           const data = await response.json();
           const result = {
-            full_name: data.full_name,
-            url: data.html_url,
-            description: data.description || "",
-            homepage: data.homepage || "",
+            full_name: String(data.full_name || ""),
+            url: String(data.html_url || ""),
+            description: String(data.description || ""),
+            homepage: String(data.homepage || ""),
             topics: Array.isArray(data.topics) ? data.topics : [],
-            language: data.language || "",
-            stars: data.stargazers_count,
-            forks: data.forks_count,
-            open_issues: data.open_issues_count,
+            language: String(data.language || ""),
+            stars: Number(data.stargazers_count || 0),
+            forks: Number(data.forks_count || 0),
+            open_issues: Number(data.open_issues_count || 0),
             archived: Boolean(data.archived),
-            updated_at: data.updated_at,
-            created_at: data.created_at,
+            updated_at: String(data.updated_at || ""),
+            created_at: String(data.created_at || ""),
             license: ((_a3 = data.license) == null ? void 0 : _a3.spdx_id) || ""
           };
           return JSON.stringify(result, null, 2);
         } catch (e) {
-          return JSON.stringify({ error: `Failed to fetch repo: ${e.message}` });
+          const errorMessage = e instanceof Error ? e.message : String(e);
+          return JSON.stringify({ error: `Failed to fetch repo: ${errorMessage}` });
         }
       }
     };
@@ -43880,8 +43219,8 @@ class WebAPIService {
             return JSON.stringify({ error: `GitHub API error: ${response.status} ${response.statusText}` });
           }
           const data = await response.json();
-          const contentBase64 = typeof (data == null ? void 0 : data.content) === "string" ? data.content : "";
-          const encoding = typeof (data == null ? void 0 : data.encoding) === "string" ? data.encoding : "";
+          const contentBase64 = data.content || "";
+          const encoding = data.encoding || "";
           if (!contentBase64 || encoding !== "base64") {
             return JSON.stringify({ error: "Unexpected README response format from GitHub API." });
           }
@@ -43891,9 +43230,9 @@ class WebAPIService {
             {
               owner,
               repo,
-              name: (data == null ? void 0 : data.name) || "README",
-              path: (data == null ? void 0 : data.path) || "",
-              html_url: (data == null ? void 0 : data.html_url) || "",
+              name: data.name || "README",
+              path: data.path || "",
+              html_url: data.html_url || "",
               text: truncated,
               truncated: truncated.length < text.length
             },
@@ -43901,7 +43240,8 @@ class WebAPIService {
             2
           );
         } catch (e) {
-          return JSON.stringify({ error: `Failed to fetch README: ${e.message}` });
+          const errorMessage = e instanceof Error ? e.message : String(e);
+          return JSON.stringify({ error: `Failed to fetch README: ${errorMessage}` });
         }
       }
     };
@@ -43927,15 +43267,16 @@ class WebAPIService {
             })
           );
           const results = stories.map((story) => ({
-            title: story.title,
-            score: story.score,
-            url: story.url || `https://news.ycombinator.com/item?id=${story.id}`,
-            by: story.by,
-            comments: story.descendants || 0
+            title: String(story.title || ""),
+            score: Number(story.score || 0),
+            url: String(story.url || `https://news.ycombinator.com/item?id=${story.id}`),
+            by: String(story.by || ""),
+            comments: Number(story.descendants || 0)
           }));
           return JSON.stringify({ results }, null, 2);
         } catch (e) {
-          return JSON.stringify({ error: `Failed to fetch HN stories: ${e.message}` });
+          const errorMessage = e instanceof Error ? e.message : String(e);
+          return JSON.stringify({ error: `Failed to fetch HN stories: ${errorMessage}` });
         }
       }
     };
@@ -43968,7 +43309,8 @@ class WebAPIService {
           };
           return JSON.stringify(result, null, 2);
         } catch (e) {
-          return JSON.stringify({ error: `Failed to fetch Wikipedia featured: ${e.message}` });
+          const errorMessage = e instanceof Error ? e.message : String(e);
+          return JSON.stringify({ error: `Failed to fetch Wikipedia featured: ${errorMessage}` });
         }
       }
     };
@@ -43999,7 +43341,8 @@ class WebAPIService {
           const text = await response.text();
           return text.slice(0, 5e3);
         } catch (e) {
-          return JSON.stringify({ error: `HTTP request failed: ${e.message}` });
+          const errorMessage = e instanceof Error ? e.message : String(e);
+          return JSON.stringify({ error: `HTTP request failed: ${errorMessage}` });
         }
       }
     };
@@ -44008,7 +43351,7 @@ class WebAPIService {
     });
     const cryptoPriceTool = {
       name: "api_crypto_price",
-      description: "Get current cryptocurrency price via CoinGecko API. Use this instead of navigating to coinmarketcap.com or other crypto sites. Returns price in USD, 24h change, and market cap.",
+      description: "Get current cryptocurrency price via CoinGecko API. Use this instead of navigating to coinmarketcap.com. Returns price in USD, 24h change, and market cap.",
       schema: cryptoPriceSchema,
       execute: async ({ coin }) => {
         var _a3;
@@ -44028,16 +43371,14 @@ class WebAPIService {
           const coinId = coinMap[coin.toLowerCase()] || coin.toLowerCase();
           const url = `https://api.coingecko.com/api/v3/simple/price?ids=${coinId}&vs_currencies=usd&include_24hr_change=true&include_market_cap=true`;
           const response = await fetch(url, {
-            headers: {
-              "User-Agent": "EnterpriseBrowser/1.0"
-            }
+            headers: { "User-Agent": "EnterpriseBrowser/1.0" }
           });
           if (!response.ok) {
             return JSON.stringify({ error: `CoinGecko API error: ${response.status}` });
           }
           const data = await response.json();
           if (!data[coinId]) {
-            return JSON.stringify({ error: `Coin '${coin}' not found. Try the full name (e.g., 'bitcoin' instead of 'btc').` });
+            return JSON.stringify({ error: `Coin '${coin}' not found.` });
           }
           const coinData = data[coinId];
           const result = {
@@ -44048,7 +43389,8 @@ class WebAPIService {
           };
           return JSON.stringify(result, null, 2);
         } catch (e) {
-          return JSON.stringify({ error: `Failed to fetch crypto price: ${e.message}` });
+          const errorMessage = e instanceof Error ? e.message : String(e);
+          return JSON.stringify({ error: `Failed to fetch crypto price: ${errorMessage}` });
         }
       }
     };
@@ -44059,7 +43401,7 @@ class WebAPIService {
     });
     const weatherTool = {
       name: "api_weather",
-      description: "Get current weather for a specific latitude and longitude via Open-Meteo API. Use lookup_city_coordinates first if you only have a city name.",
+      description: "Get current weather via Open-Meteo API.",
       schema: weatherSchema,
       execute: async ({ latitude, longitude, city }) => {
         try {
@@ -44078,7 +43420,8 @@ class WebAPIService {
             units: data.current_units
           }, null, 2);
         } catch (e) {
-          return JSON.stringify({ error: `Failed to fetch weather: ${e.message}` });
+          const errorMessage = e instanceof Error ? e.message : String(e);
+          return JSON.stringify({ error: `Failed to fetch weather: ${errorMessage}` });
         }
       }
     };
@@ -44087,37 +43430,42 @@ class WebAPIService {
     });
     const webSearchTool = {
       name: "api_web_search",
-      description: "Search the web via DuckDuckGo Instant Answer API. Returns a summary, related topics, and links. Useful for quick facts or finding official websites.",
+      description: "Search the web via DuckDuckGo API.",
       schema: webSearchSchema,
       execute: async ({ query }) => {
         var _a3;
         try {
           const url = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
-          const response = await fetch(url, {
-            headers: { "User-Agent": "EnterpriseBrowser/1.0" }
-          });
-          if (!response.ok) return JSON.stringify({ error: `Search API error: ${response.status}` });
+          const response = await fetch(url, { headers: { "User-Agent": "EnterpriseBrowser/1.0" } });
+          if (!response.ok) {
+            const searchUrl = `https://duckduckgo.com/?q=${encodeURIComponent(query)}`;
+            return JSON.stringify({ status: "browser_required", message: `API unavailable.`, url: searchUrl });
+          }
           const data = await response.json();
+          if (!data.AbstractText && (!data.RelatedTopics || data.RelatedTopics.length === 0)) {
+            const searchUrl = `https://duckduckgo.com/?q=${encodeURIComponent(query)}`;
+            return JSON.stringify({ status: "browser_required", message: `No instant answer available.`, url: searchUrl });
+          }
           return JSON.stringify({
+            status: "success",
             abstract: data.AbstractText,
             source: data.AbstractSource,
             url: data.AbstractURL,
-            related: (_a3 = data.RelatedTopics) == null ? void 0 : _a3.slice(0, 5).map((topic) => ({
-              text: topic.Text,
-              url: topic.FirstURL
-            }))
+            related: (_a3 = data.RelatedTopics) == null ? void 0 : _a3.slice(0, 5).map((topic) => ({ text: topic.Text, url: topic.FirstURL }))
           }, null, 2);
         } catch (e) {
-          return JSON.stringify({ error: `Failed to search: ${e.message}` });
+          const errorMessage = e instanceof Error ? e.message : String(e);
+          const searchUrl = `https://duckduckgo.com/?q=${encodeURIComponent(query)}`;
+          return JSON.stringify({ status: "browser_required", message: `Search API failed: ${errorMessage}`, url: searchUrl });
         }
       }
     };
     const cityCoordSchema = object({
-      city: string().describe('City name (e.g., "San Francisco", "Tokyo")')
+      city: string().describe("City name")
     });
     const cityCoordTool = {
       name: "lookup_city_coordinates",
-      description: "Get latitude and longitude for a city name. Use this before calling api_weather.",
+      description: "Get latitude and longitude for a city name.",
       schema: cityCoordSchema,
       execute: async ({ city }) => {
         try {
@@ -44125,9 +43473,7 @@ class WebAPIService {
           const response = await fetch(url);
           if (!response.ok) return JSON.stringify({ error: `Geocoding API error: ${response.status}` });
           const data = await response.json();
-          if (!data.results || data.results.length === 0) {
-            return JSON.stringify({ error: `City '${city}' not found.` });
-          }
+          if (!data.results || data.results.length === 0) return JSON.stringify({ error: `City '${city}' not found.` });
           const result = data.results[0];
           return JSON.stringify({
             city: result.name,
@@ -44137,7 +43483,8 @@ class WebAPIService {
             timezone: result.timezone
           }, null, 2);
         } catch (e) {
-          return JSON.stringify({ error: `Failed to lookup city: ${e.message}` });
+          const errorMessage = e instanceof Error ? e.message : String(e);
+          return JSON.stringify({ error: `Failed to lookup city: ${errorMessage}` });
         }
       }
     };
@@ -44163,13 +43510,18 @@ const SkillSchema = object({
   fingerprint: string().optional(),
   steps: array(
     object({
-      action: _enum(["navigate", "click", "type", "select", "wait"]),
+      action: _enum(["navigate", "click", "type", "select", "wait", "open_tab", "workflow_task"]),
       url: string().optional(),
       selector: string().optional(),
       value: string().optional(),
-      text: string().optional()
+      text: string().optional(),
+      id: string().optional(),
+      dependencies: array(string()).optional(),
+      tool: string().optional(),
+      args: any().optional()
     })
   ),
+  isWorkflow: boolean().optional(),
   currentVersion: number(),
   embedding: array(number()).optional(),
   stats: object({
@@ -44195,13 +43547,18 @@ const SkillSchema = object({
       version: number(),
       steps: array(
         object({
-          action: _enum(["navigate", "click", "type", "select", "wait"]),
+          action: _enum(["navigate", "click", "type", "select", "wait", "open_tab", "workflow_task"]),
           url: string().optional(),
           selector: string().optional(),
           value: string().optional(),
-          text: string().optional()
+          text: string().optional(),
+          id: string().optional(),
+          dependencies: array(string()).optional(),
+          tool: string().optional(),
+          args: any().optional()
         })
       ),
+      isWorkflow: boolean().optional(),
       createdAt: number()
     })
   ),
@@ -44251,7 +43608,7 @@ class LocalJsonSkillStorage {
           const migrated = Array.isArray(plans) ? plans.map((p) => {
             const createdAt = Date.now();
             return {
-              id: v4$1(),
+              id: v4$2(),
               name: String((p == null ? void 0 : p.goal) ?? "").toLowerCase().replace(/\s+/g, "_").slice(0, 50),
               description: String((p == null ? void 0 : p.goal) ?? ""),
               domain: "unknown",
@@ -44317,6 +43674,38 @@ class TaskKnowledgeService {
       const remote = await this.cloudStorage.getAll().catch(() => []);
       const merged = await this.mergeSkillLibraries(local, remote);
       this.skills = merged;
+      await this.save();
+    }
+    await this.pruneStaleSkills();
+  }
+  /**
+   * Prune skills that have consistently failed or haven't been used in a long time.
+   * This prevents memory bloat and removes outdated institutional knowledge.
+   */
+  async pruneStaleSkills() {
+    const now = Date.now();
+    const originalCount = this.skills.length;
+    this.skills = this.skills.filter((skill) => {
+      const total = skill.stats.successes + skill.stats.failures;
+      const successRate = total > 0 ? skill.stats.successes / total : 0.5;
+      const daysSinceLastUse = (now - skill.stats.lastUsed) / (24 * 60 * 60 * 1e3);
+      if (total >= 5 && successRate < 0.2) {
+        console.log(`[TaskKnowledge] Pruning low-success skill: ${skill.name} (${Math.round(successRate * 100)}% success)`);
+        return false;
+      }
+      if (daysSinceLastUse > 90 && successRate < 0.5) {
+        console.log(`[TaskKnowledge] Pruning stale skill: ${skill.name} (${Math.round(daysSinceLastUse)} days old)`);
+        return false;
+      }
+      if (daysSinceLastUse > 30 && skill.stats.successes === 0 && skill.stats.failures > 0) {
+        console.log(`[TaskKnowledge] Pruning failed skill: ${skill.name} (0 successes, ${skill.stats.failures} failures)`);
+        return false;
+      }
+      return true;
+    });
+    const pruned = originalCount - this.skills.length;
+    if (pruned > 0) {
+      console.log(`[TaskKnowledge] Pruned ${pruned} stale skills`);
       await this.save();
     }
   }
@@ -44590,12 +43979,14 @@ class TaskKnowledgeService {
       existing.versions.push({
         version: newVersion,
         steps: input.steps,
+        isWorkflow: input.isWorkflow,
         createdAt: Date.now()
       });
       existing.steps = input.steps;
       existing.description = input.description;
       existing.domain = input.domain;
       existing.fingerprint = input.fingerprint ?? existing.fingerprint;
+      existing.isWorkflow = input.isWorkflow ?? existing.isWorkflow;
       existing.currentVersion = newVersion;
       existing.tags = Array.from(/* @__PURE__ */ new Set([...existing.tags, ...input.tags]));
       existing.stats.lastUsed = Date.now();
@@ -44606,11 +43997,12 @@ class TaskKnowledgeService {
       this.skills[existingIndex] = existing;
     } else {
       const newSkill = {
-        id: v4$1(),
+        id: v4$2(),
         name: input.name,
         description: input.description,
         domain: input.domain,
         fingerprint: input.fingerprint,
+        isWorkflow: input.isWorkflow,
         steps: input.steps,
         currentVersion: 1,
         embedding: this.computeEmbedding(this.buildSkillText({
@@ -44619,15 +44011,16 @@ class TaskKnowledgeService {
           description: input.description,
           domain: input.domain,
           fingerprint: input.fingerprint,
+          isWorkflow: input.isWorkflow,
           steps: input.steps,
           currentVersion: 1,
           stats: { successes: 1, failures: 0, partials: 0, lastUsed: Date.now(), lastOutcomeAt: Date.now(), lastOutcomeSuccess: true },
-          versions: [{ version: 1, steps: input.steps, createdAt: Date.now() }],
+          versions: [{ version: 1, steps: input.steps, isWorkflow: input.isWorkflow, createdAt: Date.now() }],
           tags: input.tags
         })),
         stats: { successes: 1, failures: 0, partials: 0, lastUsed: Date.now(), lastOutcomeAt: Date.now(), lastOutcomeSuccess: true },
         feedback: [],
-        versions: [{ version: 1, steps: input.steps, createdAt: Date.now() }],
+        versions: [{ version: 1, steps: input.steps, isWorkflow: input.isWorkflow, createdAt: Date.now() }],
         tags: input.tags
       };
       this.skills.push(newSkill);
@@ -44687,20 +44080,25 @@ class TaskKnowledgeService {
       description: string().describe("Description of what the skill does"),
       domain: string().optional().describe('Domain where this skill applies (e.g. "localhost:3000")'),
       fingerprint: string().optional().describe('Optional page fingerprint (e.g. "/jira" or "/aerocore/admin")'),
+      isWorkflow: boolean().optional().describe("Whether this is a DAG-based workflow"),
       steps: array(
         object({
-          action: _enum(["navigate", "click", "type", "select", "wait"]),
+          action: _enum(["navigate", "click", "type", "select", "wait", "open_tab", "workflow_task"]),
           url: string().optional(),
           selector: string().optional(),
           value: string().optional(),
-          text: string().optional()
+          text: string().optional(),
+          id: string().optional(),
+          dependencies: array(string()).optional(),
+          tool: string().optional(),
+          args: any().optional()
         })
       ),
       tags: array(string()).describe("Keywords for retrieval")
     });
     const saveSkillTool = {
       name: "knowledge_save_skill",
-      description: "Save a verified execution plan as a reusable skill.",
+      description: "Save a verified execution plan or DAG-based workflow as a reusable skill.",
       schema: saveSkillSchema,
       execute: async (args) => {
         const input = saveSkillSchema.parse(args);
@@ -44722,10 +44120,11 @@ class TaskKnowledgeService {
           description: input.description,
           domain,
           fingerprint,
+          isWorkflow: input.isWorkflow,
           steps: input.steps,
           tags: input.tags
         });
-        return `Saved skill "${input.name}" for domain ${domain}.`;
+        return `Saved ${input.isWorkflow ? "workflow" : "skill"} "${input.name}" for domain ${domain}.`;
       }
     };
     const searchSkillTool = {
@@ -45845,9 +45244,276 @@ function createToonSummary(summary, messagesCompressed, options) {
     pendingActions: options == null ? void 0 : options.pendingActions
   };
 }
+class SelectorDiscoveryService {
+  // 1 hour
+  constructor() {
+    __publicField(this, "selectorMap", /* @__PURE__ */ new Map());
+    __publicField(this, "lastScan", 0);
+    __publicField(this, "CACHE_TTL", 1e3 * 60 * 60);
+  }
+  /**
+   * Scans the mock-saas source code to find all data-testid attributes
+   */
+  async discoverSelectors() {
+    const now = Date.now();
+    if (this.selectorMap.size > 0 && now - this.lastScan < this.CACHE_TTL) {
+      return this.selectorMap;
+    }
+    const mockSaasSrc = path$2.resolve(process.cwd(), "mock-saas", "src");
+    this.selectorMap.clear();
+    try {
+      await this.scanDirectory(mockSaasSrc);
+      this.lastScan = now;
+      console.log(`[SelectorDiscovery] Discovered ${this.getTotalSelectorCount()} selectors across ${this.selectorMap.size} pages`);
+    } catch (e) {
+      console.error("[SelectorDiscovery] Failed to scan mock-saas:", e);
+    }
+    return this.selectorMap;
+  }
+  async scanDirectory(dir) {
+    const entries = await fs$1.readdir(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path$2.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        await this.scanDirectory(fullPath);
+      } else if (entry.isFile() && (entry.name.endsWith(".tsx") || entry.name.endsWith(".ts"))) {
+        await this.scanFile(fullPath);
+      }
+    }
+  }
+  async scanFile(filePath) {
+    const content = await fs$1.readFile(filePath, "utf8");
+    const pageName = path$2.basename(filePath, path$2.extname(filePath));
+    const testIdRegex = /data-testid=["']([^"']+)["']/g;
+    let match;
+    while ((match = testIdRegex.exec(content)) !== null) {
+      const testId = match[1];
+      const type = this.inferTypeFromContext(content, match.index);
+      const selectors = this.selectorMap.get(pageName) || [];
+      selectors.push({
+        testId,
+        description: `Discovered from ${pageName}`,
+        type,
+        page: pageName
+      });
+      this.selectorMap.set(pageName, selectors);
+    }
+  }
+  inferTypeFromContext(content, index) {
+    const context = content.slice(Math.max(0, index - 100), index);
+    if (context.toLowerCase().includes("<button") || context.toLowerCase().includes("button")) return "button";
+    if (context.toLowerCase().includes("<input")) return "input";
+    if (context.toLowerCase().includes("<select")) return "select";
+    if (context.toLowerCase().includes("<form")) return "form";
+    return "other";
+  }
+  getTotalSelectorCount() {
+    let count = 0;
+    for (const selectors of this.selectorMap.values()) {
+      count += selectors.length;
+    }
+    return count;
+  }
+  /**
+   * Get selectors for a specific page or component
+   */
+  getSelectorsForPage(page) {
+    return this.selectorMap.get(page) || [];
+  }
+  /**
+   * Find a specific selector by its testId
+   */
+  findSelector(testId) {
+    for (const selectors of this.selectorMap.values()) {
+      const found = selectors.find((s) => s.testId === testId);
+      if (found) return found;
+    }
+    return void 0;
+  }
+}
+const selectorDiscoveryService = new SelectorDiscoveryService();
+class WorkflowOrchestrator {
+  // Track agent-created background tabs
+  constructor(model) {
+    __publicField(this, "tasks", /* @__PURE__ */ new Map());
+    __publicField(this, "context", {});
+    __publicField(this, "model");
+    __publicField(this, "availableTabs", []);
+    this.model = model;
+  }
+  /**
+   * Plan the workflow based on the user request and current state
+   */
+  async plan(userMessage, browserContext) {
+    const plannerPrompt = new SystemMessage(`You are a workflow planner for an enterprise browser.
+Your goal is to decompose the user's request into a Directed Acyclic Graph (DAG) of tasks.
+
+Current Browser Context:
+${browserContext}
+
+User Request: ${userMessage}
+
+Respond ONLY with a JSON array of tasks. Each task must follow this schema:
+{
+  "id": "unique_id",
+  "name": "short_descriptive_name",
+  "tool": "tool_name",
+  "args": { ... },
+  "dependencies": ["list_of_dependency_ids"]
+}
+
+Rules:
+1. Identify independent tasks that can run in parallel (e.g., searching Jira and Confluence at the same time).
+2. Use dependencies for tasks that require the output of another task.
+3. Use variables in args like "{{task_id.property}}" to refer to output of previous tasks.
+4. For cross-app tasks, ALWAYS plan to use "browser_open_tab" first to create a dedicated context if multiple apps are involved.
+5. If a task uses a specific tab, include "tabId": "{{open_tab_task_id.tabId}}" in its args.`);
+    try {
+      const response = await this.model.invoke([plannerPrompt]);
+      const content = typeof response.content === "string" ? response.content : JSON.stringify(response.content);
+      const jsonMatch = content.match(/\[\s*\{[\s\S]*\}\s*\]/);
+      if (!jsonMatch) {
+        console.error("[WorkflowOrchestrator] Failed to parse plan JSON:", content);
+        return [];
+      }
+      const rawTasks = JSON.parse(jsonMatch[0]);
+      return rawTasks.map((t2) => ({
+        ...t2,
+        status: "pending"
+      }));
+    } catch (e) {
+      console.error("[WorkflowOrchestrator] Planning failed:", e);
+      return [];
+    }
+  }
+  /**
+   * Execute the planned tasks in parallel where possible
+   */
+  async execute(tasks, onStep) {
+    this.tasks.clear();
+    tasks.forEach((t2) => this.tasks.set(t2.id, t2));
+    this.context = {};
+    this.availableTabs = [];
+    let hasFailure = false;
+    while (this.getPendingTasks().length > 0 || this.getRunningTasks().length > 0) {
+      const readyTasks = this.getPendingTasks().filter(
+        (t2) => t2.dependencies.every((depId) => {
+          var _a3;
+          return ((_a3 = this.tasks.get(depId)) == null ? void 0 : _a3.status) === "completed";
+        })
+      );
+      if (readyTasks.length === 0 && this.getRunningTasks().length === 0) {
+        break;
+      }
+      const taskPromises = readyTasks.map(async (task) => {
+        task.status = "running";
+        onStep == null ? void 0 : onStep("thought", `Executing task: ${task.name}`, { taskId: task.id, phase: "task_start" });
+        try {
+          const resolvedArgs = this.resolveArgs(task.args);
+          const langChainTools = toolRegistry.toLangChainTools();
+          const tool2 = langChainTools.find((t2) => t2.name === task.tool);
+          if (!tool2) {
+            throw new Error(`Tool not found: ${task.tool}`);
+          }
+          const result = await tool2.invoke(resolvedArgs);
+          task.result = String(result);
+          if (task.assertions && task.assertions.length > 0) {
+            onStep == null ? void 0 : onStep("thought", `Verifying task: ${task.name} with ${task.assertions.length} assertions...`, { taskId: task.id });
+            for (const assertion of task.assertions) {
+              const assertionTool = this.getAssertionTool(assertion.type);
+              if (assertionTool) {
+                const assertionArgs = {
+                  [assertion.type === "text_exists" ? "text" : assertion.type === "selector_exists" ? "selector" : "urlPart"]: assertion.value,
+                  tabId: resolvedArgs.tabId,
+                  timeoutMs: assertion.timeoutMs || 5e3
+                };
+                const verificationResult = await assertionTool.invoke(assertionArgs);
+                if (verificationResult.includes("Timeout") || verificationResult.includes("Did not find")) {
+                  throw new Error(`Assertion failed: ${assertion.type} "${assertion.value}" - ${verificationResult}`);
+                }
+              }
+            }
+          }
+          task.status = "completed";
+          if (task.tool === "browser_open_tab" && task.result) {
+            try {
+              const parsed = JSON.parse(task.result);
+              if (parsed.tabId) {
+                this.availableTabs.push(parsed.tabId);
+              }
+            } catch {
+            }
+          }
+          this.extractToContext(task.id, task.result);
+          onStep == null ? void 0 : onStep("observation", `Task ${task.name} completed.`, { taskId: task.id, result: task.result, phase: "task_end" });
+        } catch (e) {
+          const errorMessage = e instanceof Error ? e.message : String(e);
+          task.status = "failed";
+          task.error = errorMessage;
+          hasFailure = true;
+          onStep == null ? void 0 : onStep("observation", `Task ${task.name} failed: ${errorMessage}`, { taskId: task.id, error: errorMessage, phase: "task_error" });
+        }
+      });
+      if (taskPromises.length > 0) {
+        await Promise.race(taskPromises);
+      } else {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+    }
+    return {
+      success: !hasFailure && this.getPendingTasks().length === 0,
+      tasks: Array.from(this.tasks.values()),
+      context: this.context
+    };
+  }
+  getPendingTasks() {
+    return Array.from(this.tasks.values()).filter((t2) => t2.status === "pending");
+  }
+  getRunningTasks() {
+    return Array.from(this.tasks.values()).filter((t2) => t2.status === "running");
+  }
+  getAssertionTool(type) {
+    const toolName = type === "text_exists" ? "browser_wait_for_text" : type === "selector_exists" ? "browser_wait_for_selector" : "browser_wait_for_url";
+    const langChainTools = toolRegistry.toLangChainTools();
+    return langChainTools.find((t2) => t2.name === toolName);
+  }
+  resolveArgs(args) {
+    const resolved = { ...args };
+    for (const key in resolved) {
+      const value = resolved[key];
+      if (typeof value === "string") {
+        resolved[key] = value.replace(/\{\{([^}]+)\}\}/g, (_, pathMatch) => {
+          const [taskId, ...props] = pathMatch.split(".");
+          let val = this.context[taskId];
+          if (val && typeof val === "object") {
+            for (const prop of props) {
+              if (val && typeof val === "object" && prop in val) {
+                val = val[prop];
+              } else {
+                val = void 0;
+                break;
+              }
+            }
+          }
+          return val !== void 0 ? String(val) : `{{${pathMatch}}}`;
+        });
+      } else if (typeof value === "object" && value !== null) {
+        resolved[key] = this.resolveArgs(value);
+      }
+    }
+    return resolved;
+  }
+  extractToContext(taskId, result) {
+    try {
+      const parsed = JSON.parse(result);
+      this.context[taskId] = parsed;
+    } catch {
+      this.context[taskId] = { raw: result };
+    }
+  }
+}
 dotenv.config();
 const AVAILABLE_MODELS = [
-  // Fast models
   {
     id: "llama-3.1-70b",
     name: "Llama 3.1 70B (Fast)",
@@ -45872,7 +45538,6 @@ const AVAILABLE_MODELS = [
     maxTokens: 4096,
     supportsThinking: false
   },
-  // Thinking models
   {
     id: "deepseek-v3.1",
     name: "DeepSeek V3.1 (Thinking)",
@@ -45907,7 +45572,6 @@ const AVAILABLE_MODELS = [
     supportsThinking: true,
     extraBody: { chat_template_kwargs: { enable_thinking: true } }
   },
-  // Specialized models
   {
     id: "actions-policy-v1",
     name: "Actions Policy (Beta)",
@@ -45934,37 +45598,25 @@ const _AgentService = class _AgentService {
       apiKeyAccount: "llm:nvidia:apiKey",
       apiKey: process.env.NVIDIA_API_KEY ?? null
     });
-    // Store TOON summaries as SystemMessages with special name
     __publicField(this, "summaries", []);
+    __publicField(this, "orchestrator");
     this.model = this.createModel("llama-3.1-70b");
     this.systemPrompt = new SystemMessage("");
+    this.orchestrator = new WorkflowOrchestrator(this.model);
   }
-  /**
-   * Redact common secrets from text before sending to LLM
-   */
   redactSecrets(text) {
     if (!text) return text;
     let redacted = text;
     const patterns = [
-      // Bearer tokens
-      { re: /Bearer\s+[a-zA-Z0-9\-\._]+/gi, repl: "Bearer [REDACTED_TOKEN]" },
-      // Authorization header
-      { re: /Authorization\s*:\s*Bearer\s+[a-zA-Z0-9\-\._]+/gi, repl: "Authorization: Bearer [REDACTED_TOKEN]" },
-      // OpenAI sk- keys
+      { re: /Bearer\s+[a-zA-Z0-9\-._]+/gi, repl: "Bearer [REDACTED_TOKEN]" },
+      { re: /Authorization\s*:\s*Bearer\s+[a-zA-Z0-9\-._]+/gi, repl: "Authorization: Bearer [REDACTED_TOKEN]" },
       { re: /sk-[a-zA-Z0-9]{32,}/g, repl: "[REDACTED_OPENAI_KEY]" },
-      // GitHub tokens
       { re: /gh[pousr]_[A-Za-z0-9_]{20,}/g, repl: "[REDACTED_GITHUB_TOKEN]" },
-      // Slack tokens
       { re: /xox[baprs]-[A-Za-z0-9-]{10,}/g, repl: "[REDACTED_SLACK_TOKEN]" },
-      // AWS Access Keys
       { re: /AKIA[0-9A-Z]{16}/g, repl: "[REDACTED_AWS_KEY]" },
-      // JWT-like tokens
       { re: /\beyJ[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}\b/g, repl: "[REDACTED_JWT]" },
-      // Generic "password": "..." patterns (loose match)
       { re: /"(password|client_secret|access_token|id_token|refresh_token|api_key|apikey)"\s*:\s*"[^"]+"/gi, repl: '"$1": "[REDACTED]"' },
-      // password=... / token=... forms
       { re: /(password|passwd|pwd|token|secret|api[_-]?key)\s*[:=]\s*[^\s\n"']+/gi, repl: "$1=[REDACTED]" },
-      // Private Keys
       { re: /-----BEGIN [A-Z]+ PRIVATE KEY-----[\s\S]*?-----END [A-Z]+ PRIVATE KEY-----/g, repl: "[REDACTED_PRIVATE_KEY]" }
     ];
     for (const { re: re2, repl } of patterns) {
@@ -46018,13 +45670,9 @@ const _AgentService = class _AgentService {
     for (let i = start; i < text.length; i++) {
       const ch = text[i];
       if (inString) {
-        if (escaped) {
-          escaped = false;
-        } else if (ch === "\\") {
-          escaped = true;
-        } else if (ch === '"') {
-          inString = false;
-        }
+        if (escaped) escaped = false;
+        else if (ch === "\\") escaped = true;
+        else if (ch === '"') inString = false;
         continue;
       }
       if (ch === '"') {
@@ -46037,10 +45685,34 @@ const _AgentService = class _AgentService {
     }
     return null;
   }
+  inferToolFromText(text) {
+    const lower = text.toLowerCase();
+    let toolName = null;
+    if (lower.includes("api_web_search")) toolName = "api_web_search";
+    else if (lower.includes("browser_navigate")) toolName = "browser_navigate";
+    else if (lower.includes("browser_observe")) toolName = "browser_observe";
+    else if (lower.includes("browser_click")) toolName = "browser_click";
+    else if (lower.includes("api_http_get")) toolName = "api_http_get";
+    if (!toolName) return null;
+    let args = {};
+    if (toolName === "api_web_search") {
+      const match = text.match(/search(?:ing)? (?:for )?["']?([^"'\n]+?)["']?(?: on | in | using |$|\.|,)/i);
+      if (match) args = { query: match[1].trim() };
+    } else if (toolName === "browser_navigate") {
+      const match = text.match(/(?:navigate to|go to|open) ["']?(https?:\/\/[^\s"']+|[a-z0-9.-]+\.[a-z]{2,}[^\s"']*)/i);
+      if (match) {
+        let url = match[1];
+        if (!url.startsWith("http")) url = "https://" + url;
+        args = { url };
+      }
+    }
+    if (Object.keys(args).length === 0) return null;
+    return { tool: toolName, args, thought: text.slice(0, 100).trim() };
+  }
   parseToolCall(rawContent) {
     const cleaned = rawContent.replace(/```json/g, "").replace(/```/g, "").trim();
     const candidate = this.extractJsonObject(cleaned) ?? (cleaned.startsWith("{") ? cleaned : null);
-    if (!candidate) return null;
+    if (!candidate) return this.inferToolFromText(cleaned);
     const tryParse = (s) => {
       try {
         return JSON.parse(s);
@@ -46048,109 +45720,48 @@ const _AgentService = class _AgentService {
         return null;
       }
     };
-    const direct = tryParse(candidate);
-    if (direct) return direct;
-    const relaxed = candidate.replace(/,\s*([}\]])/g, "$1");
-    const parsedRelaxed = tryParse(relaxed);
-    if (parsedRelaxed) return parsedRelaxed;
-    const fixedNewlines = candidate.replace(/:\s*"([^"]*)\n([^"]*)"/g, ': "$1\\n$2"');
-    const parsedNewlines = tryParse(fixedNewlines);
-    if (parsedNewlines) return parsedNewlines;
-    const fixedQuotes = candidate.replace(/'/g, '"');
-    const parsedQuotes = tryParse(fixedQuotes);
-    if (parsedQuotes) return parsedQuotes;
-    const toolMatch = cleaned.match(/"tool"\s*:\s*"([^"]+)"/);
-    const thoughtMatch = cleaned.match(/"thought"\s*:\s*"([^"]+)"/);
-    const thought = thoughtMatch ? thoughtMatch[1] : void 0;
-    if (!toolMatch) return null;
-    const tool2 = toolMatch[1];
-    if (tool2 === "final_response") {
-      const messagePatterns = [
-        /"message"\s*:\s*"([\s\S]*?)"\s*(?:,|\})/,
-        /"message"\s*:\s*"([^"]*)"/,
-        /"message"\s*:\s*'([^']*)'/
-      ];
-      for (const pattern of messagePatterns) {
-        const match = cleaned.match(pattern);
-        if (match) {
-          return { tool: tool2, args: { message: match[1] }, thought };
-        }
+    let parsed = tryParse(candidate);
+    if (!parsed) parsed = tryParse(candidate.replace(/,\s*([}\]])/g, "$1"));
+    if (!parsed) parsed = tryParse(candidate.replace(/:\s*"([^"]*)\n([^"]*)"/g, ': "$1\\n$2"'));
+    if (parsed) {
+      if (Array.isArray(parsed.tools) && parsed.tools.length > 0) {
+        return { tool: parsed.tools[0].tool, args: parsed.tools[0].args, thought: parsed.thought, tools: parsed.tools };
       }
-      return { tool: tool2, args: { message: "" }, thought };
-    }
-    const argsMatch = cleaned.match(/"args"\s*:\s*(\{[^}]+\})/);
-    if (argsMatch) {
-      const argsStr = argsMatch[1];
-      const args = tryParse(argsStr);
-      if (args) return { tool: tool2, args, thought };
+      return parsed;
     }
     return null;
   }
   async setLLMConfig(next) {
-    const prevProvider = this.llmConfig.provider;
-    const prevAccount = this.llmConfig.apiKeyAccount;
-    const merged = {
-      ...this.llmConfig,
-      ...next ?? {}
-    };
-    if ((merged.provider !== prevProvider || merged.apiKeyAccount !== prevAccount) && (next == null ? void 0 : next.apiKey) === void 0) {
-      merged.apiKey = void 0;
-    }
-    if (merged.apiKey === void 0) {
-      try {
-        merged.apiKey = await vaultService.getSecret(merged.apiKeyAccount);
-      } catch {
-        merged.apiKey = null;
-      }
-    }
-    if (!merged.apiKey && merged.provider === "nvidia") {
-      merged.apiKey = process.env.NVIDIA_API_KEY ?? null;
-    }
+    const merged = { ...this.llmConfig, ...next ?? {} };
+    if (!merged.apiKey && merged.provider === "nvidia") merged.apiKey = process.env.NVIDIA_API_KEY ?? null;
     this.llmConfig = merged;
-    if (typeof (next == null ? void 0 : next.modelId) === "string" && next.modelId.trim()) {
-      this.currentModelId = next.modelId.trim();
-    }
+    if (typeof (next == null ? void 0 : next.modelId) === "string" && next.modelId.trim()) this.currentModelId = next.modelId.trim();
     this.model = this.createModel(this.currentModelId);
+    this.orchestrator = new WorkflowOrchestrator(this.model);
   }
   getLLMConfig() {
-    const { apiKey, ...rest } = this.llmConfig;
+    const { apiKey: _unusedApiKey, ...rest } = this.llmConfig;
     return rest;
   }
-  /**
-   * Toggle the use of the specialized actions policy model
-   */
   toggleActionsPolicy(enabled) {
     this.useActionsPolicy = enabled;
-    if (enabled) {
-      this.setModel("actions-policy-v1");
-    } else {
-      this.setModel("llama-3.1-70b");
-    }
-    console.log(`[AgentService] Actions Policy Model: ${enabled ? "ENABLED" : "DISABLED"}`);
+    this.setModel(enabled ? "actions-policy-v1" : "llama-3.1-70b");
   }
   isActionsPolicyEnabled() {
     return this.useActionsPolicy;
   }
-  /**
-   * Set the agent mode (chat/read/do)
-   */
   setAgentMode(mode) {
     this.agentMode = mode;
-    console.log(`[AgentService] Agent Mode: ${mode}`);
   }
   getAgentMode() {
     return this.agentMode;
   }
   setPermissionMode(mode) {
     this.permissionMode = mode;
-    console.log(`[AgentService] Permission Mode: ${mode}`);
   }
   getPermissionMode() {
     return this.permissionMode;
   }
-  /**
-   * Check if YOLO mode is active (do mode + yolo permissions)
-   */
   isYoloMode() {
     return this.agentMode === "do" && this.permissionMode === "yolo";
   }
@@ -46158,116 +45769,32 @@ const _AgentService = class _AgentService {
     return this.permissionMode === "manual";
   }
   createModel(modelId) {
-    const provider = this.llmConfig.provider;
-    const apiKey = this.llmConfig.apiKey ?? null;
-    if (!apiKey) {
-      console.warn(`[AgentService] No API key configured for provider=${provider} (account=${this.llmConfig.apiKeyAccount})`);
-    }
-    const baseURL = this.llmConfig.baseUrl;
-    const resolved = (() => {
-      if (provider === "nvidia") {
-        const cfg = AVAILABLE_MODELS.find((m) => m.id === modelId) || AVAILABLE_MODELS[0];
-        return {
-          id: cfg.id,
-          name: cfg.name,
-          modelName: cfg.modelName,
-          temperature: cfg.temperature,
-          maxTokens: cfg.maxTokens,
-          supportsThinking: cfg.supportsThinking,
-          extraBody: cfg.extraBody
-        };
-      }
-      return {
-        id: modelId,
-        name: modelId,
-        modelName: modelId,
-        temperature: 0.1,
-        maxTokens: 4096,
-        supportsThinking: false,
-        extraBody: void 0
-      };
-    })();
-    console.log(`[AgentService] Creating model: ${resolved.name} (${resolved.modelName}) provider=${provider}`);
-    const modelKwargs = {
-      response_format: { type: "json_object" },
-      ...resolved.extraBody ?? {}
-    };
-    const isLocalProvider = provider === "ollama" || provider === "lmstudio";
-    const effectiveApiKey = isLocalProvider ? apiKey ?? "local" : apiKey ?? void 0;
+    const cfg = AVAILABLE_MODELS.find((m) => m.id === modelId) || AVAILABLE_MODELS[0];
     return new ChatOpenAI({
-      configuration: {
-        baseURL,
-        apiKey: effectiveApiKey
-      },
-      modelName: resolved.modelName,
-      temperature: resolved.temperature,
-      maxTokens: resolved.maxTokens,
+      configuration: { baseURL: this.llmConfig.baseUrl, apiKey: this.llmConfig.apiKey ?? "local" },
+      modelName: cfg.modelName,
+      temperature: cfg.temperature,
+      maxTokens: cfg.maxTokens,
       streaming: false,
-      modelKwargs
+      modelKwargs: { response_format: { type: "json_object" }, ...cfg.extraBody ?? {} }
     });
   }
-  /**
-   * Switch to a different model
-   */
   setModel(modelId) {
-    if (this.llmConfig.provider === "nvidia") {
-      const config2 = AVAILABLE_MODELS.find((m) => m.id === modelId);
-      if (!config2) {
-        console.error(`[AgentService] Unknown model: ${modelId}`);
-        return;
-      }
-      this.currentModelId = modelId;
-      this.model = this.createModel(modelId);
-      console.log(`[AgentService] Switched to model: ${config2.name}`);
-      return;
-    }
     this.currentModelId = modelId;
     this.model = this.createModel(modelId);
-    console.log(`[AgentService] Switched to model: ${modelId}`);
   }
-  /**
-   * Get current model ID
-   */
-  getCurrentModelId() {
-    return this.currentModelId;
-  }
-  /**
-   * Get available models
-   */
-  static getAvailableModels() {
-    return AVAILABLE_MODELS;
-  }
-  /**
-   * Reset conversation history - call this when starting a new session
-   */
   resetConversation() {
     this.conversationHistory = [];
-    console.log("[AgentService] Conversation history cleared");
+    this.summaries = [];
   }
-  /**
-   * Trim conversation history if it exceeds the max limit
-   * Keeps the most recent messages
-   */
   trimConversationHistory() {
     if (this.conversationHistory.length > _AgentService.MAX_HISTORY_MESSAGES) {
-      const excess = this.conversationHistory.length - _AgentService.MAX_HISTORY_MESSAGES;
-      this.conversationHistory = this.conversationHistory.slice(excess);
-      console.log(`[AgentService] Trimmed ${excess} old messages from conversation history`);
+      this.conversationHistory = this.conversationHistory.slice(-50);
     }
   }
-  /**
-   * Check if summarization is needed and trigger it
-   * Called after each turn to compress old messages
-   */
   async maybeSummarize() {
-    if (this.conversationHistory.length > _AgentService.SUMMARY_EVERY) {
-      await this.summarizeBlock();
-    }
+    if (this.conversationHistory.length > _AgentService.SUMMARY_EVERY) await this.summarizeBlock();
   }
-  /**
-   * Summarize oldest N messages into a TOON format summary
-   * Uses a cheap/fast model to minimize latency
-   */
   async summarizeBlock() {
     const blockSize = _AgentService.SUMMARY_BLOCK_SIZE;
     if (this.conversationHistory.length < blockSize) return;
@@ -46278,46 +45805,24 @@ const _AgentService = class _AgentService {
       const truncated = content.length > 500 ? content.substring(0, 500) + "..." : content;
       return `[${role}]: ${truncated}`;
     }).join("\n\n");
-    const summaryPrompt = new SystemMessage(
-      TOON_SUMMARY_PROMPT_TEMPLATE + messagesText
-    );
+    const summaryPrompt = new SystemMessage(TOON_SUMMARY_PROMPT_TEMPLATE + messagesText);
     try {
       const summarizerModel = this.createModel("llama-3.1-70b");
       const response = await summarizerModel.invoke([summaryPrompt]);
       const rawSummary = typeof response.content === "string" ? response.content : JSON.stringify(response.content);
-      const rawParsed = safeParseTOON(rawSummary, {
-        meta: { version: "1.0", timestamp: (/* @__PURE__ */ new Date()).toISOString(), messagesCompressed: blockSize },
-        conversationSummary: rawSummary
-      });
-      const parsed = safeValidateToonSummary(rawParsed) ?? createToonSummary(rawSummary, blockSize);
-      const summaryMessage = new SystemMessage({
-        content: rawSummary,
-        name: "summary"
-      });
+      const rawParsed = safeParseTOON(rawSummary, { meta: { version: "1.0", timestamp: (/* @__PURE__ */ new Date()).toISOString(), messagesCompressed: blockSize }, conversationSummary: rawSummary });
+      safeValidateToonSummary(rawParsed) ?? createToonSummary(rawSummary, blockSize);
+      const summaryMessage = new SystemMessage(`[SUMMARY] ${rawSummary}`);
       this.summaries.push(summaryMessage);
       this.conversationHistory = this.conversationHistory.slice(blockSize);
       console.log(`[AgentService] Summarized ${blockSize} messages into TOON format. Remaining: ${this.conversationHistory.length}`);
-      console.log(`[AgentService] Summary preview: ${parsed.conversationSummary.substring(0, 100)}...`);
     } catch (e) {
       console.error("[AgentService] Summarization failed:", e);
       this.conversationHistory = this.conversationHistory.slice(blockSize);
     }
   }
-  /**
-   * Build messages array with summaries injected for context
-   * Called when building the final prompt for the main model
-   */
   buildMessagesWithSummaries(systemPrompt) {
-    const messages = [systemPrompt];
-    if (this.summaries.length > 0) {
-      const summaryContext = new SystemMessage(
-        `[Previous Conversation Summaries]
-${this.summaries.map((s) => s.content).join("\n---\n")}`
-      );
-      messages.push(summaryContext);
-    }
-    messages.push(...this.conversationHistory);
-    return messages;
+    return [systemPrompt, ...this.summaries, ...this.conversationHistory];
   }
   setStepHandler(handler) {
     this.onStep = handler;
@@ -46332,784 +45837,261 @@ ${this.summaries.map((s) => s.content).join("\n---\n")}`
   emitStep(type, content, metadata) {
     if (this.onStep) {
       const runId = agentRunContext.getRunId() ?? void 0;
-      const enrichedMetadata = {
-        ...metadata ?? {},
-        ts: (/* @__PURE__ */ new Date()).toISOString(),
-        runId
-      };
-      this.onStep({ type, content, metadata: enrichedMetadata });
+      this.onStep({ type, content, metadata: { ...metadata, ts: (/* @__PURE__ */ new Date()).toISOString(), runId } });
     }
   }
-  emitToken(token) {
-    if (this.onToken) {
-      this.onToken(token);
-    }
+  // @ts-ignore Reserved for future streaming support
+  _emitToken(token) {
+    if (this.onToken) this.onToken(token);
+  }
+  getCurrentModelId() {
+    return this.currentModelId;
   }
   async chat(userMessage, browserContext) {
-    if (this.agentMode === "chat") {
-      return this.chatOnly(userMessage);
-    }
-    if (this.agentMode === "read") {
-      return this.readOnly(userMessage, browserContext);
-    }
+    if (this.agentMode === "chat") return this.chatOnly(userMessage);
+    if (this.agentMode === "read") return this.readOnly(userMessage, browserContext);
     return this.doMode(userMessage, browserContext);
   }
-  /**
-   * Chat-only mode: Regular chatbot, no browser access or tools
-   */
   async chatOnly(userMessage) {
     const safeUserMessage = this.redactSecrets(userMessage);
     const chatPrompt = new SystemMessage(`You are a helpful assistant. You are in CHAT mode - you cannot access the browser or use any tools. Just have a helpful conversation with the user. Respond naturally without JSON formatting.`);
     this.conversationHistory.push(new HumanMessage(safeUserMessage));
     this.trimConversationHistory();
     try {
-      let content = "";
-      const stream = await this.model.stream([chatPrompt, ...this.conversationHistory]);
-      for await (const chunk of stream) {
-        const token = String(chunk.content);
-        content += token;
-        this.emitToken(token);
-      }
+      const response = await this.model.invoke([chatPrompt, ...this.conversationHistory]);
+      const content = String(response.content);
       this.conversationHistory.push(new AIMessage(content));
       this.trimConversationHistory();
       return content;
     } catch (e) {
-      return `Error: ${e.message}`;
+      return `Error: ${e instanceof Error ? e.message : String(e)}`;
     }
   }
-  /**
-   * Read-only mode: Can see browser state but cannot take actions
-   */
   async readOnly(userMessage, browserContext) {
     const safeUserMessage = this.redactSecrets(userMessage);
     let context = browserContext || "Current browser state: No context provided";
     context = this.redactSecrets(context);
     const readPrompt = new SystemMessage(`You are a helpful assistant integrated into a browser. You are in READ mode - you can see what the user sees on their browser, but you CANNOT take any actions or use any tools.
-
 Current browser state:
 ${context}
-
 You can answer questions about what's on the page, explain content, summarize information, or help the user understand what they're looking at. But you cannot click, type, navigate, or modify anything. Respond naturally without JSON formatting.`);
     this.conversationHistory.push(new HumanMessage(safeUserMessage));
     this.trimConversationHistory();
     try {
-      let content = "";
-      const stream = await this.model.stream([readPrompt, ...this.conversationHistory]);
-      for await (const chunk of stream) {
-        const token = String(chunk.content);
-        content += token;
-        this.emitToken(token);
-      }
+      const response = await this.model.invoke([readPrompt, ...this.conversationHistory]);
+      const content = String(response.content);
       this.conversationHistory.push(new AIMessage(content));
       this.trimConversationHistory();
       return content;
     } catch (e) {
-      return `Error: ${e.message}`;
+      return `Error: ${e instanceof Error ? e.message : String(e)}`;
     }
   }
-  /**
-   * Do mode: Full agentic capabilities with tools
-   */
   async doMode(userMessage, browserContext) {
-    var _a3, _b, _c, _d, _e;
-    const tools = toolRegistry.toLangChainTools();
+    const runId = agentRunContext.getRunId() ?? v4$2();
+    const runStartedAt = Date.now();
+    const langChainTools = toolRegistry.toLangChainTools();
     let usedBrowserTools = false;
     let parseFailures = 0;
-    let lastVerified = null;
-    let messages = [];
-    let pendingErrorForReflection = null;
     let loopAlertCount = 0;
-    const sleep2 = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    let pendingErrorForReflection = null;
+    let stepCount = 0;
+    const toolsUsed = [];
+    telemetryService.emit({ eventId: v4$2(), runId, ts: (/* @__PURE__ */ new Date()).toISOString(), type: "agent_run_start", data: { userMessage: userMessage.slice(0, 100), model: this.currentModelId } });
+    auditService.log({ actor: "agent", action: "agent_run_start", details: { runId, userMessage: userMessage.slice(0, 100) }, status: "pending" });
     const intentClassification = classifyIntent(userMessage);
-    this.emitStep("thought", `Intent: ${intentClassification.type} (${Math.round(intentClassification.confidence * 100)}% confidence) - ${intentClassification.reason}`, {
-      phase: "intent_classification",
-      intent: intentClassification
-    });
+    this.emitStep("thought", `Intent: ${intentClassification.type} (${Math.round(intentClassification.confidence * 100)}% confidence) - ${intentClassification.reason}`, { phase: "intent_classification", intent: intentClassification });
     try {
+      const selectors = await selectorDiscoveryService.discoverSelectors();
+      const selectorContext = Array.from(selectors.entries()).map(([p, s]) => `${p}: ${s.map((x) => x.testId).join(",")}`).join("\n");
       let context = browserContext || "Current browser state: No context provided";
       context = this.redactSecrets(context);
       const safeUserMessage = this.redactSecrets(userMessage);
-      this.systemPrompt = new SystemMessage(`<role>
-You are a helpful enterprise assistant integrated into a browser.
-Your goal is to help users complete tasks by using tools effectively and safely.
-</role>
-
-<tool_calling>
-You MUST respond ONLY with a single JSON object.
-- DO NOT include any text before or after the JSON.
-- DO NOT wrap the JSON in markdown fences.
-
-JSON schema (ALWAYS follow exactly):
-{
-  "thought": "brief reasoning for the next step",
-  "tool": "tool_name",
-  "args": { ... }
-}
-
-Final response schema:
-{
-  "thought": "brief completion summary",
-  "tool": "final_response",
-  "args": { "message": "your message to the user" }
-}
-</tool_calling>
-
-<strategy>
-API-FIRST (MUCH FASTER):
-- Prefer API tools (api_web_search/api_http_get/etc.) when they can accomplish the task.
-- For GitHub repository summaries, prefer api_github_get_repo and api_github_get_readme when available.
-- Use browser tools only if no API is available or the user needs to SEE/INTERACT with the page.
-- If you must perform a web search via browser_navigate, use DuckDuckGo (https://duckduckgo.com/?q=...) instead of Google to avoid CAPTCHA blocks.
-</strategy>
-
-<browser_primitives>
-- Always call browser_observe before clicking/typing/selecting to get fresh selectors.
-- If a selector matches multiple elements, disambiguate using index, matchText, or withinSelector.
-- From browser_observe, prefer selectors in this order:
-  1) A CSS selector candidate with matches=1
-  2) An XPath selector candidate with matches=1 (pass as selector starting with "xpath=")
-  3) browser_click_text when the visible text is unique
-- Note: browser_click/browser_type/browser_select/browser_get_text accept XPath selectors when prefixed with "xpath=".
-- Prefer browser_click_text when the visible text is unique.
-- After any meaningful state change (navigation, submit, save), re-observe or wait for a confirming signal (text/selector).
-</browser_primitives>
-
-<verification>
-You must not claim an action happened unless a tool execution succeeded.
-Verification means one of:
-- The latest browser_observe output shows the expected content/state.
-- browser_wait_for_text succeeds for a confirming piece of UI text.
-- A tool result explicitly confirms success.
-
-If verification is missing, take the next step to verify (observe or wait) instead of guessing.
-</verification>
-
-<recovery>
-If you receive a System message starting with "Previous error:", you must incorporate that error into your next tool choice and args. Avoid repeating the same failing tool call.
-If a loop is detected, change strategy (different selector, re-observe, wait, or ask the user for clarification).
-</recovery>
-
-<mock_saas_selectors>
-When on localhost:3000, prefer stable data-testid selectors:
-- AeroCore Admin: Create user button = [data-testid="admin-create-user-btn"]
-- Admin form fields: [data-testid="admin-input-name"], [data-testid="admin-input-email"], [data-testid="admin-select-role"]
-- Admin submit: [data-testid="admin-submit-user"]
-- Jira: Create = [data-testid="jira-create-button"], Summary = [data-testid="jira-summary-input"], Submit = [data-testid="jira-submit-create"]
-- Dispatch: Create incident = [data-testid="dispatch-create-btn"], Broadcast = [data-testid="dispatch-broadcast-btn"]
-</mock_saas_selectors>
-
-<tools>
+      this.systemPrompt = new SystemMessage(`<role>You are a helpful enterprise assistant integrated into a browser. Your goal is to help users complete tasks by using tools effectively and safely.</role>
+<tool_calling>You MUST respond ONLY with a single JSON object. JSON schema: { "thought": "brief reasoning", "tool": "tool_name", "args": { ... } } Final response: { "thought": "brief completion summary", "tool": "final_response", "args": { "message": "your message" } }</tool_calling>
+<strategy>API-FIRST, BROWSER-FALLBACK: - Try API tools first. - If api_web_search returns status="browser_required", immediately use browser_navigate. - Use DuckDuckGo for browser searches.</strategy>
+<browser_primitives>- Always call browser_observe before interactions. - From browser_observe, prefer CSS matches=1, then XPath matches=1, then click_text.</browser_primitives>
+<mock_saas_ground_truth>Selectors discovered from source:
+${selectorContext}</mock_saas_ground_truth>
+<workflow_orchestrator>For complex tasks, use WorkflowOrchestrator to manage multi-step plans.</workflow_orchestrator>
 Available tools:
-${tools.map((t2) => `- ${t2.name}: ${t2.description}`).join("\n")}
-</tools>`);
-      const contextualUserMessage = new HumanMessage(`[${context}]
+${langChainTools.map((t2) => `- ${t2.name}: ${t2.description}`).join("\n")}`);
+      this.conversationHistory.push(new HumanMessage(`[${context}]
 
-User request: ${safeUserMessage} `);
-      this.conversationHistory.push(contextualUserMessage);
+User request: ${safeUserMessage}`));
       this.trimConversationHistory();
       await this.maybeSummarize();
-      messages = this.buildMessagesWithSummaries(this.systemPrompt);
-      const warmStartHit = await taskKnowledgeService.findNearest(userMessage, 0.8);
-      if (warmStartHit) {
-        this.emitStep("thought", `Found matching skill: "${warmStartHit.skill.name}" (similarity: ${warmStartHit.similarity.toFixed(2)}). Attempting warm-start execution.`);
-        try {
-          const steps = warmStartHit.skill.steps;
-          if (steps.length === 1 && steps[0].action === "navigate" && steps[0].url) {
-            const navigateTool = tools.find((t2) => t2.name === "browser_navigate");
-            if (navigateTool) {
-              const navResult = await navigateTool.invoke({ url: steps[0].url });
-              const navResultStr = String(navResult);
-              if (!navResultStr.toLowerCase().includes("error")) {
-                taskKnowledgeService.recordOutcome(warmStartHit.skill.id, true);
-                const fastResponse = `Navigated to ${steps[0].url}`;
-                this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: "final_response", args: { message: fastResponse } })));
-                return fastResponse;
-              } else {
-                this.emitStep("thought", `Warm-start navigation failed: ${navResultStr}. Falling back.`);
-                taskKnowledgeService.markStale(warmStartHit.skill.id);
-              }
-            }
-          } else if (steps.length > 0) {
-            const executePlanTool = tools.find((t2) => t2.name === "browser_execute_plan");
-            if (executePlanTool) {
-              const planResult = await executePlanTool.invoke({ steps });
-              const resultStr = String(planResult);
-              if (resultStr.includes("successfully") || resultStr.includes("completed") || resultStr.includes("Plan completed")) {
-                taskKnowledgeService.recordOutcome(warmStartHit.skill.id, true);
-                const fastResponse = `Completed using saved skill "${warmStartHit.skill.name}".`;
-                this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: "final_response", args: { message: fastResponse } })));
-                return fastResponse;
-              } else {
-                this.emitStep("thought", `Warm-start execution result: ${resultStr.substring(0, 100)}. Falling back.`);
-                taskKnowledgeService.markStale(warmStartHit.skill.id);
-              }
-            }
+      const messages = this.buildMessagesWithSummaries(this.systemPrompt);
+      if (userMessage.length > 10) {
+        const workflowHit = await taskKnowledgeService.findNearest(userMessage, 0.85);
+        if (workflowHit && workflowHit.skill.isWorkflow) {
+          this.emitStep("thought", `Executing workflow: "${workflowHit.skill.name}".`);
+          const result2 = await this.orchestrator.execute(workflowHit.skill.steps.map((s) => ({ id: s.id, name: s.name || s.tool, tool: s.tool, args: s.args || {}, dependencies: s.dependencies || [], status: "pending" })), (type, content, metadata) => this.emitStep(type, content, metadata));
+          if (result2.success) {
+            telemetryService.emit({ eventId: v4$2(), runId, ts: (/* @__PURE__ */ new Date()).toISOString(), type: "agent_run_end", data: { success: true, via: "workflow_hit", durationMs: Date.now() - runStartedAt } });
+            return `Completed via workflow ${workflowHit.skill.name}`;
           }
-        } catch (warmStartErr) {
-          this.emitStep("thought", `Warm-start error: ${warmStartErr.message}. Falling back to normal planning.`);
-          taskKnowledgeService.markStale(warmStartHit.skill.id);
         }
-      }
-      const currentConfig = AVAILABLE_MODELS.find((m) => m.id === this.currentModelId);
-      const isSlowModel = (currentConfig == null ? void 0 : currentConfig.supportsThinking) || (currentConfig == null ? void 0 : currentConfig.id) === "qwen3-235b";
-      const timeoutMs = isSlowModel ? 9e4 : 45e3;
-      const plan = await this.planCurrentGoal(userMessage, context);
-      if (plan.length > 1) {
-        this.emitStep("thought", `Strategic Plan: 
-${plan.map((p, idx) => `${idx + 1}. ${p}`).join("\n")} `, { phase: "planning", plan });
+        const workflowTasks = await this.orchestrator.plan(userMessage, context);
+        if (workflowTasks.length > 1) {
+          this.emitStep("thought", `Planned ${workflowTasks.length} steps. Executing...`);
+          const result2 = await this.orchestrator.execute(workflowTasks, (type, content, metadata) => this.emitStep(type, content, metadata));
+          if (result2.success) {
+            try {
+              await taskKnowledgeService.addSkill({ name: `workflow_${v4$2().slice(0, 8)}`, description: userMessage, domain: context.includes("localhost:3000") ? "localhost:3000" : "unknown", isWorkflow: true, steps: result2.tasks.map((t2) => ({ action: "workflow_task", id: t2.id, name: t2.name, tool: t2.tool, args: t2.args, dependencies: t2.dependencies })), tags: ["workflow"] });
+            } catch {
+            }
+            telemetryService.emit({ eventId: v4$2(), runId, ts: (/* @__PURE__ */ new Date()).toISOString(), type: "agent_run_end", data: { success: true, via: "workflow_planned", durationMs: Date.now() - runStartedAt } });
+            return `Workflow completed successfully.`;
+          }
+        }
       }
       for (let i = 0; i < 15; i++) {
         const loopAlert = agentRunContext.consumeLoopAlert();
         if (loopAlert) {
-          loopAlertCount += 1;
-          const loopMsg = `Loop detected: ${loopAlert.kind} ${loopAlert.key} repeated ${loopAlert.count} times.`;
-          this.emitStep("observation", loopMsg, {
-            phase: "loop_detected",
-            state: "recovering",
-            alert: loopAlert
-          });
+          loopAlertCount++;
+          const loopMsg = `Loop detected: ${loopAlert.kind} repeated ${loopAlert.count} times.`;
+          this.emitStep("observation", loopMsg);
           pendingErrorForReflection = loopMsg;
           if (loopAlertCount >= 2) {
-            this.emitStep("observation", `Fatal Error: ${loopMsg}`, {
-              phase: "fatal_error",
-              state: "fatal",
-              alert: loopAlert
-            });
-            await this.logFailureTrace(userMessage, messages, loopMsg);
-            return "I detected a repeated loop while trying to complete this task. Please confirm the desired outcome or provide additional guidance so I can proceed safely.";
+            await this.logFailure(runId, userMessage, "Loop detected", stepCount, toolsUsed, Date.now() - runStartedAt);
+            telemetryService.emit({ eventId: v4$2(), runId, ts: (/* @__PURE__ */ new Date()).toISOString(), type: "agent_run_end", data: { success: false, reason: "loop_detected", durationMs: Date.now() - runStartedAt } });
+            return "Loop detected. Please provide guidance.";
           }
         }
         if (pendingErrorForReflection) {
-          messages.push(
-            new SystemMessage(
-              `Previous error: ${pendingErrorForReflection}
-Reflect on the failure and choose a different tool/args or add verification steps. Avoid repeating identical calls.`
-            )
-          );
+          messages.push(new SystemMessage(`Previous error: ${pendingErrorForReflection}. Reflect and choose a different path.`));
           pendingErrorForReflection = null;
         }
-        const runId = agentRunContext.getRunId() ?? void 0;
-        const llmCallId = v4$1();
-        const llmStartedAt = Date.now();
-        this.emitStep("thought", `Calling model ${this.currentModelId} (turn ${i + 1})`, {
-          phase: "llm_start",
-          llmCallId,
-          turnIndex: i,
-          modelId: this.currentModelId
-        });
-        try {
-          await telemetryService.emit({
-            eventId: v4$1(),
-            runId,
-            ts: (/* @__PURE__ */ new Date()).toISOString(),
-            type: "llm_call_start",
-            name: "agent_turn",
-            data: {
-              llmCallId,
-              turnIndex: i,
-              modelId: this.currentModelId,
-              modelName: currentConfig == null ? void 0 : currentConfig.modelName,
-              timeoutMs
-            }
-          });
-        } catch {
-        }
-        const timeoutPromise = new Promise(
-          (_, reject) => setTimeout(() => reject(new Error(`LLM call timed out after ${timeoutMs / 1e3} seconds`)), timeoutMs)
-        );
+        const timeoutMs = 6e4;
         let response;
-        let progressTimer = null;
-        let progressCount = 0;
         try {
-          progressTimer = setInterval(() => {
-            progressCount += 1;
-            const elapsedMs = Date.now() - llmStartedAt;
-            if (progressCount <= 6) {
-              this.emitStep("thought", `Still thinking... (${Math.round(elapsedMs / 1e3)}s)`, {
-                phase: "llm_wait",
-                llmCallId,
-                turnIndex: i,
-                modelId: this.currentModelId,
-                elapsedMs
-              });
-            }
-          }, 5e3);
-          const streamPromise = (async () => {
-            let fullContent = "";
-            const stream = await this.model.stream(messages);
-            for await (const chunk of stream) {
-              const token = String(chunk.content);
-              fullContent += token;
-            }
-            return new AIMessage(fullContent);
-          })();
-          response = await Promise.race([
-            streamPromise,
-            timeoutPromise
-          ]);
-        } catch (timeoutErr) {
-          if (progressTimer) clearInterval(progressTimer);
-          const durationMs = Date.now() - llmStartedAt;
-          this.emitStep("observation", `LLM timed out after ${Math.round(durationMs)} ms`, {
-            phase: "llm_end",
-            ok: false,
-            llmCallId,
-            turnIndex: i,
-            modelId: this.currentModelId,
-            durationMs,
-            errorMessage: String((timeoutErr == null ? void 0 : timeoutErr.message) ?? timeoutErr)
-          });
-          try {
-            await telemetryService.emit({
-              eventId: v4$1(),
-              runId,
-              ts: (/* @__PURE__ */ new Date()).toISOString(),
-              type: "llm_call_end",
-              name: "agent_turn",
-              data: {
-                llmCallId,
-                turnIndex: i,
-                ok: false,
-                durationMs,
-                errorMessage: String((timeoutErr == null ? void 0 : timeoutErr.message) ?? timeoutErr)
-              }
-            });
-          } catch {
-          }
-          this.emitStep("observation", `Request timed out.Try a simpler request or switch to a faster model.`);
-          this.emitStep("observation", `Fatal Error: LLM timed out`, { phase: "fatal_error", state: "fatal" });
-          return "The request timed out. Try breaking it into smaller steps or use a faster model.";
+          const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("LLM timeout")), timeoutMs));
+          response = await Promise.race([this.model.invoke(messages), timeoutPromise]);
+        } catch (err) {
+          await this.logFailure(runId, userMessage, "Request timed out", stepCount, toolsUsed, Date.now() - runStartedAt);
+          telemetryService.emit({ eventId: v4$2(), runId, ts: (/* @__PURE__ */ new Date()).toISOString(), type: "agent_run_end", data: { success: false, reason: "timeout", durationMs: Date.now() - runStartedAt } });
+          return "Request timed out.";
         }
-        if (progressTimer) clearInterval(progressTimer);
-        try {
-          const durationMs = Date.now() - llmStartedAt;
-          this.emitStep("thought", `Model responded in ${Math.round(durationMs)} ms`, {
-            phase: "llm_end",
-            ok: true,
-            llmCallId,
-            turnIndex: i,
-            modelId: this.currentModelId,
-            durationMs
-          });
-          await telemetryService.emit({
-            eventId: v4$1(),
-            runId,
-            ts: (/* @__PURE__ */ new Date()).toISOString(),
-            type: "llm_call_end",
-            name: "agent_turn",
-            data: {
-              llmCallId,
-              turnIndex: i,
-              ok: true,
-              durationMs,
-              responseLength: String((response == null ? void 0 : response.content) ?? "").length
-            }
-          });
-        } catch {
-        }
-        const rawContent = response.content;
-        const content = rawContent.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
-        console.log(`[Agent Turn ${i}] Raw Response: `, this.redactSecrets(content));
-        if (content.length !== rawContent.length) {
-          console.log(`[Agent Turn ${i}] (Original with <think> tags redacted)`);
-        }
+        const content = response.content.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
         const action = this.parseToolCall(content);
-        if (action == null ? void 0 : action.thought) {
-          this.emitStep("thought", action.thought);
-        } else {
-          const jsonStart = content.indexOf("{");
-          if (jsonStart > 1) {
-            const thought = content.slice(0, jsonStart).trim();
-            const cleanThought = thought.replace(/```json/g, "").replace(/```/g, "").trim();
-            if (cleanThought.length > 5) {
-              this.emitStep("thought", cleanThought);
-            }
+        if (!action) {
+          if (++parseFailures >= 3) {
+            await this.logFailure(runId, userMessage, "Parse failures", stepCount, toolsUsed, Date.now() - runStartedAt);
+            telemetryService.emit({ eventId: v4$2(), runId, ts: (/* @__PURE__ */ new Date()).toISOString(), type: "agent_run_end", data: { success: false, reason: "parse_failures", durationMs: Date.now() - runStartedAt } });
+            return "Failed to generate valid commands.";
           }
-        }
-        if (!action || typeof action.tool !== "string" || !action.args || typeof action.args !== "object") {
-          if (!action && !content.includes("{") && content.trim().length > 0) {
-            const finalMessage = content.trim();
-            const finalJson = JSON.stringify({ thought: "Responding directly.", tool: "final_response", args: { message: finalMessage } });
-            this.conversationHistory.push(new AIMessage(finalJson));
-            return finalMessage;
-          }
-          parseFailures++;
-          let specificError = "Invalid JSON format.";
-          if (!content.includes("{")) specificError = "No JSON object found in response.";
-          else if (content.includes("```") && !content.includes("```json")) specificError = "Markdown block found but it's not marked as ```json.";
-          this.emitStep("observation", `Model returned invalid JSON (attempt ${parseFailures}/3). ${specificError}`);
-          console.warn("Failed to parse JSON response:", content);
-          messages.push(new AIMessage(this.redactSecrets(String((response == null ? void 0 : response.content) ?? ""))));
-          messages.push(
-            new SystemMessage(
-              `Error: ${specificError} Output ONLY valid JSON.
-Format: {"thought":"brief reasoning","tool":"tool_name","args":{...}}
-To finish: {"thought":"brief completion summary","tool":"final_response","args":{"message":"your response"}}`
-            )
-          );
-          if (lastVerified && parseFailures >= 2) {
-            return `Done: ${lastVerified}`;
-          }
-          if (parseFailures >= 3) {
-            const failMsg = "I had trouble completing this task because I couldn't generate valid JSON commands. Try a simpler request or switch to a more reliable model (e.g., Llama 3.3 70B).";
-            this.emitStep("observation", `Fatal Error: ${failMsg}`, { phase: "fatal_error", state: "fatal" });
-            await this.logFailureTrace(userMessage, messages, "Max parse failures reached (3)");
-            return failMsg;
-          }
+          messages.push(new AIMessage(content));
+          messages.push(new SystemMessage("Error: Invalid JSON. Output ONLY valid JSON."));
           continue;
         }
-        if (action.tool !== "final_response" && !action.thought) {
-          this.emitStep("thought", `Decided to call ${action.tool}`);
-        }
+        if (action.thought) this.emitStep("thought", action.thought);
         if (action.tool === "final_response") {
-          const finalArgs = action.args;
-          const finalMessage = typeof (finalArgs == null ? void 0 : finalArgs.message) === "string" ? finalArgs.message : typeof (finalArgs == null ? void 0 : finalArgs.content) === "string" ? finalArgs.content : "";
-          if (!finalMessage) {
-            messages.push(response);
-            messages.push(
-              new SystemMessage(
-                'Error: final_response must include args.message as a string. Example: {"tool":"final_response","args":{"message":"..."}}'
-              )
-            );
-            continue;
-          }
+          const finalMessage = action.args.message || content;
           if (usedBrowserTools) {
-            const lastMessages = messages.slice(-8);
-            const lastObs = ((_a3 = lastMessages.filter((m) => m._getType() === "system" && m.content.toString().includes("Output:")).pop()) == null ? void 0 : _a3.content.toString()) || "";
-            const isTerminalDenial = lastObs.includes("User denied execution") || lastObs.includes("Approval timed out") || lastObs.includes("Operation denied by policy");
-            const lastContent = lastMessages.map((m) => m.content ?? "").join("\n");
-            const claimedSuccess = /\b(created|created a|successfully|done|completed)\b/i.test(finalMessage);
-            const verificationFound = /\bFound text:\b|\b\"found\":\s*[1-9]\d*\b/i.test(lastContent) || /\bSaved plan for\b/i.test(lastContent);
-            if (claimedSuccess && !verificationFound && !isTerminalDenial) {
-              messages.push(response);
-              messages.push(
-                new SystemMessage(
-                  "You must verify UI changes before claiming success. Use browser_wait_for_text or browser_find_text for the expected item title, then respond."
-                )
-              );
+            const verification = await this.verifyTaskSuccess(userMessage, String(messages[messages.length - 1].content));
+            if (!verification.success) {
+              messages.push(new SystemMessage(`Verification failed: ${verification.reason}. Please double check.`));
               continue;
             }
           }
-          if (usedBrowserTools) {
-            const lastObs = ((_b = messages.filter((m) => m._getType() === "system" && m.content.toString().includes("Output:")).pop()) == null ? void 0 : _b.content.toString()) || "No observation";
-            const isTerminalDenial = lastObs.includes("User denied execution") || lastObs.includes("Approval timed out") || lastObs.includes("Operation denied by policy");
-            const verification = await this.verifyTaskSuccess(userMessage, lastObs);
-            if (!verification.success && !isTerminalDenial) {
-              this.emitStep("thought", `Verification failed: ${verification.reason}. Retrying...`);
-              messages.push(new SystemMessage(`Internal verification failed: ${verification.reason}. Please double check the browser state and ensure the task is fully complete according to requirements.`));
-              continue;
-            }
-            if (isTerminalDenial) {
-              this.emitStep("thought", `Tool was denied. Finishing task based on user decision.`);
-            } else {
-              this.emitStep("thought", `Verification successful: ${verification.reason}`);
-            }
-          }
-          this.conversationHistory.push(new AIMessage(this.redactSecrets(content)));
+          this.conversationHistory.push(new AIMessage(JSON.stringify(action)));
+          telemetryService.emit({ eventId: v4$2(), runId, ts: (/* @__PURE__ */ new Date()).toISOString(), type: "agent_run_end", data: { success: true, via: "final_response", stepCount, durationMs: Date.now() - runStartedAt } });
+          auditService.log({ actor: "agent", action: "agent_run_complete", details: { runId, stepCount, toolsUsed }, status: "success" });
           return finalMessage;
         }
-        const tool2 = tools.find((t2) => t2.name === action.tool);
+        const tool2 = langChainTools.find((t2) => t2.name === action.tool);
         if (tool2) {
-          console.log(`Executing tool: ${tool2.name} with args:`, action.args);
-          const toolCallId = v4$1();
-          const toolStartedAt = Date.now();
-          if (tool2.name === "browser_navigate" && ((_c = action.args) == null ? void 0 : _c.url)) {
-            const targetUrl = action.args.url;
-            const navCheck = shouldNavigateActiveTab(userMessage, targetUrl, context);
+          const navArgs = action.args;
+          if (tool2.name === "browser_navigate" && (navArgs == null ? void 0 : navArgs.url)) {
+            const navCheck = shouldNavigateActiveTab(userMessage, navArgs.url, context);
             if (!navCheck.allowNavigation) {
-              this.emitStep("thought", `Navigation guard: ${navCheck.reason}`, {
-                phase: "navigation_guard",
-                targetUrl,
-                decision: "new_tab"
-              });
               const { BrowserWindow: BrowserWindow2 } = await import("electron");
               const win2 = BrowserWindow2.getAllWindows()[0];
               if (win2) {
-                win2.webContents.send("browser:open-agent-tab", {
-                  url: targetUrl,
-                  background: intentClassification.openInBackground,
-                  agentCreated: true
-                });
-                const toolDurationMs = Date.now() - toolStartedAt;
-                const result = `Opened ${targetUrl} in a new tab (preserving your current context)`;
-                this.emitStep("observation", `Tool Output: ${result}`, {
-                  tool: tool2.name,
-                  result,
-                  toolCallId,
-                  phase: "tool_end",
-                  durationMs: toolDurationMs,
-                  navigationGuarded: true
-                });
-                const safeToolCall = this.redactSecrets(content);
-                const aiMsg = new AIMessage(safeToolCall);
-                const toolOutputMsg = new SystemMessage(`Tool '${tool2.name}' Output:
-${result}`);
-                messages.push(aiMsg);
-                messages.push(toolOutputMsg);
-                this.conversationHistory.push(aiMsg);
-                this.conversationHistory.push(toolOutputMsg);
+                win2.webContents.send("browser:open-agent-tab", { url: navArgs.url, background: intentClassification.openInBackground, agentCreated: true });
+                const resMsg = `Opened ${navArgs.url} in new tab.`;
+                messages.push(new AIMessage(content));
+                messages.push(new SystemMessage(resMsg));
                 usedBrowserTools = true;
                 continue;
               }
             }
           }
-          this.emitStep("action", `Executing ${tool2.name}`, {
-            tool: tool2.name,
-            args: action.args,
-            toolCallId,
-            phase: "tool_start"
-          });
+          stepCount++;
+          toolsUsed.push(tool2.name);
+          this.emitStep("action", `Executing ${tool2.name}`, { tool: tool2.name, args: action.args });
+          auditService.log({ actor: "agent", action: "tool_execution", details: { runId, tool: tool2.name, args: action.args }, status: "pending" });
+          const toolStartedAt = Date.now();
           try {
-            const maxAttempts = 3;
-            let result = null;
-            let ok = false;
-            let lastErrStr = "";
-            for (let attempt = 0; attempt < maxAttempts; attempt++) {
-              if (attempt > 0) {
-                this.emitStep("observation", `Retrying ${tool2.name} (${attempt + 1}/${maxAttempts})`, {
-                  phase: "tool_retry",
-                  state: "retrying",
-                  tool: tool2.name,
-                  toolCallId,
-                  attempt: attempt + 1,
-                  maxAttempts
-                });
-                await sleep2(400 * Math.pow(2, attempt - 1));
-              }
-              try {
-                result = await tool2.invoke(action.args);
-                const resultStr2 = String(result ?? "");
-                const isFailureStr = resultStr2.startsWith("Tool execution failed:") || resultStr2.startsWith("Error:");
-                const isTerminalDenial = resultStr2.includes("User denied execution") || resultStr2.includes("Approval timed out") || resultStr2.includes("Operation denied by policy");
-                if (!isFailureStr) {
-                  ok = true;
-                  break;
-                }
-                lastErrStr = resultStr2;
-                if (isTerminalDenial) {
-                  break;
-                }
-              } catch (e) {
-                lastErrStr = String((e == null ? void 0 : e.message) ?? e);
-              }
-            }
-            if (!ok) {
-              const toolDurationMs2 = Date.now() - toolStartedAt;
-              const errMsg = lastErrStr || "Tool failed.";
-              this.emitStep("observation", `Tool Execution Error: ${errMsg}`, {
-                tool: tool2.name,
-                toolCallId,
-                phase: "tool_end",
-                ok: false,
-                durationMs: toolDurationMs2,
-                errorMessage: errMsg
-              });
-              pendingErrorForReflection = errMsg;
-              const aiMsg2 = new AIMessage(this.redactSecrets(content));
-              const errorMsg = new SystemMessage(`Tool Execution Error: ${errMsg}`);
-              messages.push(aiMsg2);
-              messages.push(errorMsg);
-              this.conversationHistory.push(aiMsg2);
-              this.conversationHistory.push(errorMsg);
-              continue;
-            }
-            const toolDurationMs = Date.now() - toolStartedAt;
-            this.emitStep("observation", `Tool Output: ${result}`, {
-              tool: tool2.name,
-              result,
-              toolCallId,
-              phase: "tool_end",
-              durationMs: toolDurationMs
-            });
+            const toolResult = await tool2.invoke(action.args);
+            const resStr = String(toolResult);
+            const durationMs = Date.now() - toolStartedAt;
+            telemetryService.emit({ eventId: v4$2(), runId, ts: (/* @__PURE__ */ new Date()).toISOString(), type: "tool_call_end", name: tool2.name, data: { success: true, durationMs } });
+            this.emitStep("observation", resStr, { tool: tool2.name, result: resStr, durationMs, ok: true });
             if (tool2.name.startsWith("browser_")) usedBrowserTools = true;
-            if (tool2.name === "browser_wait_for_text" || tool2.name === "browser_wait_for_text_in") {
-              if (typeof result === "string" && result.startsWith("Found text")) {
-                lastVerified = result;
-              }
-            }
-            const resultStr = String(result);
-            const toolName = action.tool;
-            const lowerMsg = userMessage.toLowerCase();
-            const isOneShotActionRequest = !lowerMsg.includes(" and ") && !lowerMsg.includes(" then ") && !lowerMsg.includes("tell me") && !lowerMsg.includes("explain") && !lowerMsg.includes("summarize") && !lowerMsg.includes("analyze") && !lowerMsg.includes("find ") && !lowerMsg.includes("search ") && !lowerMsg.includes("open ") && !lowerMsg.includes("click ") && !lowerMsg.includes("show me") && !lowerMsg.includes("what is") && !lowerMsg.includes("look for");
-            if (toolName === "browser_execute_plan" && resultStr.startsWith("Plan completed successfully.")) {
-              const fastResponse = `Completed the requested steps and verified the outcome.`;
-              this.conversationHistory.push(
-                new AIMessage(
-                  JSON.stringify({ tool: "final_response", args: { message: fastResponse } })
-                )
-              );
-              return fastResponse;
-            }
-            if (toolName === "browser_navigate" && !resultStr.toLowerCase().includes("error")) {
-              const isSimpleNavigation = (lowerMsg.startsWith("open ") || lowerMsg.startsWith("go to ") || lowerMsg.startsWith("navigate to ") || lowerMsg.startsWith("visit ")) && !lowerMsg.includes(" and ") && !lowerMsg.includes(" then ") && !lowerMsg.includes("tell me") && !lowerMsg.includes("find ") && !lowerMsg.includes("search ") && !lowerMsg.includes("click ") && !lowerMsg.includes("what is") && !lowerMsg.includes("show me");
-              if (isSimpleNavigation) {
-                const url = ((_d = action.args) == null ? void 0 : _d.url) || "the page";
-                const fastResponse = `Navigated to ${url}`;
-                this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: "final_response", args: { message: fastResponse } })));
-                return fastResponse;
-              }
-            }
-            if (toolName === "browser_scroll" && !resultStr.toLowerCase().includes("error") && isOneShotActionRequest) {
-              const fastResponse = `Scrolled the page.`;
-              this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: "final_response", args: { message: fastResponse } })));
-              return fastResponse;
-            }
-            if (toolName === "browser_go_back" && !resultStr.toLowerCase().includes("error") && isOneShotActionRequest) {
-              const fastResponse = `Went back to the previous page.`;
-              this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: "final_response", args: { message: fastResponse } })));
-              return fastResponse;
-            }
-            if (toolName === "browser_go_forward" && !resultStr.toLowerCase().includes("error") && isOneShotActionRequest) {
-              const fastResponse = `Went forward to the next page.`;
-              this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: "final_response", args: { message: fastResponse } })));
-              return fastResponse;
-            }
-            if (toolName === "browser_reload" && !resultStr.toLowerCase().includes("error") && isOneShotActionRequest) {
-              const fastResponse = `Reloaded the page.`;
-              this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: "final_response", args: { message: fastResponse } })));
-              return fastResponse;
-            }
-            if (toolName === "browser_press_key" && !resultStr.toLowerCase().includes("error") && isOneShotActionRequest) {
-              const key = ((_e = action.args) == null ? void 0 : _e.key) || "the key";
-              const fastResponse = `Pressed ${key}.`;
-              this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: "final_response", args: { message: fastResponse } })));
-              return fastResponse;
-            }
-            if (toolName === "browser_clear" && !resultStr.toLowerCase().includes("error") && isOneShotActionRequest) {
-              const fastResponse = `Cleared the input field.`;
-              this.conversationHistory.push(new AIMessage(JSON.stringify({ tool: "final_response", args: { message: fastResponse } })));
-              return fastResponse;
-            }
-            const safeToolCall = this.redactSecrets(content);
-            const safeResult = this.redactSecrets(String(result ?? ""));
-            const aiMsg = new AIMessage(safeToolCall);
-            const toolOutputMsg = new SystemMessage(`Tool '${action.tool}' Output:
-${safeResult}`);
-            messages.push(aiMsg);
-            messages.push(toolOutputMsg);
-            this.conversationHistory.push(aiMsg);
-            this.conversationHistory.push(toolOutputMsg);
-          } catch (err) {
-            const toolDurationMs = Date.now() - toolStartedAt;
-            const errMsg = String((err == null ? void 0 : err.message) ?? err);
-            this.emitStep("observation", `Tool Execution Error: ${errMsg}`, {
-              tool: tool2.name,
-              toolCallId,
-              phase: "tool_end",
-              ok: false,
-              durationMs: toolDurationMs,
-              errorMessage: errMsg
-            });
-            pendingErrorForReflection = errMsg;
-            const aiMsg = new AIMessage(this.redactSecrets(content));
-            const errorMsg = new SystemMessage(`Tool Execution Error: ${errMsg}`);
-            messages.push(aiMsg);
-            messages.push(errorMsg);
-            this.conversationHistory.push(aiMsg);
-            this.conversationHistory.push(errorMsg);
+            messages.push(new AIMessage(content));
+            messages.push(new SystemMessage(`Tool Output:
+${resStr}`));
+          } catch (e) {
+            const durationMs = Date.now() - toolStartedAt;
+            const errMsg = e instanceof Error ? e.message : String(e);
+            telemetryService.emit({ eventId: v4$2(), runId, ts: (/* @__PURE__ */ new Date()).toISOString(), type: "tool_call_end", name: tool2.name, data: { success: false, error: errMsg, durationMs } });
+            this.emitStep("observation", `Tool Error: ${errMsg}`, { tool: tool2.name, errorMessage: errMsg, durationMs, ok: false });
+            messages.push(new AIMessage(content));
+            messages.push(new SystemMessage(`Tool Error: ${errMsg}`));
           }
         } else {
-          console.error(`Tool not found: ${action.tool}`);
-          const aiMsg = new AIMessage(content);
-          const errorMsg = new SystemMessage(`Error: Tool '${action.tool}' not found. Available tools: ${tools.map((t2) => t2.name).join(", ")}`);
-          messages.push(aiMsg);
-          messages.push(errorMsg);
-          this.conversationHistory.push(aiMsg);
-          this.conversationHistory.push(errorMsg);
+          messages.push(new AIMessage(content));
+          messages.push(new SystemMessage(`Error: Tool ${action.tool} not found.`));
         }
       }
-      const maxStepsMsg = "I could not complete the task within the maximum number of steps. Try simplifying the request or check the browser is in the expected state.";
-      this.emitStep("observation", `Fatal Error: ${maxStepsMsg}`, { phase: "fatal_error", state: "fatal" });
-      await this.logFailureTrace(userMessage, messages, "Max ReAct steps reached (15)");
-      return maxStepsMsg;
+      const result = "Maximum steps reached.";
+      await this.logFailure(runId, userMessage, result, stepCount, toolsUsed, Date.now() - runStartedAt);
+      telemetryService.emit({ eventId: v4$2(), runId, ts: (/* @__PURE__ */ new Date()).toISOString(), type: "agent_run_end", data: { success: false, reason: "max_steps", durationMs: Date.now() - runStartedAt } });
+      return result;
     } catch (error) {
-      console.error("Error in AgentService chat:", error);
-      await this.logFailureTrace(userMessage, messages, String(error));
-      return `Sorry, I encountered an error: ${error.message || error}`;
+      const errMsg = error instanceof Error ? error.message : String(error);
+      const result = `Error: ${errMsg}`;
+      await this.logFailure(runId, userMessage, result, stepCount, toolsUsed, Date.now() - runStartedAt);
+      telemetryService.emit({ eventId: v4$2(), runId, ts: (/* @__PURE__ */ new Date()).toISOString(), type: "agent_run_end", data: { success: false, reason: "exception", error: errMsg, durationMs: Date.now() - runStartedAt } });
+      auditService.log({ actor: "agent", action: "agent_run_error", details: { runId, error: errMsg }, status: "failure" });
+      return result;
     }
   }
-  // Future: Implement streaming support
-  async *streamChat(message) {
-    const stream = await this.model.stream([
-      new SystemMessage("You are a helpful enterprise assistant integrated into a browser."),
-      new HumanMessage(message)
-    ]);
-    for await (const chunk of stream) {
-      yield chunk.content;
-    }
-  }
-  async logFailureTrace(userMessage, history, error) {
+  async logFailure(runId, userMessage, result, stepCount, toolsUsed, durationMs) {
     try {
-      const runId = agentRunContext.getRunId() || "manual";
       const logDir = path$2.join(process.cwd(), "tuning_logs");
-      const logPath = path$2.join(logDir, `failure_${runId}_${Date.now()}.json`);
-      const trace = {
-        ts: (/* @__PURE__ */ new Date()).toISOString(),
-        runId,
-        modelId: this.currentModelId,
-        userMessage,
-        error,
-        history: history.map((m) => ({
-          role: m._getType(),
-          content: typeof m.content === "string" ? m.content : JSON.stringify(m.content)
-        }))
-      };
       await fs$1.mkdir(logDir, { recursive: true });
-      await fs$1.writeFile(logPath, JSON.stringify(trace, null, 2));
-      console.log(`[AgentService] Failure trace logged to ${logPath}`);
+      const logFile = path$2.join(logDir, `failure_${runId}_${Date.now()}.json`);
+      const logData = {
+        runId,
+        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+        userMessage,
+        result,
+        stepCount,
+        toolsUsed,
+        durationMs,
+        model: this.currentModelId
+      };
+      await fs$1.writeFile(logFile, JSON.stringify(logData, null, 2));
     } catch (e) {
-      console.error("[AgentService] Failed to log failure trace:", e);
-    }
-  }
-  async planCurrentGoal(userMessage, browserContext) {
-    const plannerPrompt = new SystemMessage(`You are a strategic planner for a browser agent. 
-    Your goal is to decompose the user's request into a list of logical sub-goals.
-    
-    Current Browser Context:
-    ${browserContext || "No context"}
-    
-    User Request: ${userMessage}
-    
-    Output a JSON array of strings, where each string is a clear sub-goal. 
-    Example: ["Navigate to Jira", "Find the issue EB-1", "Extract description", "Navigate to Confluence", "Create a new page with the description"]`);
-    try {
-      const response = await this.model.invoke([plannerPrompt]);
-      const content = typeof response.content === "string" ? response.content : JSON.stringify(response.content);
-      const jsonText = this.extractJsonObject(content) || (content.startsWith("[") ? content : null);
-      if (jsonText) {
-        const parsed = JSON.parse(jsonText);
-        if (Array.isArray(parsed)) return parsed;
-      }
-      return [userMessage];
-    } catch (e) {
-      console.error("[AgentService] Planning failed:", e);
-      return [userMessage];
+      console.error("[AgentService] Failed to write failure log:", e);
     }
   }
   async verifyTaskSuccess(goal, lastObservation) {
-    const verifierPrompt = new SystemMessage(`You are a verification assistant. 
-    Review if the goal has been successfully accomplished based on the last observation.
-    
-    Goal: ${goal}
-    Last Observation: ${lastObservation}
-    
-    Output JSON: { "success": true/false, "reason": "why" }`);
+    const prompt = new SystemMessage(`Verify goal: ${goal}. Obs: ${lastObservation}. JSON output {success, reason}.`);
     try {
-      const response = await this.model.invoke([verifierPrompt]);
-      const content = typeof response.content === "string" ? response.content : JSON.stringify(response.content);
-      const jsonText = this.extractJsonObject(content);
-      if (jsonText) return JSON.parse(jsonText);
-      return { success: false, reason: "Verifier did not return valid JSON" };
-    } catch (e) {
-      return { success: false, reason: `Verifier error: ${String((e == null ? void 0 : e.message) ?? e)}` };
+      const res = await this.model.invoke([prompt]);
+      const json = this.extractJsonObject(String(res.content));
+      if (json) return JSON.parse(json);
+      return { success: false, reason: "Invalid JSON from verifier" };
+    } catch {
+      return { success: false, reason: "Error during verification" };
     }
   }
 };
-// Limit conversation history to prevent unbounded memory growth
-// Each turn can have ~2-4 messages (user, AI, tool output, etc.)
-// 50 messages ≈ 12-25 turns of context
 __publicField(_AgentService, "MAX_HISTORY_MESSAGES", 50);
-// Adaptive summarization: compress oldest messages every N messages
 __publicField(_AgentService, "SUMMARY_EVERY", 30);
 __publicField(_AgentService, "SUMMARY_BLOCK_SIZE", 15);
 let AgentService = _AgentService;
@@ -47130,14 +46112,19 @@ class BrowserTargetService {
   setActiveTab(tabId) {
     this.activeTabId = tabId;
   }
+  getWebContents(tabId) {
+    const registered = this.tabIdToWebContentsId.get(tabId);
+    if (registered) {
+      const wc = webContents.fromId(registered.webContentsId);
+      if (wc && !wc.isDestroyed()) return wc;
+    }
+    return null;
+  }
   getActiveWebContents() {
     const activeTabId = this.activeTabId;
     if (activeTabId) {
-      const registered = this.tabIdToWebContentsId.get(activeTabId);
-      if (registered) {
-        const wc = webContents.fromId(registered.webContentsId);
-        if (wc && !wc.isDestroyed()) return wc;
-      }
+      const wc = this.getWebContents(activeTabId);
+      if (wc) return wc;
     }
     const all = webContents.getAllWebContents();
     const candidates = all.filter((wc) => !wc.isDestroyed()).filter((wc) => wc.getType() === "webview").filter((wc) => {
@@ -47314,7 +46301,11 @@ class BrowserAutomationService {
       return defaultRoutes;
     }
   }
-  async getTarget() {
+  async getTarget(tabId) {
+    if (tabId) {
+      const target = browserTargetService.getWebContents(tabId);
+      if (target) return target;
+    }
     return browserTargetService.getActiveWebContents();
   }
   async waitForSelector(target, selector, timeoutMs = 5e3) {
@@ -47380,16 +46371,17 @@ class BrowserAutomationService {
     const observeSchema = object({
       scope: _enum(["main", "document"]).optional().describe("Where to look for elements (default: main)"),
       maxElements: number().optional().describe("Max interactive elements to return (default: 80)"),
-      forceRefresh: boolean().optional().describe("Ignore cache and force a fresh observation")
+      forceRefresh: boolean().optional().describe("Ignore cache and force a fresh observation"),
+      tabId: string().optional().describe("Target tab ID for execution")
     });
     const observeTool = {
       name: "browser_observe",
       description: "Analyze the current page URL/title and return visible interactive elements. Defaults to main content to avoid header/nav noise. Caches results for performance; use forceRefresh to bypass.",
       schema: observeSchema,
       execute: async (args) => {
-        const { scope, maxElements, forceRefresh } = observeSchema.parse(args ?? {});
+        const { scope, maxElements, forceRefresh, tabId } = observeSchema.parse(args ?? {});
         try {
-          const target = await this.getTarget();
+          const target = await this.getTarget(tabId);
           const targetId = target.id;
           const currentUrl = target.getURL();
           const argsKey = JSON.stringify({ scope: scope ?? "main", maxElements: maxElements ?? 80 });
@@ -47916,12 +46908,14 @@ class BrowserAutomationService {
       description: "Navigate the browser to a specific URL.",
       schema: object({
         url: string().describe("The URL to navigate to (must include http/https)"),
+        tabId: string().optional().describe("Target tab ID for execution"),
         waitForSelector: string().optional().describe("Optional selector to wait for after navigation"),
         waitForText: string().optional().describe("Optional text to wait for after navigation"),
         timeoutMs: number().optional().describe("Timeout in ms for optional waits (default 8000)")
       }),
       execute: async ({
         url,
+        tabId,
         waitForSelector,
         waitForText,
         timeoutMs
@@ -47929,7 +46923,7 @@ class BrowserAutomationService {
         try {
           let target;
           try {
-            target = await this.getTarget();
+            target = await this.getTarget(tabId);
           } catch (noWebviewError) {
             const { BrowserWindow: BrowserWindow2 } = await import("electron");
             const win2 = BrowserWindow2.getAllWindows()[0];
@@ -48053,16 +47047,17 @@ class BrowserAutomationService {
         }
       }
     };
-    const waitForSelectorSchema = object({
-      selector: string().describe("CSS selector to wait for"),
-      timeoutMs: number().optional().describe("Timeout in ms (default 5000)")
-    });
     const waitForSelectorTool = {
       name: "browser_wait_for_selector",
       description: "Wait for an element to appear in the DOM.",
-      schema: waitForSelectorSchema,
-      execute: async ({ selector, timeoutMs }) => {
-        const target = await this.getTarget();
+      schema: object({
+        selector: string().describe("CSS selector to wait for"),
+        tabId: string().optional().describe("Target tab ID for execution"),
+        timeoutMs: number().optional().describe("Timeout in ms (default 5000)")
+      }),
+      execute: async (args) => {
+        const { selector, tabId, timeoutMs } = args;
+        const target = await this.getTarget(tabId);
         const timeout = timeoutMs ?? 5e3;
         try {
           await this.waitForSelector(target, selector, timeout);
@@ -48072,16 +47067,17 @@ class BrowserAutomationService {
         }
       }
     };
-    const waitForUrlSchema = object({
-      urlPart: string().describe("Substring or full URL to wait for"),
-      timeoutMs: number().optional().describe("Timeout in ms (default 5000)")
-    });
     const waitForUrlTool = {
       name: "browser_wait_for_url",
       description: "Wait for the URL to contain a specific string.",
-      schema: waitForUrlSchema,
-      execute: async ({ urlPart, timeoutMs }) => {
-        const target = await this.getTarget();
+      schema: object({
+        urlPart: string().describe("Substring or full URL to wait for"),
+        tabId: string().optional().describe("Target tab ID for execution"),
+        timeoutMs: number().optional().describe("Timeout in ms (default 5000)")
+      }),
+      execute: async (args) => {
+        const { urlPart, tabId, timeoutMs } = args;
+        const target = await this.getTarget(tabId);
         const timeout = timeoutMs ?? 5e3;
         const startedAt = Date.now();
         while (Date.now() - startedAt < timeout) {
@@ -48165,6 +47161,7 @@ class BrowserAutomationService {
     };
     const clickSchema = object({
       selector: string().describe('CSS selector (or XPath prefixed with "xpath=") of the element to click'),
+      tabId: string().optional().describe("Target tab ID for execution"),
       withinSelector: string().optional().describe("Optional container selector to scope the search (must match exactly 1 element)"),
       index: number().optional().describe("Index of element if multiple match (0-based)"),
       matchText: string().optional().describe("Text content to match if multiple elements found")
@@ -48173,9 +47170,9 @@ class BrowserAutomationService {
       name: "browser_click",
       description: "Click an element on the current page. Safe + deterministic: if the selector matches multiple visible elements, you must disambiguate using withinSelector, matchText, or index (or use browser_click_text).",
       schema: clickSchema,
-      execute: async ({ selector, withinSelector, index, matchText }) => {
+      execute: async ({ selector, tabId, withinSelector, index, matchText }) => {
         try {
-          const target = await this.getTarget();
+          const target = await this.getTarget(tabId);
           if (withinSelector) {
             await this.waitForSelector(target, withinSelector, 5e3);
           }
@@ -48379,11 +47376,12 @@ ${rootsPreview}` : "");
       description: "Type text into an input field.",
       schema: object({
         selector: string().describe('CSS selector (or XPath prefixed with "xpath=") of the input'),
-        text: string().describe("Text to type")
+        text: string().describe("Text to type"),
+        tabId: string().optional().describe("Target tab ID for execution")
       }),
-      execute: async ({ selector, text }) => {
+      execute: async ({ selector, text, tabId }) => {
         try {
-          const target = await this.getTarget();
+          const target = await this.getTarget(tabId);
           const matches = await this.querySelectorCount(target, selector);
           if (matches > 1) {
             return `Refusing to type into non-unique selector (matches=${matches}): ${selector}`;
@@ -48445,11 +47443,12 @@ ${rootsPreview}` : "");
       name: "browser_get_text",
       description: "Get the text content of an element.",
       schema: object({
-        selector: string().describe('CSS selector (or XPath prefixed with "xpath=")')
+        selector: string().describe('CSS selector (or XPath prefixed with "xpath=")'),
+        tabId: string().optional().describe("Target tab ID for execution")
       }),
-      execute: async ({ selector }) => {
+      execute: async ({ selector, tabId }) => {
         try {
-          const target = await this.getTarget();
+          const target = await this.getTarget(tabId);
           await this.waitForSelector(target, selector, 5e3);
           const text = await target.executeJavaScript(
             `(() => {
@@ -48557,10 +47556,11 @@ ${rootsPreview}` : "");
       description: "Wait until text appears on the page (case-insensitive). Useful to verify actions succeeded.",
       schema: object({
         text: string().describe("Text to wait for"),
+        tabId: string().optional().describe("Target tab ID for execution"),
         timeoutMs: number().optional().describe("Timeout in ms (default 5000)")
       }),
-      execute: async ({ text, timeoutMs }) => {
-        const target = await this.getTarget();
+      execute: async ({ text, tabId, timeoutMs }) => {
+        const target = await this.getTarget(tabId);
         const startedAt = Date.now();
         const timeout = timeoutMs ?? 5e3;
         while (Date.now() - startedAt < timeout) {
@@ -48614,11 +47614,12 @@ ${rootsPreview}` : "");
       description: "Set the value of a <select> element.",
       schema: object({
         selector: string().describe('CSS selector (or XPath prefixed with "xpath=") of the select element'),
-        value: string().describe("Option value to set")
+        value: string().describe("Option value to set"),
+        tabId: string().optional().describe("Target tab ID for execution")
       }),
-      execute: async ({ selector, value }) => {
+      execute: async ({ selector, value, tabId }) => {
         try {
-          const target = await this.getTarget();
+          const target = await this.getTarget(tabId);
           const matches = await this.querySelectorCount(target, selector);
           if (matches > 1) {
             return `Refusing to select on non-unique selector (matches=${matches}): ${selector}`;
@@ -48783,7 +47784,7 @@ ${rootsPreview}` : "");
         const steps = parsed.steps;
         const results = [];
         const runId = agentRunContext.getRunId() ?? void 0;
-        const planId = v4$1();
+        const planId = v4$2();
         if (!Array.isArray(steps) || steps.length === 0) {
           return "Plan rejected: steps must be a non-empty array.";
         }
@@ -48871,11 +47872,11 @@ ${rootsPreview}` : "");
           return t2.startsWith("Refusing") || t2.startsWith("Failed") || t2.startsWith("Timeout") || t2.startsWith("Operation denied by policy") || t2.startsWith("User denied") || t2.startsWith("Tool execution failed");
         };
         for (const [i, step] of steps.entries()) {
-          const stepId = v4$1();
+          const stepId = v4$2();
           const startedAt = Date.now();
           try {
             await telemetryService.emit({
-              eventId: v4$1(),
+              eventId: v4$2(),
               runId,
               ts: (/* @__PURE__ */ new Date()).toISOString(),
               type: "plan_step_start",
@@ -48936,7 +47937,7 @@ ${rootsPreview}` : "");
             const durationMs = Date.now() - startedAt;
             try {
               await telemetryService.emit({
-                eventId: v4$1(),
+                eventId: v4$2(),
                 runId,
                 ts: (/* @__PURE__ */ new Date()).toISOString(),
                 type: "plan_step_end",
@@ -48958,7 +47959,7 @@ ${rootsPreview}` : "");
             const durationMs = Date.now() - startedAt;
             try {
               await telemetryService.emit({
-                eventId: v4$1(),
+                eventId: v4$2(),
                 runId,
                 ts: (/* @__PURE__ */ new Date()).toISOString(),
                 type: "plan_step_end",
@@ -48986,6 +47987,35 @@ ${results.join("\n")}`;
       }
     };
     toolRegistry.register(observeTool);
+    const openTabTool = {
+      name: "browser_open_tab",
+      description: "Open a new browser tab with the specified URL.",
+      schema: object({
+        url: string().describe("The URL to open"),
+        background: boolean().optional().describe("Open in background (default: true)")
+      }),
+      execute: async ({ url, background }) => {
+        try {
+          const { BrowserWindow: BrowserWindow2 } = await import("electron");
+          const win2 = BrowserWindow2.getAllWindows()[0];
+          if (win2) {
+            const tabId = await new Promise((resolve) => {
+              win2.webContents.send("browser:open-agent-tab", {
+                url,
+                background: background ?? true,
+                agentCreated: true
+              });
+              setTimeout(() => resolve("new-tab-" + Date.now()), 1500);
+            });
+            return JSON.stringify({ ok: true, tabId, message: `Opened ${url} in a new tab` });
+          }
+          return "Failed to open tab: No browser window found";
+        } catch (e) {
+          return `Failed to open tab: ${e.message}`;
+        }
+      }
+    };
+    toolRegistry.register(openTabTool);
     toolRegistry.register(goBackTool);
     toolRegistry.register(goForwardTool);
     toolRegistry.register(reloadTool);
@@ -49166,7 +48196,7 @@ class BenchmarkService {
     return results;
   }
   async runScenario(scenario, enableActionsPolicy) {
-    const runId = v4$1();
+    const runId = v4$2();
     const start = Date.now();
     this.trajectory = [];
     this.llmCalls = 0;
@@ -49179,7 +48209,7 @@ class BenchmarkService {
         content: step.content,
         metadata: step.metadata
       });
-      if (step.type === "llm_start") this.llmCalls++;
+      if (step.type === "action" && step.content.includes("llm_start")) this.llmCalls++;
     };
     try {
       await agentService.resetConversation();
@@ -49205,6 +48235,7 @@ class BenchmarkService {
         trajectory: [...this.trajectory]
       };
     } catch (e) {
+      const errorMessage = e instanceof Error ? e.message : String(e);
       return {
         scenarioId: scenario.id,
         success: false,
@@ -49212,7 +48243,7 @@ class BenchmarkService {
         steps: this.trajectory.length,
         llmCalls: this.llmCalls,
         retries: this.retries,
-        error: e.message,
+        error: errorMessage,
         runId,
         trajectory: [...this.trajectory]
       };
@@ -49225,7 +48256,8 @@ class BenchmarkService {
       var _a3;
       return e.type === "action" && ((_a3 = e.metadata) == null ? void 0 : _a3.tool);
     }).map((e) => {
-      const tool2 = e.metadata.tool;
+      var _a3;
+      const tool2 = (_a3 = e.metadata) == null ? void 0 : _a3.tool;
       const content = e.content || "";
       return `${tool2}: ${content.replace(/^Executing\s+/i, "").substring(0, 100)}`;
     });
@@ -49236,10 +48268,10 @@ class BenchmarkService {
       return e.type === "action" && ((_a3 = e.metadata) == null ? void 0 : _a3.tool);
     });
     return toolCalls.map((e) => {
-      var _a3;
+      var _a3, _b;
       const args = ((_a3 = e.metadata) == null ? void 0 : _a3.toolArgs) ?? {};
       return {
-        tool: e.metadata.tool,
+        tool: (_b = e.metadata) == null ? void 0 : _b.tool,
         args,
         ts: e.ts
       };
@@ -50259,11 +49291,14 @@ app.on("activate", async () => {
 app.whenReady().then(async () => {
   const sessionState = await loadSessionState();
   console.log("[Session] Loaded session state:", sessionState ? `last session ${new Date(sessionState.lastSessionTime).toISOString()}` : "no previous session");
-  const policyService = new PolicyService(telemetryService, auditService);
+  const policyService = new PolicyService(auditService, telemetryService);
   toolRegistry.setPolicyService(policyService);
   policyService.init({ remotePolicyUrl: process.env.POLICY_REMOTE_URL || void 0 }).catch(() => void 0);
   ipcMain.handle("policy:status", async () => {
     return policyService.getRemotePolicyStatus();
+  });
+  ipcMain.handle("policy:sync-state", async () => {
+    return policyService.getSyncState();
   });
   ipcMain.handle("policy:sync", async (_event, url) => {
     const targetUrl = typeof url === "string" && url.trim() ? url.trim() : process.env.POLICY_REMOTE_URL || "";
@@ -50271,9 +49306,29 @@ app.whenReady().then(async () => {
     try {
       const bundle = await policyService.fetchRemotePolicies(targetUrl);
       return { success: true, bundle };
-    } catch (e) {
-      return { success: false, error: String((e == null ? void 0 : e.message) ?? e) };
+    } catch (err) {
+      return { success: false, error: err.message || "Sync failed" };
     }
+  });
+  ipcMain.handle("policy:configure", async (_event, cfg) => {
+    if (!cfg.url || typeof cfg.url !== "string") {
+      return { success: false, error: "Policy URL is required" };
+    }
+    return policyService.configureRemotePolicy(cfg.url, cfg.authToken);
+  });
+  ipcMain.handle("policy:set-auth-token", async (_event, token) => {
+    if (!token || typeof token !== "string") {
+      return { success: false, error: "Token is required" };
+    }
+    await policyService.setAuthToken(token);
+    return { success: true };
+  });
+  ipcMain.handle("policy:clear-auth-token", async () => {
+    await policyService.clearAuthToken();
+    return { success: true };
+  });
+  ipcMain.handle("policy:get-admin-message", async () => {
+    return { message: policyService.getAdminMessage() };
   });
   ipcMain.handle("policy:set-dev-override", async (_event, enabled, token) => {
     const ok = await policyService.setDeveloperOverride(Boolean(enabled), token);
@@ -50360,7 +49415,7 @@ app.whenReady().then(async () => {
     if (!requesterWebContentsId) return false;
     const wc = webContents.fromId(requesterWebContentsId);
     if (!wc || wc.isDestroyed()) return false;
-    const requestId = v4$1();
+    const requestId = v4$2();
     const createdAt = Date.now();
     wc.send("agent:request-approval", { requestId, toolName, args, runId, timeoutMs: APPROVAL_TIMEOUT_MS });
     return await new Promise((resolve) => {
@@ -50508,7 +49563,7 @@ app.whenReady().then(async () => {
     return { success: true };
   });
   ipcMain.handle("agent:chat", async (event, message) => {
-    const runId = v4$1();
+    const runId = v4$2();
     try {
       event.sender.send("agent:step", {
         type: "observation",
@@ -50538,7 +49593,7 @@ app.whenReady().then(async () => {
     }
     try {
       await telemetryService.emit({
-        eventId: v4$1(),
+        eventId: v4$2(),
         runId,
         ts: (/* @__PURE__ */ new Date()).toISOString(),
         type: "agent_run_start",
@@ -50616,7 +49671,7 @@ app.whenReady().then(async () => {
     } finally {
       try {
         await telemetryService.emit({
-          eventId: v4$1(),
+          eventId: v4$2(),
           runId,
           ts: (/* @__PURE__ */ new Date()).toISOString(),
           type: "agent_run_end",
