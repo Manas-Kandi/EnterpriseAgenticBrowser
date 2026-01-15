@@ -44238,6 +44238,16 @@ class TaskKnowledgeService {
   }
 }
 const taskKnowledgeService = new TaskKnowledgeService();
+function getPrimaryDomainToken(hostname) {
+  const host = String(hostname || "").toLowerCase().trim();
+  if (!host) return null;
+  const parts = host.split(".").filter(Boolean);
+  if (parts.length === 0) return null;
+  if (parts[0] === "localhost") return "localhost";
+  const cleaned = parts[0] === "www" ? parts.slice(1) : parts;
+  if (cleaned.length >= 2) return cleaned[cleaned.length - 2];
+  return cleaned[0] ?? null;
+}
 const IN_CONTEXT_PATTERNS = [
   /\b(summarize|summary of)\s+(this|the|current)\s+(page|article|content|document)/i,
   /\b(explain|describe)\s+(this|what('s| is) on|the current)/i,
@@ -44275,7 +44285,7 @@ const EXPLICIT_NEW_TAB = [
   /\b(in\s+)?a?\s*new\s+tab\b/i,
   /\bopen\s+(it\s+)?(separately|aside)\b/i
 ];
-function classifyIntent(userMessage, _currentPageContext) {
+function classifyIntent(userMessage, currentUrl) {
   const msg = userMessage.toLowerCase().trim();
   for (const pattern of EXPLICIT_REPLACE_TAB) {
     if (pattern.test(msg)) {
@@ -44336,15 +44346,29 @@ function classifyIntent(userMessage, _currentPageContext) {
   if (simpleActionWords.test(msg) && !/\bthis\b/i.test(msg)) {
     exploratoryScore += 1;
   }
-  const isExplicitNavigation = /^(open|go to|navigate to|visit)\s/i.test(msg);
+  if (currentUrl) {
+    try {
+      const hostname = new URL(currentUrl).hostname;
+      const token = getPrimaryDomainToken(hostname);
+      if (token && token !== "localhost" && new RegExp(`\\b${token}\\b`, "i").test(msg)) {
+        inContextScore += 6;
+        inContextReasons.push(`mentions_current_site:${token}`);
+      }
+      if (hostname === "localhost" && /\baerocore\b/i.test(msg)) {
+        inContextScore += 6;
+        inContextReasons.push("mentions_current_site:aerocore");
+      }
+    } catch {
+    }
+  }
   const totalScore = inContextScore + exploratoryScore;
   if (totalScore === 0) {
     return {
       type: "exploratory",
       confidence: 0.5,
       reason: "Ambiguous intent - defaulting to new tab (reversible)",
-      openInBackground: !isExplicitNavigation
-      // Foreground if explicit navigation
+      // Default for "new thing": open new tab and switch to it.
+      openInBackground: false
     };
   }
   if (inContextScore > exploratoryScore) {
@@ -44360,20 +44384,20 @@ function classifyIntent(userMessage, _currentPageContext) {
       type: "exploratory",
       confidence: exploratoryScore / totalScore,
       reason: `Exploratory signals: ${exploratoryReasons.join(", ")}`,
-      // Explicit navigation ("open X") should switch to the new tab (foreground)
-      // Research/search queries should stay in background to preserve context
-      openInBackground: !isExplicitNavigation
+      // Default for "new thing": open new tab and switch to it.
+      // True background work is still supported via explicit "background" override.
+      openInBackground: false
     };
   }
   return {
     type: "exploratory",
     confidence: 0.5,
     reason: "Equal signals - defaulting to new tab (reversible)",
-    openInBackground: !isExplicitNavigation
+    openInBackground: false
   };
 }
 function shouldNavigateActiveTab(userMessage, targetUrl, currentUrl) {
-  const intent = classifyIntent(userMessage);
+  const intent = classifyIntent(userMessage, currentUrl);
   if (intent.explicitOverride === "replace_tab") {
     return { allowNavigation: true, reason: "User explicitly requested tab replacement" };
   }
@@ -47148,6 +47172,152 @@ __publicField(_ModelRouter, "ESCALATION_CONFIDENCE_THRESHOLD", 0.7);
 __publicField(_ModelRouter, "MAX_ESCALATION_HISTORY", 100);
 let ModelRouter = _ModelRouter;
 const modelRouter = new ModelRouter();
+class BrowserTargetService {
+  constructor() {
+    __publicField(this, "tabIdToWebContentsId", /* @__PURE__ */ new Map());
+    __publicField(this, "activeTabId", null);
+    __publicField(this, "waiters", /* @__PURE__ */ new Map());
+  }
+  getDomainTokenFromUrl(url) {
+    try {
+      const host = new URL(url).hostname.toLowerCase();
+      if (!host) return null;
+      if (host === "localhost") return "localhost";
+      const parts = host.split(".").filter(Boolean);
+      const cleaned = parts[0] === "www" ? parts.slice(1) : parts;
+      if (cleaned.length >= 2) return cleaned[cleaned.length - 2];
+      return cleaned[0] ?? null;
+    } catch {
+      return null;
+    }
+  }
+  registerWebview(tabId, webContentsId) {
+    if (!tabId || !Number.isFinite(webContentsId)) return;
+    this.tabIdToWebContentsId.set(tabId, {
+      tabId,
+      webContentsId,
+      lastSeenAt: Date.now()
+    });
+    const pending = this.waiters.get(tabId);
+    if (pending && pending.length > 0) {
+      this.waiters.delete(tabId);
+      for (const wake of pending) wake();
+    }
+  }
+  setActiveTab(tabId) {
+    this.activeTabId = tabId;
+    if (tabId) {
+      const existing = this.tabIdToWebContentsId.get(tabId);
+      if (existing) {
+        this.tabIdToWebContentsId.set(tabId, { ...existing, lastSeenAt: Date.now() });
+      }
+    }
+  }
+  getActiveTabId() {
+    return this.activeTabId;
+  }
+  getWebContents(tabId) {
+    const registered = this.tabIdToWebContentsId.get(tabId);
+    if (registered) {
+      const wc = webContents.fromId(registered.webContentsId);
+      if (wc && !wc.isDestroyed()) {
+        this.tabIdToWebContentsId.set(tabId, { ...registered, lastSeenAt: Date.now() });
+        return wc;
+      }
+    }
+    return null;
+  }
+  async waitForTab(tabId, timeoutMs = 5e3) {
+    if (!tabId) return false;
+    if (this.getWebContents(tabId)) return true;
+    return await new Promise((resolve) => {
+      const timer = setTimeout(() => resolve(false), timeoutMs);
+      const wake = () => {
+        clearTimeout(timer);
+        resolve(Boolean(this.getWebContents(tabId)));
+      };
+      const list = this.waiters.get(tabId) ?? [];
+      list.push(wake);
+      this.waiters.set(tabId, list);
+    });
+  }
+  /**
+   * Returns the most recently used tabId for a domain token (e.g. "youtube")
+   * based on lastSeenAt. Returns null if none match.
+   */
+  getMostRecentTabForDomainToken(domainToken) {
+    const token = String(domainToken || "").toLowerCase().trim();
+    if (!token) return null;
+    const candidates = Array.from(this.tabIdToWebContentsId.values()).slice().sort((a, b) => (b.lastSeenAt ?? 0) - (a.lastSeenAt ?? 0));
+    for (const reg of candidates) {
+      const wc = webContents.fromId(reg.webContentsId);
+      if (!wc || wc.isDestroyed()) continue;
+      const url = wc.getURL() || "";
+      const dt = this.getDomainTokenFromUrl(url);
+      if (dt && dt === token) return reg.tabId;
+    }
+    return null;
+  }
+  getActiveWebContents() {
+    const activeTabId = this.activeTabId;
+    if (activeTabId) {
+      const wc = this.getWebContents(activeTabId);
+      if (wc) return wc;
+    }
+    const all = webContents.getAllWebContents();
+    const candidates = all.filter((wc) => !wc.isDestroyed()).filter((wc) => wc.getType() === "webview").filter((wc) => {
+      const url = wc.getURL() || "";
+      return !url.startsWith("devtools://") && !url.includes("localhost:5173") && !url.includes("localhost:5174") && !url.endsWith("index.html");
+    });
+    if (candidates.length === 0) {
+      throw new Error(
+        "No active webview found. Open a tab and ensure the BrowserView is loaded."
+      );
+    }
+    return candidates[candidates.length - 1];
+  }
+}
+const browserTargetService = new BrowserTargetService();
+class AgentTabOpenService {
+  constructor() {
+    __publicField(this, "pending", /* @__PURE__ */ new Map());
+    __publicField(this, "listening", false);
+  }
+  ensureListener() {
+    if (this.listening) return;
+    this.listening = true;
+    ipcMain.on(
+      "browser:open-agent-tab-result",
+      (_event, payload) => {
+        const resolve = this.pending.get(payload.requestId);
+        if (resolve) {
+          this.pending.delete(payload.requestId);
+          resolve(payload.tabId);
+        }
+      }
+    );
+  }
+  async openAgentTab(args) {
+    this.ensureListener();
+    const win2 = BrowserWindow.getAllWindows()[0];
+    if (!win2) {
+      return "new-tab-" + Date.now();
+    }
+    const requestId = v4$2();
+    const tabId = await new Promise((resolve) => {
+      this.pending.set(requestId, resolve);
+      win2.webContents.send("browser:open-agent-tab", { ...args, requestId });
+      setTimeout(() => {
+        if (this.pending.has(requestId)) {
+          this.pending.delete(requestId);
+          resolve("new-tab-" + Date.now());
+        }
+      }, 2e3);
+    });
+    return tabId;
+  }
+}
+const agentTabOpenService = new AgentTabOpenService();
 dotenv.config();
 const AVAILABLE_MODELS = [
   {
@@ -47549,9 +47719,17 @@ You can answer questions about what's on the page, explain content, summarize in
     let lastThought = null;
     let speculativeHits = 0;
     let speculativeMisses = 0;
+    let preferredTabId = null;
     telemetryService.emit({ eventId: v4$2(), runId, ts: (/* @__PURE__ */ new Date()).toISOString(), type: "agent_run_start", data: { userMessage: userMessage.slice(0, 100), model: this.currentModelId } });
     auditService.log({ actor: "agent", action: "agent_run_start", details: { runId, userMessage: userMessage.slice(0, 100) }, status: "pending" });
-    const intentClassification = classifyIntent(userMessage);
+    const activeUrl = (() => {
+      try {
+        return browserTargetService.getActiveWebContents().getURL();
+      } catch {
+        return void 0;
+      }
+    })();
+    const intentClassification = classifyIntent(userMessage, activeUrl);
     this.emitStep("thought", `Intent: ${intentClassification.type} (${Math.round(intentClassification.confidence * 100)}% confidence) - ${intentClassification.reason}`, { phase: "intent_classification", intent: intentClassification });
     const routingDecision = modelRouter.route(userMessage, browserContext);
     const selectedModelId = routingDecision.selectedModel.id;
@@ -47674,24 +47852,78 @@ User request: ${safeUserMessage}`));
         if (tool2) {
           const navArgs = action.args;
           if (tool2.name === "browser_navigate" && (navArgs == null ? void 0 : navArgs.url)) {
-            const navCheck = shouldNavigateActiveTab(userMessage, navArgs.url, context);
+            const navCheck = shouldNavigateActiveTab(userMessage, navArgs.url, activeUrl);
             if (!navCheck.allowNavigation) {
-              const { BrowserWindow: BrowserWindow2 } = await import("electron");
-              const win2 = BrowserWindow2.getAllWindows()[0];
-              if (win2) {
-                win2.webContents.send("browser:open-agent-tab", { url: navArgs.url, background: intentClassification.openInBackground, agentCreated: true });
-                const resMsg = `Opened ${navArgs.url} in new tab.`;
-                messages.push(new AIMessage(content));
-                messages.push(new SystemMessage(resMsg));
-                usedBrowserTools = true;
-                continue;
+              const targetUrl = String(navArgs.url);
+              const targetToken = (() => {
+                try {
+                  const host = new URL(targetUrl).hostname.toLowerCase();
+                  if (!host) return null;
+                  if (host === "localhost") return "localhost";
+                  const parts = host.split(".").filter(Boolean);
+                  const cleaned = parts[0] === "www" ? parts.slice(1) : parts;
+                  if (cleaned.length >= 2) return cleaned[cleaned.length - 2];
+                  return cleaned[0] ?? null;
+                } catch {
+                  return null;
+                }
+              })();
+              let tabId = null;
+              if (targetToken) {
+                tabId = browserTargetService.getMostRecentTabForDomainToken(targetToken);
               }
+              if (!tabId) {
+                tabId = await agentTabOpenService.openAgentTab({
+                  url: targetUrl,
+                  background: Boolean(intentClassification.openInBackground),
+                  agentCreated: true
+                });
+              } else {
+                if (!intentClassification.openInBackground) {
+                  const win2 = BrowserWindow.getAllWindows()[0];
+                  if (win2) win2.webContents.send("browser:activate-tab", { tabId });
+                }
+              }
+              preferredTabId = tabId;
+              const toolResult = await tool2.invoke({ ...action.args, tabId });
+              const resStr = String(toolResult);
+              this.emitStep("observation", resStr, { tool: tool2.name, result: resStr, ok: true, tabId });
+              usedBrowserTools = true;
+              messages.push(new AIMessage(content));
+              messages.push(new SystemMessage(`Tool Output:
+${resStr}`));
+              continue;
             }
           }
+          const TAB_ID_TOOLS = /* @__PURE__ */ new Set([
+            "browser_observe",
+            "browser_navigate",
+            "browser_scroll",
+            "browser_press_key",
+            "browser_wait_for_selector",
+            "browser_wait_for_url",
+            "browser_focus",
+            "browser_clear",
+            "browser_click",
+            "browser_type",
+            "browser_get_text",
+            "browser_find_text",
+            "browser_wait_for_text",
+            "browser_wait_for_text_in",
+            "browser_select",
+            "browser_click_text"
+          ]);
+          const toolArgs = (() => {
+            const args = { ...action.args };
+            if (preferredTabId && TAB_ID_TOOLS.has(tool2.name) && args.tabId == null) {
+              args.tabId = preferredTabId;
+            }
+            return args;
+          })();
           stepCount++;
           toolsUsed.push(tool2.name);
-          this.emitStep("action", `Executing ${tool2.name}`, { tool: tool2.name, args: action.args });
-          auditService.log({ actor: "agent", action: "tool_execution", details: { runId, tool: tool2.name, args: action.args }, status: "pending" });
+          this.emitStep("action", `Executing ${tool2.name}`, { tool: tool2.name, args: toolArgs });
+          auditService.log({ actor: "agent", action: "tool_execution", details: { runId, tool: tool2.name, args: toolArgs }, status: "pending" });
           const toolStartedAt = Date.now();
           try {
             const speculativeMatch = speculativeExecutor.getMatchingSpeculation(
@@ -47711,7 +47943,7 @@ User request: ${safeUserMessage}`));
               telemetryService.emit({ eventId: v4$2(), runId, ts: (/* @__PURE__ */ new Date()).toISOString(), type: "tool_call_end", name: tool2.name, data: { success: true, durationMs: 0, speculative: true, savedMs: speculativeMatch.executionTimeMs } });
             } else {
               if (speculativeMatch) speculativeMisses++;
-              const toolResult = await tool2.invoke(action.args);
+              const toolResult = await tool2.invoke(toolArgs);
               resStr = String(toolResult);
               durationMs = Date.now() - toolStartedAt;
               telemetryService.emit({ eventId: v4$2(), runId, ts: (/* @__PURE__ */ new Date()).toISOString(), type: "tool_call_end", name: tool2.name, data: { success: true, durationMs } });
@@ -47810,50 +48042,6 @@ __publicField(_AgentService, "SUMMARY_EVERY", 30);
 __publicField(_AgentService, "SUMMARY_BLOCK_SIZE", 15);
 let AgentService = _AgentService;
 const agentService = new AgentService();
-class BrowserTargetService {
-  constructor() {
-    __publicField(this, "tabIdToWebContentsId", /* @__PURE__ */ new Map());
-    __publicField(this, "activeTabId", null);
-  }
-  registerWebview(tabId, webContentsId) {
-    if (!tabId || !Number.isFinite(webContentsId)) return;
-    this.tabIdToWebContentsId.set(tabId, {
-      tabId,
-      webContentsId,
-      lastSeenAt: Date.now()
-    });
-  }
-  setActiveTab(tabId) {
-    this.activeTabId = tabId;
-  }
-  getWebContents(tabId) {
-    const registered = this.tabIdToWebContentsId.get(tabId);
-    if (registered) {
-      const wc = webContents.fromId(registered.webContentsId);
-      if (wc && !wc.isDestroyed()) return wc;
-    }
-    return null;
-  }
-  getActiveWebContents() {
-    const activeTabId = this.activeTabId;
-    if (activeTabId) {
-      const wc = this.getWebContents(activeTabId);
-      if (wc) return wc;
-    }
-    const all = webContents.getAllWebContents();
-    const candidates = all.filter((wc) => !wc.isDestroyed()).filter((wc) => wc.getType() === "webview").filter((wc) => {
-      const url = wc.getURL() || "";
-      return !url.startsWith("devtools://") && !url.includes("localhost:5173") && !url.includes("localhost:5174") && !url.endsWith("index.html");
-    });
-    if (candidates.length === 0) {
-      throw new Error(
-        "No active webview found. Open a tab and ensure the BrowserView is loaded."
-      );
-    }
-    return candidates[candidates.length - 1];
-  }
-}
-const browserTargetService = new BrowserTargetService();
 const FILE_NAME = "saved_plans.json";
 class PlanMemory {
   constructor() {
@@ -48017,8 +48205,10 @@ class BrowserAutomationService {
   }
   async getTarget(tabId) {
     if (tabId) {
+      const ready = await browserTargetService.waitForTab(tabId, 5e3);
       const target = browserTargetService.getWebContents(tabId);
-      if (target) return target;
+      if (ready && target) return target;
+      throw new Error(`No webContents registered for tabId ${tabId}`);
     }
     return browserTargetService.getActiveWebContents();
   }
@@ -49710,20 +49900,12 @@ ${results.join("\n")}`;
       }),
       execute: async ({ url, background }) => {
         try {
-          const { BrowserWindow: BrowserWindow2 } = await import("electron");
-          const win2 = BrowserWindow2.getAllWindows()[0];
-          if (win2) {
-            const tabId = await new Promise((resolve) => {
-              win2.webContents.send("browser:open-agent-tab", {
-                url,
-                background: background ?? true,
-                agentCreated: true
-              });
-              setTimeout(() => resolve("new-tab-" + Date.now()), 1500);
-            });
-            return JSON.stringify({ ok: true, tabId, message: `Opened ${url} in a new tab` });
-          }
-          return "Failed to open tab: No browser window found";
+          const tabId = await agentTabOpenService.openAgentTab({
+            url,
+            background: background ?? true,
+            agentCreated: true
+          });
+          return JSON.stringify({ ok: true, tabId, message: `Opened ${url} in a new tab` });
         } catch (e) {
           return `Failed to open tab: ${e.message}`;
         }
@@ -51157,6 +51339,12 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle("browser:webview-register", async (_, { tabId, webContentsId }) => {
     browserTargetService.registerWebview(tabId, webContentsId);
+  });
+  ipcMain.on("browser:activate-tab", async (_event, payload) => {
+    const win2 = BrowserWindow.getAllWindows()[0];
+    if (win2 && (payload == null ? void 0 : payload.tabId)) {
+      win2.webContents.send("browser:activate-tab", { tabId: payload.tabId });
+    }
   });
   ipcMain.handle("browser:active-tab", async (_, { tabId }) => {
     browserTargetService.setActiveTab(tabId ?? null);

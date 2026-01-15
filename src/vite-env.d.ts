@@ -91,7 +91,9 @@ interface Window {
   browser?: {
     registerWebview: (tabId: string, webContentsId: number) => Promise<void>;
     setActiveTab: (tabId: string | null) => Promise<void>;
+    activateTab: (tabId: string) => void;
     onNavigateTo: (callback: (url: string) => void) => (() => void);
+    onActivateTab: (callback: (payload: { tabId: string }) => void) => (() => void);
     onOpenAgentTab: (callback: (payload: { url: string; background: boolean; agentCreated: boolean; requestId?: string }) => void) => (() => void);
     reportAgentTabOpened: (payload: { requestId: string; tabId: string }) => void;
   }

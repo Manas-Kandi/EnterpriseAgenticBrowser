@@ -453,6 +453,13 @@ app.whenReady().then(async () => {
     browserTargetService.registerWebview(tabId, webContentsId);
   });
 
+  ipcMain.on('browser:activate-tab', async (_event, payload: { tabId: string }) => {
+    const win = BrowserWindow.getAllWindows()[0];
+    if (win && payload?.tabId) {
+      win.webContents.send('browser:activate-tab', { tabId: payload.tabId });
+    }
+  });
+
   ipcMain.handle('browser:active-tab', async (_, { tabId }) => {
     browserTargetService.setActiveTab(tabId ?? null);
   });

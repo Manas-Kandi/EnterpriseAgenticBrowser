@@ -76,6 +76,14 @@ function App() {
     return () => off?.();
   }, [addTab, addTabInBackground]);
 
+  // Allow main/agent to request switching to a specific tab (MRU reuse)
+  useEffect(() => {
+    const off = window.browser?.onActivateTab?.(({ tabId }) => {
+      if (tabId) useBrowserStore.getState().setActiveTab(tabId);
+    });
+    return () => off?.();
+  }, []);
+
   // Listen for session restoration events
   useEffect(() => {
     const off = window.session?.onRestored?.((payload) => {

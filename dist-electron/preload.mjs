@@ -98,16 +98,23 @@ electron.contextBridge.exposeInMainWorld("agent", {
 electron.contextBridge.exposeInMainWorld("browser", {
   registerWebview: (tabId, webContentsId) => electron.ipcRenderer.invoke("browser:webview-register", { tabId, webContentsId }),
   setActiveTab: (tabId) => electron.ipcRenderer.invoke("browser:active-tab", { tabId }),
+  activateTab: (tabId) => electron.ipcRenderer.send("browser:activate-tab", { tabId }),
   onNavigateTo: (callback) => {
     const listener = (_, url) => callback(url);
     electron.ipcRenderer.on("browser:navigate-to", listener);
     return () => electron.ipcRenderer.off("browser:navigate-to", listener);
   },
+  onActivateTab: (callback) => {
+    const listener = (_, payload) => callback(payload);
+    electron.ipcRenderer.on("browser:activate-tab", listener);
+    return () => electron.ipcRenderer.off("browser:activate-tab", listener);
+  },
   onOpenAgentTab: (callback) => {
     const listener = (_, payload) => callback(payload);
     electron.ipcRenderer.on("browser:open-agent-tab", listener);
     return () => electron.ipcRenderer.off("browser:open-agent-tab", listener);
-  }
+  },
+  reportAgentTabOpened: (payload) => electron.ipcRenderer.send("browser:open-agent-tab-result", payload)
 });
 electron.contextBridge.exposeInMainWorld("newtab", {
   getDashboardSnapshot: () => electron.ipcRenderer.invoke("newtab:dashboard-snapshot"),

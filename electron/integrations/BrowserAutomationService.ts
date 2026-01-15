@@ -166,8 +166,10 @@ export class BrowserAutomationService {
 
   public async getTarget(tabId?: string): Promise<WebContents> {
     if (tabId) {
+      const ready = await browserTargetService.waitForTab(tabId, 5000);
       const target = browserTargetService.getWebContents(tabId);
-      if (target) return target;
+      if (ready && target) return target;
+      throw new Error(`No webContents registered for tabId ${tabId}`);
     }
     return browserTargetService.getActiveWebContents();
   }

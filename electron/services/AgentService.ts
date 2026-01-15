@@ -20,6 +20,7 @@ import { speculativeExecutor, PredictionContext } from './SpeculativeExecutor';
 import { modelRouter, ModelTier } from './ModelRouter';
 import { browserTargetService } from './BrowserTargetService';
 import { agentTabOpenService } from './AgentTabOpenService';
+import { BrowserWindow } from 'electron';
 
 // Type for browser_navigate args
 interface BrowserNavigateArgs {
@@ -627,17 +628,51 @@ Available tools:\n${langChainTools.map((t) => `- ${t.name}: ${t.description}`).j
           if (tool.name === 'browser_navigate' && navArgs?.url) {
             const navCheck = shouldNavigateActiveTab(userMessage, navArgs.url, activeUrl);
             if (!navCheck.allowNavigation) {
-              const tabId = await agentTabOpenService.openAgentTab({
-                url: String(navArgs.url),
-                background: Boolean(intentClassification.openInBackground),
-                agentCreated: true,
-              });
+              // Prefer reusing the most-recently-used tab for the target domain (even if not active).
+              // If none exists, open a new tab.
+              const targetUrl = String(navArgs.url);
+              const targetToken = (() => {
+                try {
+                  const host = new URL(targetUrl).hostname.toLowerCase();
+                  if (!host) return null;
+                  if (host === 'localhost') return 'localhost';
+                  const parts = host.split('.').filter(Boolean);
+                  const cleaned = parts[0] === 'www' ? parts.slice(1) : parts;
+                  if (cleaned.length >= 2) return cleaned[cleaned.length - 2];
+                  return cleaned[0] ?? null;
+                } catch {
+                  return null;
+                }
+              })();
+
+              let tabId: string | null = null;
+              if (targetToken) {
+                tabId = browserTargetService.getMostRecentTabForDomainToken(targetToken);
+              }
+              if (!tabId) {
+                tabId = await agentTabOpenService.openAgentTab({
+                  url: targetUrl,
+                  background: Boolean(intentClassification.openInBackground),
+                  agentCreated: true,
+                });
+              } else {
+                // Foreground work should switch; background work should not.
+                if (!intentClassification.openInBackground) {
+                  const win = BrowserWindow.getAllWindows()[0];
+                  if (win) win.webContents.send('browser:activate-tab', { tabId });
+                }
+              }
+
               preferredTabId = tabId;
 
-              const resMsg = `Opened ${navArgs.url} in new tab.`;
-              messages.push(new AIMessage(content));
-              messages.push(new SystemMessage(resMsg));
+              // Now actually perform the navigation in the chosen tab.
+              // This avoids the "open and stop" behavior that feels janky.
+              const toolResult = await tool.invoke({ ...(action.args as Record<string, unknown>), tabId });
+              const resStr = String(toolResult);
+              this.emitStep('observation', resStr, { tool: tool.name, result: resStr, ok: true, tabId });
               usedBrowserTools = true;
+              messages.push(new AIMessage(content));
+              messages.push(new SystemMessage(`Tool Output:\n${resStr}`));
               continue;
             }
           }
