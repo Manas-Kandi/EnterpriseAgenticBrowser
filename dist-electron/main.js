@@ -46730,16 +46730,21 @@ const COMPLEXITY_INDICATORS = {
   ],
   simple: [
     /^(search for|look up|find) .{1,50}$/i,
-    /^(click|tap|press) (on |the )?\w+/i,
     /^(scroll|go) (up|down|to)/i,
     /^(show|display|list) .{1,30}$/i
   ],
   moderate: [
+    // Browser automation tasks need capable models for tool calling
+    /^(click|tap|press) (on |the )?\w+/i,
+    /^(navigate|go) to .+/i,
+    /aerocore/i,
+    /button/i,
     /^(create|make|add|new) (a |an )?\w+ (in|on|for)/i,
     /^(update|edit|modify|change) .{1,100}$/i,
     /^(fill|complete) (the |this )?(form|fields)/i,
     /multi.?step/i,
-    /then .+ then/i
+    /then .+ then/i,
+    /and (click|type|select|navigate)/i
   ],
   complex: [
     /^(analyze|compare|evaluate|assess)/i,

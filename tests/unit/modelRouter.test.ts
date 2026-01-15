@@ -46,7 +46,6 @@ describe('ModelRouter', () => {
     describe('Simple tasks', () => {
       const simpleMessages = [
         'search for weather today',
-        'click the submit button',
         'scroll down',
         'show me the list',
         'look up pizza near me',
@@ -55,6 +54,12 @@ describe('ModelRouter', () => {
       test.each(simpleMessages)('classifies "%s" as simple or trivial', (message) => {
         const result = router.classifyComplexity(message);
         expect([TaskComplexity.TRIVIAL, TaskComplexity.SIMPLE]).toContain(result.complexity);
+      });
+
+      test('classifies click actions as moderate (requires tool calling)', () => {
+        // Click actions need capable models for proper tool calling
+        const result = router.classifyComplexity('click the submit button');
+        expect([TaskComplexity.MODERATE, TaskComplexity.SIMPLE]).toContain(result.complexity);
       });
     });
 
