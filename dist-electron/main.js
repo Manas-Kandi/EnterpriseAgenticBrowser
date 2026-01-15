@@ -4,9 +4,10 @@ var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "sy
 var _a2;
 import { app, BrowserWindow, webContents, ipcMain } from "electron";
 import { URL as URL$2, fileURLToPath } from "node:url";
-import path$2 from "node:path";
+import * as path$2 from "node:path";
+import path__default from "node:path";
 import crypto$2, { randomFillSync, randomUUID } from "node:crypto";
-import fs$1 from "node:fs/promises";
+import fs$2 from "node:fs/promises";
 import keytar from "keytar";
 import require$$0 from "fs";
 import require$$1 from "path";
@@ -14,7 +15,8 @@ import require$$2 from "os";
 import crypto$3 from "crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
 import Database from "better-sqlite3";
-import fs$2 from "node:fs";
+import * as fs$1 from "node:fs";
+import fs__default from "node:fs";
 import os$1 from "node:os";
 import * as vm from "vm";
 const byteToHex$2 = [];
@@ -41599,35 +41601,35 @@ class TelemetryService {
   getBaseDir() {
     if (this.baseDir) return this.baseDir;
     const userData = app.getPath("userData");
-    this.baseDir = path$2.join(userData, "telemetry");
+    this.baseDir = path__default.join(userData, "telemetry");
     return this.baseDir;
   }
   async ensureDir() {
-    await fs$1.mkdir(this.getBaseDir(), { recursive: true });
+    await fs$2.mkdir(this.getBaseDir(), { recursive: true });
   }
   fileForRun(runId) {
-    return path$2.join(this.getBaseDir(), `agent-run-${runId}.jsonl`);
+    return path__default.join(this.getBaseDir(), `agent-run-${runId}.jsonl`);
   }
   async appendLine(filePath, event) {
     await this.ensureDir();
-    await fs$1.appendFile(filePath, JSON.stringify(event) + "\n", "utf8");
+    await fs$2.appendFile(filePath, JSON.stringify(event) + "\n", "utf8");
   }
   async emit(event) {
     const runId = event.runId;
     if (runId) {
       await this.appendLine(this.fileForRun(runId), event);
     }
-    await this.appendLine(path$2.join(this.getBaseDir(), "agent-events.jsonl"), event);
+    await this.appendLine(path__default.join(this.getBaseDir(), "agent-events.jsonl"), event);
   }
   async exportTrajectories(outputPath) {
     await this.ensureDir();
     const dir = this.getBaseDir();
-    const files = await fs$1.readdir(dir);
+    const files = await fs$2.readdir(dir);
     const runFiles = files.filter((f) => f.startsWith("agent-run-") && f.endsWith(".jsonl"));
     const trajectories = [];
     for (const file of runFiles) {
       try {
-        const content = await fs$1.readFile(path$2.join(dir, file), "utf8");
+        const content = await fs$2.readFile(path__default.join(dir, file), "utf8");
         const events = content.trim().split("\n").map((line) => {
           try {
             return JSON.parse(line);
@@ -41647,7 +41649,7 @@ class TelemetryService {
         console.error(`Failed to process trajectory file ${file}:`, err);
       }
     }
-    await fs$1.writeFile(outputPath, JSON.stringify(trajectories, null, 2));
+    await fs$2.writeFile(outputPath, JSON.stringify(trajectories, null, 2));
     return trajectories.length;
   }
 }
@@ -41976,7 +41978,7 @@ class PolicyService {
     __publicField(this, "developerOverride", false);
     this.auditServiceInstance = auditServiceInstance;
     this.telemetryServiceInstance = telemetryServiceInstance;
-    this.cacheFilePath = path$2.join(process.cwd(), "policy_cache.json");
+    this.cacheFilePath = path__default.join(process.cwd(), "policy_cache.json");
     this.setupDefaultRules();
     this.loadCachedRemotePolicy();
   }
@@ -42243,7 +42245,7 @@ class PolicyService {
   }
   async loadCachedRemotePolicy() {
     try {
-      const raw = await fs$1.readFile(this.cacheFilePath, "utf8");
+      const raw = await fs$2.readFile(this.cacheFilePath, "utf8");
       const bundle = RemotePolicySchema.parse(JSON.parse(raw));
       this.applyRemotePolicy(bundle);
     } catch {
@@ -42251,7 +42253,7 @@ class PolicyService {
   }
   async saveCachedRemotePolicy(bundle) {
     try {
-      await fs$1.writeFile(this.cacheFilePath, JSON.stringify(bundle, null, 2), "utf8");
+      await fs$2.writeFile(this.cacheFilePath, JSON.stringify(bundle, null, 2), "utf8");
     } catch {
     }
   }
@@ -43571,7 +43573,7 @@ class LocalJsonSkillStorage {
   }
   getAllSync() {
     try {
-      const data = fs$2.readFileSync(this.storageFile, "utf8");
+      const data = fs__default.readFileSync(this.storageFile, "utf8");
       const parsed = JSON.parse(data);
       if (!Array.isArray(parsed)) return [];
       const out = [];
@@ -43588,7 +43590,7 @@ class LocalJsonSkillStorage {
   }
   async getAll() {
     try {
-      const data = await fs$2.promises.readFile(this.storageFile, "utf8");
+      const data = await fs__default.promises.readFile(this.storageFile, "utf8");
       const parsed = JSON.parse(data);
       if (!Array.isArray(parsed)) return [];
       const out = [];
@@ -43601,9 +43603,9 @@ class LocalJsonSkillStorage {
       return out;
     } catch {
       try {
-        const legacyPath = path$2.resolve(process.cwd(), "task_knowledge.json");
-        if (fs$2.existsSync(legacyPath)) {
-          const legacyData = await fs$2.promises.readFile(legacyPath, "utf8");
+        const legacyPath = path__default.resolve(process.cwd(), "task_knowledge.json");
+        if (fs__default.existsSync(legacyPath)) {
+          const legacyData = await fs__default.promises.readFile(legacyPath, "utf8");
           const plans = JSON.parse(legacyData);
           const migrated = Array.isArray(plans) ? plans.map((p) => {
             const createdAt = Date.now();
@@ -43629,7 +43631,7 @@ class LocalJsonSkillStorage {
     }
   }
   async putAll(skills) {
-    await fs$2.promises.writeFile(this.storageFile, JSON.stringify(skills, null, 2));
+    await fs__default.promises.writeFile(this.storageFile, JSON.stringify(skills, null, 2));
   }
 }
 class CloudSkillStorage {
@@ -43656,7 +43658,7 @@ class TaskKnowledgeService {
     __publicField(this, "skills", []);
     __publicField(this, "cloudPushTimer", null);
     var _a3, _b;
-    this.storageFile = path$2.resolve(process.cwd(), "skill_library.json");
+    this.storageFile = path__default.resolve(process.cwd(), "skill_library.json");
     this.localStorage = new LocalJsonSkillStorage(this.storageFile);
     this.cloudStorage = process.env.SKILL_CLOUD_BASE_URL ? new CloudSkillStorage() : null;
     const maybeSync = (_b = (_a3 = this.localStorage).getAllSync) == null ? void 0 : _b.call(_a3);
@@ -45244,12 +45246,612 @@ function createToonSummary(summary, messagesCompressed, options) {
     pendingActions: options == null ? void 0 : options.pendingActions
   };
 }
+const _SelectorCache = class _SelectorCache {
+  constructor(dbPath) {
+    __publicField(this, "db", null);
+    __publicField(this, "memoryCache", /* @__PURE__ */ new Map());
+    __publicField(this, "prefetchQueue", /* @__PURE__ */ new Map());
+    __publicField(this, "navigationPatterns", /* @__PURE__ */ new Map());
+    __publicField(this, "currentUrl", null);
+    this.initDatabase(dbPath);
+  }
+  initDatabase(dbPath) {
+    const dbDir = dbPath ? path$2.dirname(dbPath) : path$2.join(process.cwd(), ".cache");
+    if (!fs$1.existsSync(dbDir)) {
+      fs$1.mkdirSync(dbDir, { recursive: true });
+    }
+    const fullPath = dbPath || path$2.join(dbDir, "selector_cache.db");
+    try {
+      this.db = new Database(fullPath);
+      this.db.pragma("journal_mode = WAL");
+      this.db.pragma("synchronous = NORMAL");
+      this.db.exec(`
+        CREATE TABLE IF NOT EXISTS selectors (
+          id TEXT PRIMARY KEY,
+          domain TEXT NOT NULL,
+          url_pattern TEXT NOT NULL,
+          test_id TEXT NOT NULL,
+          css_selector TEXT NOT NULL,
+          xpath_selector TEXT,
+          element_type TEXT NOT NULL,
+          description TEXT,
+          confidence REAL DEFAULT 1.0,
+          success_count INTEGER DEFAULT 0,
+          failure_count INTEGER DEFAULT 0,
+          last_used INTEGER,
+          last_updated INTEGER,
+          ttl_ms INTEGER,
+          alternatives TEXT DEFAULT '[]'
+        );
+        
+        CREATE INDEX IF NOT EXISTS idx_domain ON selectors(domain);
+        CREATE INDEX IF NOT EXISTS idx_url_pattern ON selectors(url_pattern);
+        CREATE INDEX IF NOT EXISTS idx_test_id ON selectors(test_id);
+        CREATE INDEX IF NOT EXISTS idx_confidence ON selectors(confidence DESC);
+        
+        CREATE TABLE IF NOT EXISTS navigation_patterns (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          from_url TEXT NOT NULL,
+          to_url TEXT NOT NULL,
+          count INTEGER DEFAULT 1,
+          last_seen INTEGER,
+          UNIQUE(from_url, to_url)
+        );
+        
+        CREATE INDEX IF NOT EXISTS idx_from_url ON navigation_patterns(from_url);
+      `);
+      console.log("[SelectorCache] Database initialized at", fullPath);
+    } catch (e) {
+      console.error("[SelectorCache] Failed to initialize database:", e);
+      this.db = null;
+    }
+  }
+  /**
+   * Get selectors for a URL pattern - sub-5ms target
+   */
+  async getSelectors(urlPattern) {
+    const startTime = performance.now();
+    const results = [];
+    const memoryCached = this.memoryCache.get(urlPattern);
+    if (memoryCached && memoryCached.length > 0) {
+      const lookupTime = performance.now() - startTime;
+      for (const selector of memoryCached) {
+        if (this.isValid(selector)) {
+          results.push({ selector, source: "cache", lookupTimeMs: lookupTime });
+        }
+      }
+      if (results.length > 0) {
+        this.emitLookupTelemetry(urlPattern, results.length, lookupTime, "memory");
+        return results;
+      }
+    }
+    const prefetched = this.prefetchQueue.get(urlPattern);
+    if (prefetched && prefetched.length > 0) {
+      const lookupTime = performance.now() - startTime;
+      for (const selector of prefetched) {
+        results.push({ selector, source: "prefetch", lookupTimeMs: lookupTime });
+      }
+      this.memoryCache.set(urlPattern, prefetched);
+      this.prefetchQueue.delete(urlPattern);
+      this.emitLookupTelemetry(urlPattern, results.length, lookupTime, "prefetch");
+      return results;
+    }
+    if (this.db) {
+      try {
+        const domain = this.extractDomain(urlPattern);
+        const stmt = this.db.prepare(`
+          SELECT * FROM selectors 
+          WHERE (url_pattern = ? OR domain = ?)
+          AND confidence >= ?
+          ORDER BY confidence DESC, success_count DESC
+          LIMIT 100
+        `);
+        const rows = stmt.all(urlPattern, domain, _SelectorCache.CONFIDENCE_THRESHOLD);
+        const lookupTime = performance.now() - startTime;
+        for (const row of rows) {
+          const selector = this.rowToSelector(row);
+          if (this.isValid(selector)) {
+            results.push({ selector, source: "cache", lookupTimeMs: lookupTime });
+          }
+        }
+        if (results.length > 0) {
+          this.memoryCache.set(urlPattern, results.map((r) => r.selector));
+          this.trimMemoryCache();
+        }
+        this.emitLookupTelemetry(urlPattern, results.length, lookupTime, "sqlite");
+      } catch (e) {
+        console.error("[SelectorCache] Database query failed:", e);
+      }
+    }
+    return results;
+  }
+  /**
+   * Get a specific selector by testId - optimized for speed
+   */
+  async getSelectorByTestId(testId, urlPattern) {
+    const startTime = performance.now();
+    for (const [pattern, selectors] of this.memoryCache) {
+      if (!urlPattern || pattern === urlPattern) {
+        const found = selectors.find((s) => s.testId === testId);
+        if (found && this.isValid(found)) {
+          return found;
+        }
+      }
+    }
+    if (this.db) {
+      try {
+        let stmt;
+        let row;
+        if (urlPattern) {
+          stmt = this.db.prepare(`
+            SELECT * FROM selectors 
+            WHERE test_id = ? AND url_pattern = ?
+            ORDER BY confidence DESC
+            LIMIT 1
+          `);
+          row = stmt.get(testId, urlPattern);
+        } else {
+          stmt = this.db.prepare(`
+            SELECT * FROM selectors 
+            WHERE test_id = ?
+            ORDER BY confidence DESC, last_used DESC
+            LIMIT 1
+          `);
+          row = stmt.get(testId);
+        }
+        if (row) {
+          const selector = this.rowToSelector(row);
+          const lookupTime = performance.now() - startTime;
+          this.emitLookupTelemetry(testId, 1, lookupTime, "sqlite-testid");
+          return selector;
+        }
+      } catch (e) {
+        console.error("[SelectorCache] Failed to get selector by testId:", e);
+      }
+    }
+    return null;
+  }
+  /**
+   * Store a selector in the cache
+   */
+  async cacheSelector(selector) {
+    const id = v4$2();
+    const now = Date.now();
+    const fullSelector = {
+      ...selector,
+      id,
+      lastUsed: now,
+      lastUpdated: now,
+      ttlMs: selector.ttlMs || _SelectorCache.DEFAULT_TTL_MS,
+      alternatives: selector.alternatives || []
+    };
+    const existing = this.memoryCache.get(selector.urlPattern) || [];
+    existing.push(fullSelector);
+    this.memoryCache.set(selector.urlPattern, existing);
+    if (this.db) {
+      try {
+        const stmt = this.db.prepare(`
+          INSERT OR REPLACE INTO selectors 
+          (id, domain, url_pattern, test_id, css_selector, xpath_selector, 
+           element_type, description, confidence, success_count, failure_count,
+           last_used, last_updated, ttl_ms, alternatives)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        stmt.run(
+          fullSelector.id,
+          fullSelector.domain,
+          fullSelector.urlPattern,
+          fullSelector.testId,
+          fullSelector.cssSelector,
+          fullSelector.xpathSelector,
+          fullSelector.elementType,
+          fullSelector.description,
+          fullSelector.confidence,
+          fullSelector.successCount,
+          fullSelector.failureCount,
+          fullSelector.lastUsed,
+          fullSelector.lastUpdated,
+          fullSelector.ttlMs,
+          JSON.stringify(fullSelector.alternatives)
+        );
+      } catch (e) {
+        console.error("[SelectorCache] Failed to cache selector:", e);
+      }
+    }
+    return id;
+  }
+  /**
+   * Record selector usage success - updates confidence
+   */
+  recordSuccess(testId, urlPattern) {
+    this.updateSelectorStats(testId, urlPattern, true);
+  }
+  /**
+   * Record selector usage failure - updates confidence and triggers auto-heal
+   */
+  recordFailure(testId, urlPattern) {
+    this.updateSelectorStats(testId, urlPattern, false);
+    return this.tryAutoHeal(testId, urlPattern);
+  }
+  updateSelectorStats(testId, urlPattern, success) {
+    const now = Date.now();
+    const cached2 = this.memoryCache.get(urlPattern);
+    if (cached2) {
+      const selector = cached2.find((s) => s.testId === testId);
+      if (selector) {
+        if (success) {
+          selector.successCount++;
+        } else {
+          selector.failureCount++;
+        }
+        selector.lastUsed = now;
+        selector.confidence = this.calculateConfidence(selector.successCount, selector.failureCount);
+      }
+    }
+    if (this.db) {
+      try {
+        const column = success ? "success_count" : "failure_count";
+        const stmt = this.db.prepare(`
+          UPDATE selectors 
+          SET ${column} = ${column} + 1,
+              last_used = ?,
+              confidence = CAST(success_count AS REAL) / (success_count + failure_count + 1)
+          WHERE test_id = ? AND url_pattern = ?
+        `);
+        stmt.run(now, testId, urlPattern);
+      } catch (e) {
+        console.error("[SelectorCache] Failed to update selector stats:", e);
+      }
+    }
+    telemetryService.emit({
+      eventId: v4$2(),
+      ts: (/* @__PURE__ */ new Date()).toISOString(),
+      type: "plan_step_end",
+      name: "SelectorCache",
+      data: { testId, urlPattern, success, action: "record_usage" }
+    });
+  }
+  /**
+   * Auto-heal: Find alternative selector when primary fails
+   */
+  tryAutoHeal(testId, urlPattern) {
+    const cached2 = this.memoryCache.get(urlPattern);
+    if (cached2) {
+      const selector = cached2.find((s) => s.testId === testId);
+      if (selector && selector.alternatives.length > 0) {
+        const altCss = selector.alternatives[0];
+        const healedSelector = {
+          ...selector,
+          id: v4$2(),
+          cssSelector: altCss,
+          confidence: 0.5,
+          // Start with lower confidence
+          successCount: 0,
+          failureCount: 0,
+          lastUpdated: Date.now()
+        };
+        selector.alternatives = selector.alternatives.slice(1);
+        telemetryService.emit({
+          eventId: v4$2(),
+          ts: (/* @__PURE__ */ new Date()).toISOString(),
+          type: "plan_step_start",
+          name: "SelectorCache",
+          data: { testId, urlPattern, action: "auto_heal", newSelector: altCss }
+        });
+        return healedSelector;
+      }
+    }
+    return null;
+  }
+  /**
+   * Add alternative selectors for auto-healing
+   */
+  addAlternatives(testId, urlPattern, alternatives) {
+    const cached2 = this.memoryCache.get(urlPattern);
+    if (cached2) {
+      const selector = cached2.find((s) => s.testId === testId);
+      if (selector) {
+        const newAlts = [.../* @__PURE__ */ new Set([...selector.alternatives, ...alternatives])];
+        selector.alternatives = newAlts.slice(0, _SelectorCache.MAX_ALTERNATIVES);
+      }
+    }
+    if (this.db) {
+      try {
+        const stmt = this.db.prepare(`
+          UPDATE selectors 
+          SET alternatives = ?
+          WHERE test_id = ? AND url_pattern = ?
+        `);
+        const existingStmt = this.db.prepare(`
+          SELECT alternatives FROM selectors WHERE test_id = ? AND url_pattern = ?
+        `);
+        const row = existingStmt.get(testId, urlPattern);
+        if (row) {
+          const existing = JSON.parse(row.alternatives || "[]");
+          const merged = [.../* @__PURE__ */ new Set([...existing, ...alternatives])].slice(0, _SelectorCache.MAX_ALTERNATIVES);
+          stmt.run(JSON.stringify(merged), testId, urlPattern);
+        }
+      } catch (e) {
+        console.error("[SelectorCache] Failed to add alternatives:", e);
+      }
+    }
+  }
+  /**
+   * Predictive pre-fetch: Load selectors for likely next pages
+   */
+  async prefetchForNavigation(currentUrl) {
+    this.currentUrl = currentUrl;
+    const predictions = this.getPrefetchPredictions(currentUrl);
+    for (const prediction of predictions) {
+      if (prediction.confidence >= _SelectorCache.PREFETCH_CONFIDENCE_THRESHOLD) {
+        const selectors = await this.getSelectors(prediction.urlPattern);
+        if (selectors.length > 0) {
+          this.prefetchQueue.set(prediction.urlPattern, selectors.map((r) => r.selector));
+        }
+      }
+    }
+    telemetryService.emit({
+      eventId: v4$2(),
+      ts: (/* @__PURE__ */ new Date()).toISOString(),
+      type: "plan_step_start",
+      name: "SelectorCache",
+      data: {
+        action: "prefetch",
+        currentUrl,
+        predictions: predictions.length,
+        prefetched: this.prefetchQueue.size
+      }
+    });
+  }
+  /**
+   * Record navigation for pattern learning
+   */
+  recordNavigation(fromUrl, toUrl) {
+    const now = Date.now();
+    const patterns = this.navigationPatterns.get(fromUrl) || [];
+    const existing = patterns.find((p) => p.toUrl === toUrl);
+    if (existing) {
+      existing.count++;
+      existing.lastSeen = now;
+    } else {
+      patterns.push({ fromUrl, toUrl, count: 1, lastSeen: now });
+    }
+    this.navigationPatterns.set(fromUrl, patterns);
+    if (this.db) {
+      try {
+        const stmt = this.db.prepare(`
+          INSERT INTO navigation_patterns (from_url, to_url, count, last_seen)
+          VALUES (?, ?, 1, ?)
+          ON CONFLICT(from_url, to_url) DO UPDATE SET
+            count = count + 1,
+            last_seen = ?
+        `);
+        stmt.run(fromUrl, toUrl, now, now);
+      } catch (e) {
+        console.error("[SelectorCache] Failed to record navigation:", e);
+      }
+    }
+    this.prefetchForNavigation(toUrl);
+  }
+  /**
+   * Get prefetch predictions based on navigation history
+   */
+  getPrefetchPredictions(currentUrl) {
+    const predictions = [];
+    const patterns = this.navigationPatterns.get(currentUrl);
+    if (patterns) {
+      const totalCount = patterns.reduce((sum, p) => sum + p.count, 0);
+      for (const pattern of patterns) {
+        predictions.push({
+          urlPattern: pattern.toUrl,
+          selectors: [],
+          confidence: pattern.count / totalCount
+        });
+      }
+    }
+    if (this.db) {
+      try {
+        const stmt = this.db.prepare(`
+          SELECT to_url, count, 
+                 CAST(count AS REAL) / (SELECT SUM(count) FROM navigation_patterns WHERE from_url = ?) as confidence
+          FROM navigation_patterns 
+          WHERE from_url = ?
+          ORDER BY count DESC
+          LIMIT 5
+        `);
+        const rows = stmt.all(currentUrl, currentUrl);
+        for (const row of rows) {
+          if (!predictions.find((p) => p.urlPattern === row.to_url)) {
+            predictions.push({
+              urlPattern: row.to_url,
+              selectors: [],
+              confidence: row.confidence
+            });
+          }
+        }
+      } catch (e) {
+        console.error("[SelectorCache] Failed to get prefetch predictions:", e);
+      }
+    }
+    return predictions.sort((a, b) => b.confidence - a.confidence);
+  }
+  /**
+   * Get confidence score for a selector
+   */
+  getConfidence(testId, urlPattern) {
+    const cached2 = this.memoryCache.get(urlPattern);
+    if (cached2) {
+      const selector = cached2.find((s) => s.testId === testId);
+      if (selector) {
+        return selector.confidence;
+      }
+    }
+    return 0;
+  }
+  /**
+   * Get all selectors with low confidence (for review/healing)
+   */
+  getLowConfidenceSelectors(threshold = 0.5) {
+    const results = [];
+    if (this.db) {
+      try {
+        const stmt = this.db.prepare(`
+          SELECT * FROM selectors 
+          WHERE confidence < ?
+          ORDER BY confidence ASC
+          LIMIT 50
+        `);
+        const rows = stmt.all(threshold);
+        for (const row of rows) {
+          results.push(this.rowToSelector(row));
+        }
+      } catch (e) {
+        console.error("[SelectorCache] Failed to get low confidence selectors:", e);
+      }
+    }
+    return results;
+  }
+  /**
+   * Get cache statistics
+   */
+  getStats() {
+    let totalSelectors = 0;
+    let totalConfidence = 0;
+    let totalSuccess = 0;
+    let totalFailure = 0;
+    if (this.db) {
+      try {
+        const countStmt = this.db.prepare("SELECT COUNT(*) as count FROM selectors");
+        const countRow = countStmt.get();
+        totalSelectors = countRow.count;
+        const avgStmt = this.db.prepare("SELECT AVG(confidence) as avg FROM selectors");
+        const avgRow = avgStmt.get();
+        totalConfidence = avgRow.avg || 0;
+        const statsStmt = this.db.prepare("SELECT SUM(success_count) as success, SUM(failure_count) as failure FROM selectors");
+        const statsRow = statsStmt.get();
+        totalSuccess = statsRow.success || 0;
+        totalFailure = statsRow.failure || 0;
+      } catch (e) {
+        console.error("[SelectorCache] Failed to get stats:", e);
+      }
+    }
+    return {
+      totalSelectors,
+      memoryCacheSize: this.memoryCache.size,
+      prefetchQueueSize: this.prefetchQueue.size,
+      avgConfidence: totalConfidence,
+      hitRate: totalSuccess + totalFailure > 0 ? totalSuccess / (totalSuccess + totalFailure) : 0
+    };
+  }
+  /**
+   * Clear expired entries from cache
+   */
+  async cleanup() {
+    const now = Date.now();
+    for (const [pattern, selectors] of this.memoryCache) {
+      const valid = selectors.filter((s) => this.isValid(s));
+      if (valid.length === 0) {
+        this.memoryCache.delete(pattern);
+      } else {
+        this.memoryCache.set(pattern, valid);
+      }
+    }
+    if (this.db) {
+      try {
+        const stmt = this.db.prepare(`
+          DELETE FROM selectors 
+          WHERE last_updated + ttl_ms < ?
+        `);
+        const result = stmt.run(now);
+        console.log(`[SelectorCache] Cleaned up ${result.changes} expired selectors`);
+      } catch (e) {
+        console.error("[SelectorCache] Failed to cleanup:", e);
+      }
+    }
+  }
+  /**
+   * Close database connection
+   */
+  close() {
+    if (this.db) {
+      this.db.close();
+      this.db = null;
+    }
+  }
+  isValid(selector) {
+    const now = Date.now();
+    return selector.lastUpdated + selector.ttlMs > now;
+  }
+  calculateConfidence(success, failure) {
+    if (success + failure === 0) return 1;
+    return success / (success + failure);
+  }
+  extractDomain(url) {
+    try {
+      const parsed = new URL(url);
+      return parsed.hostname;
+    } catch {
+      return url.split("/")[0];
+    }
+  }
+  rowToSelector(row) {
+    return {
+      id: row.id,
+      domain: row.domain,
+      urlPattern: row.url_pattern,
+      testId: row.test_id,
+      cssSelector: row.css_selector,
+      xpathSelector: row.xpath_selector,
+      elementType: row.element_type,
+      description: row.description,
+      confidence: row.confidence,
+      successCount: row.success_count,
+      failureCount: row.failure_count,
+      lastUsed: row.last_used,
+      lastUpdated: row.last_updated,
+      ttlMs: row.ttl_ms,
+      alternatives: JSON.parse(row.alternatives || "[]")
+    };
+  }
+  trimMemoryCache() {
+    if (this.memoryCache.size > _SelectorCache.MEMORY_CACHE_SIZE) {
+      const entries = Array.from(this.memoryCache.entries());
+      entries.sort((a, b) => {
+        const aLastUsed = Math.max(...a[1].map((s) => s.lastUsed));
+        const bLastUsed = Math.max(...b[1].map((s) => s.lastUsed));
+        return aLastUsed - bLastUsed;
+      });
+      const toRemove = entries.slice(0, entries.length - _SelectorCache.MEMORY_CACHE_SIZE);
+      for (const [pattern] of toRemove) {
+        this.memoryCache.delete(pattern);
+      }
+    }
+  }
+  emitLookupTelemetry(key, count, timeMs, source) {
+    telemetryService.emit({
+      eventId: v4$2(),
+      ts: (/* @__PURE__ */ new Date()).toISOString(),
+      type: "plan_step_end",
+      name: "SelectorCache",
+      data: { key, count, timeMs: Math.round(timeMs * 100) / 100, source }
+    });
+  }
+};
+__publicField(_SelectorCache, "DEFAULT_TTL_MS", 24 * 60 * 60 * 1e3);
+// 24 hours
+__publicField(_SelectorCache, "CONFIDENCE_THRESHOLD", 0.7);
+__publicField(_SelectorCache, "MAX_ALTERNATIVES", 5);
+__publicField(_SelectorCache, "PREFETCH_CONFIDENCE_THRESHOLD", 0.6);
+__publicField(_SelectorCache, "MEMORY_CACHE_SIZE", 1e3);
+let SelectorCache = _SelectorCache;
+const selectorCache = new SelectorCache();
 class SelectorDiscoveryService {
-  // 1 hour
   constructor() {
     __publicField(this, "selectorMap", /* @__PURE__ */ new Map());
     __publicField(this, "lastScan", 0);
     __publicField(this, "CACHE_TTL", 1e3 * 60 * 60);
+    // 1 hour
+    __publicField(this, "currentUrl", null);
   }
   /**
    * Scans the mock-saas source code to find all data-testid attributes
@@ -45259,7 +45861,7 @@ class SelectorDiscoveryService {
     if (this.selectorMap.size > 0 && now - this.lastScan < this.CACHE_TTL) {
       return this.selectorMap;
     }
-    const mockSaasSrc = path$2.resolve(process.cwd(), "mock-saas", "src");
+    const mockSaasSrc = path__default.resolve(process.cwd(), "mock-saas", "src");
     this.selectorMap.clear();
     try {
       await this.scanDirectory(mockSaasSrc);
@@ -45271,9 +45873,9 @@ class SelectorDiscoveryService {
     return this.selectorMap;
   }
   async scanDirectory(dir) {
-    const entries = await fs$1.readdir(dir, { withFileTypes: true });
+    const entries = await fs$2.readdir(dir, { withFileTypes: true });
     for (const entry of entries) {
-      const fullPath = path$2.join(dir, entry.name);
+      const fullPath = path__default.join(dir, entry.name);
       if (entry.isDirectory()) {
         await this.scanDirectory(fullPath);
       } else if (entry.isFile() && (entry.name.endsWith(".tsx") || entry.name.endsWith(".ts"))) {
@@ -45282,8 +45884,8 @@ class SelectorDiscoveryService {
     }
   }
   async scanFile(filePath) {
-    const content = await fs$1.readFile(filePath, "utf8");
-    const pageName = path$2.basename(filePath, path$2.extname(filePath));
+    const content = await fs$2.readFile(filePath, "utf8");
+    const pageName = path__default.basename(filePath, path__default.extname(filePath));
     const testIdRegex = /data-testid=["']([^"']+)["']/g;
     let match;
     while ((match = testIdRegex.exec(content)) !== null) {
@@ -45329,6 +45931,84 @@ class SelectorDiscoveryService {
       if (found) return found;
     }
     return void 0;
+  }
+  /**
+   * Get selector with caching - sub-5ms target for cache hits
+   */
+  async getCachedSelector(testId, urlPattern) {
+    return selectorCache.getSelectorByTestId(testId, urlPattern);
+  }
+  /**
+   * Cache a discovered selector for fast future lookups
+   */
+  async cacheDiscoveredSelector(selector, urlPattern, cssSelector, xpathSelector) {
+    const domain = this.extractDomain(urlPattern);
+    return selectorCache.cacheSelector({
+      domain,
+      urlPattern,
+      testId: selector.testId,
+      cssSelector,
+      xpathSelector: xpathSelector || null,
+      elementType: selector.type === "other" ? "other" : selector.type,
+      description: selector.description,
+      confidence: 1,
+      successCount: 0,
+      failureCount: 0,
+      ttlMs: this.CACHE_TTL,
+      alternatives: []
+    });
+  }
+  /**
+   * Record selector usage for confidence tracking
+   */
+  recordSelectorSuccess(testId, urlPattern) {
+    selectorCache.recordSuccess(testId, urlPattern);
+  }
+  /**
+   * Record selector failure and attempt auto-heal
+   */
+  recordSelectorFailure(testId, urlPattern) {
+    return selectorCache.recordFailure(testId, urlPattern);
+  }
+  /**
+   * Notify of navigation for predictive pre-fetching
+   */
+  async onNavigation(fromUrl, toUrl) {
+    this.currentUrl = toUrl;
+    selectorCache.recordNavigation(fromUrl, toUrl);
+  }
+  /**
+   * Pre-fetch selectors for predicted next pages
+   */
+  async prefetchSelectors(currentUrl) {
+    this.currentUrl = currentUrl;
+    await selectorCache.prefetchForNavigation(currentUrl);
+  }
+  /**
+   * Get cache statistics
+   */
+  getCacheStats() {
+    return selectorCache.getStats();
+  }
+  /**
+   * Get selectors with low confidence for review
+   */
+  getLowConfidenceSelectors(threshold) {
+    return selectorCache.getLowConfidenceSelectors(threshold);
+  }
+  /**
+   * Add alternative selectors for auto-healing
+   */
+  addSelectorAlternatives(testId, urlPattern, alternatives) {
+    selectorCache.addAlternatives(testId, urlPattern, alternatives);
+  }
+  extractDomain(url) {
+    try {
+      const parsed = new URL(url);
+      return parsed.hostname;
+    } catch {
+      return url.split("/")[0] || "localhost";
+    }
   }
 }
 const selectorDiscoveryService = new SelectorDiscoveryService();
@@ -47081,9 +47761,9 @@ ${resStr}`));
   }
   async logFailure(runId, userMessage, result, stepCount, toolsUsed, durationMs) {
     try {
-      const logDir = path$2.join(process.cwd(), "tuning_logs");
-      await fs$1.mkdir(logDir, { recursive: true });
-      const logFile = path$2.join(logDir, `failure_${runId}_${Date.now()}.json`);
+      const logDir = path__default.join(process.cwd(), "tuning_logs");
+      await fs$2.mkdir(logDir, { recursive: true });
+      const logFile = path__default.join(logDir, `failure_${runId}_${Date.now()}.json`);
       const logData = {
         runId,
         timestamp: (/* @__PURE__ */ new Date()).toISOString(),
@@ -47094,7 +47774,7 @@ ${resStr}`));
         durationMs,
         model: this.currentModelId
       };
-      await fs$1.writeFile(logFile, JSON.stringify(logData, null, 2));
+      await fs$2.writeFile(logFile, JSON.stringify(logData, null, 2));
     } catch (e) {
       console.error("[AgentService] Failed to write failure log:", e);
     }
@@ -47165,21 +47845,21 @@ class PlanMemory {
   constructor() {
     __publicField(this, "filePath");
     __publicField(this, "plans", []);
-    const userDataDir = path$2.join(os$1.homedir(), ".enterprise_agent");
-    this.filePath = path$2.join(userDataDir, FILE_NAME);
-    fs$1.mkdir(userDataDir, { recursive: true }).catch(() => void 0);
+    const userDataDir = path__default.join(os$1.homedir(), ".enterprise_agent");
+    this.filePath = path__default.join(userDataDir, FILE_NAME);
+    fs$2.mkdir(userDataDir, { recursive: true }).catch(() => void 0);
     this.load();
   }
   async load() {
     try {
-      const data = await fs$1.readFile(this.filePath, "utf-8");
+      const data = await fs$2.readFile(this.filePath, "utf-8");
       this.plans = JSON.parse(data);
     } catch {
       this.plans = [];
     }
   }
   async persist() {
-    await fs$1.writeFile(this.filePath, JSON.stringify(this.plans, null, 2), "utf-8");
+    await fs$2.writeFile(this.filePath, JSON.stringify(this.plans, null, 2), "utf-8");
   }
   async getPlans() {
     await this.load();
@@ -47273,14 +47953,14 @@ class BrowserAutomationService {
     }
     const defaultRoutes = /* @__PURE__ */ new Set(["/", "/jira", "/confluence", "/trello"]);
     const candidates = [
-      path$2.resolve(process.cwd(), "mock-saas", "src", "App.tsx"),
-      path$2.resolve(process.cwd(), "..", "mock-saas", "src", "App.tsx"),
-      path$2.resolve(process.cwd(), "..", "..", "mock-saas", "src", "App.tsx")
+      path__default.resolve(process.cwd(), "mock-saas", "src", "App.tsx"),
+      path__default.resolve(process.cwd(), "..", "mock-saas", "src", "App.tsx"),
+      path__default.resolve(process.cwd(), "..", "..", "mock-saas", "src", "App.tsx")
     ];
     let appTsx = null;
     for (const p of candidates) {
       try {
-        const stat = await fs$1.stat(p);
+        const stat = await fs$2.stat(p);
         if (stat.isFile()) {
           appTsx = p;
           break;
@@ -47293,7 +47973,7 @@ class BrowserAutomationService {
       return defaultRoutes;
     }
     try {
-      const raw = await fs$1.readFile(appTsx, "utf8");
+      const raw = await fs$2.readFile(appTsx, "utf8");
       const routes = /* @__PURE__ */ new Set();
       const re2 = /<Route\s+(?:path|element)\s*=\s*["']([^"']+)["']/g;
       let match;
@@ -48500,8 +49180,8 @@ ${rootsPreview}` : "");
         const image = await target.capturePage();
         const buffer = image.toPNG();
         if (savePath) {
-          const resolved = path$2.isAbsolute(savePath) ? savePath : path$2.join(process.cwd(), savePath);
-          await fs$1.writeFile(resolved, buffer);
+          const resolved = path__default.isAbsolute(savePath) ? savePath : path__default.join(process.cwd(), savePath);
+          await fs$2.writeFile(resolved, buffer);
           return `Screenshot saved to ${resolved} (${buffer.length} bytes).`;
         }
         return `Screenshot taken (${buffer.length} bytes).`;
@@ -49309,10 +49989,10 @@ class BenchmarkService {
   }
   async exportTrajectories(results) {
     var _a3, _b;
-    const exportDir = path$2.join(app.getPath("userData"), "benchmark_datasets");
-    await fs$1.mkdir(exportDir, { recursive: true });
+    const exportDir = path__default.join(app.getPath("userData"), "benchmark_datasets");
+    await fs$2.mkdir(exportDir, { recursive: true });
     const timestamp = (/* @__PURE__ */ new Date()).toISOString().replace(/[:.]/g, "-");
-    const filePath = path$2.join(exportDir, `trajectories_${timestamp}.jsonl`);
+    const filePath = path__default.join(exportDir, `trajectories_${timestamp}.jsonl`);
     const lines = [];
     for (const r of results) {
       if (!r.trajectory) continue;
@@ -49354,7 +50034,7 @@ class BenchmarkService {
       };
       lines.push(JSON.stringify(record2));
     }
-    await fs$1.writeFile(filePath, lines.join("\n"), "utf8");
+    await fs$2.writeFile(filePath, lines.join("\n"), "utf8");
     console.log(`[Benchmark] Exported ${results.length} trajectories to ${filePath}`);
     return filePath;
   }
@@ -49564,8 +50244,8 @@ const IGNORE_DIRS = /* @__PURE__ */ new Set([
   ".cache"
 ]);
 const isPathInside = (child, parent) => {
-  const rel = path$2.relative(parent, child);
-  return rel === "" || !rel.startsWith(".." + path$2.sep) && rel !== "..";
+  const rel = path__default.relative(parent, child);
+  return rel === "" || !rel.startsWith(".." + path__default.sep) && rel !== "..";
 };
 class CodeReaderService {
   constructor() {
@@ -49575,7 +50255,7 @@ class CodeReaderService {
   }
   async pathExists(p) {
     try {
-      await fs$1.stat(p);
+      await fs$2.stat(p);
       return true;
     } catch {
       return false;
@@ -49587,18 +50267,18 @@ class CodeReaderService {
     }
     const candidates = [];
     candidates.push(process.cwd());
-    candidates.push(path$2.dirname(process.cwd()));
-    candidates.push(path$2.dirname(path$2.dirname(process.cwd())));
+    candidates.push(path__default.dirname(process.cwd()));
+    candidates.push(path__default.dirname(path__default.dirname(process.cwd())));
     try {
       candidates.push(app.getAppPath());
-      candidates.push(path$2.dirname(app.getAppPath()));
-      candidates.push(path$2.dirname(path$2.dirname(app.getAppPath())));
+      candidates.push(path__default.dirname(app.getAppPath()));
+      candidates.push(path__default.dirname(path__default.dirname(app.getAppPath())));
     } catch {
     }
     for (const base of candidates) {
-      const p = path$2.resolve(base, "mock-saas", "src");
+      const p = path__default.resolve(base, "mock-saas", "src");
       if (await this.pathExists(p)) {
-        const real = await fs$1.realpath(p);
+        const real = await fs$2.realpath(p);
         this.mockSaasSrcRoot = p;
         this.mockSaasSrcRootReal = real;
         return { root: p, rootReal: real };
@@ -49616,7 +50296,7 @@ class CodeReaderService {
   async resolvePathWithinMockSaasSrc(inputPath) {
     const { rootReal } = await this.getMockSaasSrcRoot();
     const rel = this.normalizeUserPath(inputPath);
-    const resolved = path$2.resolve(rootReal, rel);
+    const resolved = path__default.resolve(rootReal, rel);
     if (!isPathInside(resolved, rootReal)) {
       throw new Error("Path escapes mock-saas/src. Access denied.");
     }
@@ -49624,15 +50304,15 @@ class CodeReaderService {
   }
   async listFilesRecursive(dir, maxFiles, out, baseReal) {
     if (out.length >= maxFiles) return;
-    const entries = await fs$1.readdir(dir, { withFileTypes: true });
+    const entries = await fs$2.readdir(dir, { withFileTypes: true });
     for (const entry of entries) {
       if (out.length >= maxFiles) return;
       if (entry.name.startsWith(".")) continue;
       if (IGNORE_DIRS.has(entry.name)) continue;
-      const full = path$2.join(dir, entry.name);
+      const full = path__default.join(dir, entry.name);
       let real;
       try {
-        real = await fs$1.realpath(full);
+        real = await fs$2.realpath(full);
       } catch {
         continue;
       }
@@ -49659,7 +50339,7 @@ class CodeReaderService {
         const resolvedDir = await this.resolvePathWithinMockSaasSrc(dir ?? ".");
         const filesReal = [];
         await this.listFilesRecursive(resolvedDir, maxFiles ?? 500, filesReal, rootReal);
-        const files = filesReal.map((p) => path$2.relative(rootReal, p).replace(/\\/g, "/")).sort();
+        const files = filesReal.map((p) => path__default.relative(rootReal, p).replace(/\\/g, "/")).sort();
         return JSON.stringify(
           {
             root: "mock-saas/src",
@@ -49686,14 +50366,14 @@ class CodeReaderService {
         const { path: filePath, startLine, maxLines, maxBytes } = readSchema.parse(args);
         const { rootReal } = await this.getMockSaasSrcRoot();
         const resolved = await this.resolvePathWithinMockSaasSrc(filePath);
-        const stat = await fs$1.stat(resolved);
+        const stat = await fs$2.stat(resolved);
         if (!stat.isFile()) throw new Error("Not a file.");
         if (stat.size > (maxBytes ?? MAX_FILE_BYTES_DEFAULT)) {
           throw new Error(
             `File too large (${stat.size} bytes). Increase maxBytes (<=2,000,000) or read a smaller file.`
           );
         }
-        const raw = await fs$1.readFile(resolved, "utf8");
+        const raw = await fs$2.readFile(resolved, "utf8");
         const lines = raw.split(/\r?\n/);
         const totalLines = lines.length;
         const start = Math.max(1, startLine ?? 1);
@@ -49703,7 +50383,7 @@ class CodeReaderService {
         return JSON.stringify(
           {
             root: "mock-saas/src",
-            path: path$2.relative(rootReal, resolved).replace(/\\/g, "/"),
+            path: path__default.relative(rootReal, resolved).replace(/\\/g, "/"),
             totalLines,
             startLine: start,
             endLine: end,
@@ -49738,7 +50418,7 @@ class CodeReaderService {
           if (matches.length >= limit2) break;
           let stat;
           try {
-            stat = await fs$1.stat(fileReal);
+            stat = await fs$2.stat(fileReal);
           } catch {
             continue;
           }
@@ -49746,7 +50426,7 @@ class CodeReaderService {
           if (stat.size > MAX_FILE_BYTES_DEFAULT * 2) continue;
           let raw;
           try {
-            raw = await fs$1.readFile(fileReal, "utf8");
+            raw = await fs$2.readFile(fileReal, "utf8");
           } catch {
             continue;
           }
@@ -49756,7 +50436,7 @@ class CodeReaderService {
             const hay = caseSensitive ? lines[i] : lines[i].toLowerCase();
             if (!hay.includes(needle)) continue;
             matches.push({
-              path: path$2.relative(rootReal, fileReal).replace(/\\/g, "/"),
+              path: path__default.relative(rootReal, fileReal).replace(/\\/g, "/"),
               line: i + 1,
               preview: lines[i].trim().slice(0, 200)
             });
@@ -50155,12 +50835,12 @@ EXAMPLES:
 }
 new CodeExecutionService();
 const planMemory = new PlanMemory();
-const __dirname$1 = path$2.dirname(fileURLToPath(import.meta.url));
-process.env.APP_ROOT = path$2.join(__dirname$1, "..");
+const __dirname$1 = path__default.dirname(fileURLToPath(import.meta.url));
+process.env.APP_ROOT = path__default.join(__dirname$1, "..");
 const VITE_DEV_SERVER_URL = process.env["VITE_DEV_SERVER_URL"];
-const MAIN_DIST = path$2.join(process.env.APP_ROOT, "dist-electron");
-const RENDERER_DIST = path$2.join(process.env.APP_ROOT, "dist");
-process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path$2.join(process.env.APP_ROOT, "public") : RENDERER_DIST;
+const MAIN_DIST = path__default.join(process.env.APP_ROOT, "dist-electron");
+const RENDERER_DIST = path__default.join(process.env.APP_ROOT, "dist");
+process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path__default.join(process.env.APP_ROOT, "public") : RENDERER_DIST;
 let win;
 const newTabDashboardService = new NewTabDashboardService(new DummyAeroCoreDataSource());
 let newTabDashboardTimer = null;
@@ -50169,8 +50849,8 @@ const SESSION_VERSION = 1;
 const SESSION_FILE = "session_state.json";
 async function loadSessionState() {
   try {
-    const filePath = path$2.join(app.getPath("userData"), SESSION_FILE);
-    const raw = await fs$1.readFile(filePath, "utf8");
+    const filePath = path__default.join(app.getPath("userData"), SESSION_FILE);
+    const raw = await fs$2.readFile(filePath, "utf8");
     const data = JSON.parse(raw);
     if (data.version !== SESSION_VERSION) return null;
     return data;
@@ -50180,8 +50860,8 @@ async function loadSessionState() {
 }
 async function saveSessionState(state) {
   try {
-    const filePath = path$2.join(app.getPath("userData"), SESSION_FILE);
-    await fs$1.writeFile(filePath, JSON.stringify(state, null, 2), "utf8");
+    const filePath = path__default.join(app.getPath("userData"), SESSION_FILE);
+    await fs$2.writeFile(filePath, JSON.stringify(state, null, 2), "utf8");
   } catch (err) {
     console.error("[Session] Failed to save session state:", err);
   }
@@ -50239,13 +50919,13 @@ async function createWindow(sessionState) {
     isMaximized: false
   };
   win = new BrowserWindow({
-    icon: path$2.join(process.env.VITE_PUBLIC, "electron-vite.svg"),
+    icon: path__default.join(process.env.VITE_PUBLIC, "electron-vite.svg"),
     x: windowState.x,
     y: windowState.y,
     width: windowState.width,
     height: windowState.height,
     webPreferences: {
-      preload: path$2.join(__dirname$1, "preload.mjs"),
+      preload: path__default.join(__dirname$1, "preload.mjs"),
       webviewTag: true
     }
   });
@@ -50290,7 +50970,7 @@ async function createWindow(sessionState) {
     });
     win.webContents.openDevTools();
   } else {
-    win.loadFile(path$2.join(RENDERER_DIST, "index.html"));
+    win.loadFile(path__default.join(RENDERER_DIST, "index.html"));
   }
 }
 if (process.env.ENABLE_ELECTRON_REMOTE_DEBUGGING === "true") {
@@ -50388,9 +51068,9 @@ app.whenReady().then(async () => {
     return newTabDashboardService.getSnapshot();
   });
   ipcMain.handle("chatHistory:get", async () => {
-    const filePath = path$2.join(app.getPath("userData"), "chat_history.json.enc");
+    const filePath = path__default.join(app.getPath("userData"), "chat_history.json.enc");
     try {
-      const raw = await fs$1.readFile(filePath, "utf8");
+      const raw = await fs$2.readFile(filePath, "utf8");
       const json = await decryptChatHistory(raw);
       const parsed = JSON.parse(json);
       return Array.isArray(parsed) ? parsed : [];
@@ -50399,18 +51079,18 @@ app.whenReady().then(async () => {
     }
   });
   ipcMain.handle("chatHistory:set", async (_event, messages) => {
-    const filePath = path$2.join(app.getPath("userData"), "chat_history.json.enc");
+    const filePath = path__default.join(app.getPath("userData"), "chat_history.json.enc");
     const arr2 = Array.isArray(messages) ? messages : [];
     const capped = arr2.slice(-200);
     const json = JSON.stringify(capped);
     const enc = await encryptChatHistory(json);
-    await fs$1.writeFile(filePath, enc, "utf8");
+    await fs$2.writeFile(filePath, enc, "utf8");
     return { success: true };
   });
   ipcMain.handle("chatHistory:clear", async () => {
-    const filePath = path$2.join(app.getPath("userData"), "chat_history.json.enc");
+    const filePath = path__default.join(app.getPath("userData"), "chat_history.json.enc");
     try {
-      await fs$1.unlink(filePath);
+      await fs$2.unlink(filePath);
     } catch {
     }
     return { success: true };
@@ -50551,7 +51231,7 @@ app.whenReady().then(async () => {
     return false;
   });
   ipcMain.handle("telemetry:export", async () => {
-    const exportPath = path$2.join(app.getPath("userData"), "trajectories_export.json");
+    const exportPath = path__default.join(app.getPath("userData"), "trajectories_export.json");
     const count = await telemetryService.exportTrajectories(exportPath);
     return { success: true, count, path: exportPath };
   });
@@ -50814,8 +51494,8 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle("session:clear", async () => {
     try {
-      const filePath = path$2.join(app.getPath("userData"), SESSION_FILE);
-      await fs$1.unlink(filePath);
+      const filePath = path__default.join(app.getPath("userData"), SESSION_FILE);
+      await fs$2.unlink(filePath);
       return { success: true };
     } catch {
       return { success: false };

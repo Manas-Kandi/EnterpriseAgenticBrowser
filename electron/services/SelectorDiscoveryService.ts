@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { selectorCache, CachedSelector } from './SelectorCache';
 
 export interface ComponentSelector {
   testId: string;
@@ -12,6 +13,7 @@ export class SelectorDiscoveryService {
   private selectorMap: Map<string, ComponentSelector[]> = new Map();
   private lastScan: number = 0;
   private readonly CACHE_TTL = 1000 * 60 * 60; // 1 hour
+  private currentUrl: string | null = null;
 
   constructor() {}
 
@@ -108,6 +110,99 @@ export class SelectorDiscoveryService {
       if (found) return found;
     }
     return undefined;
+  }
+
+  /**
+   * Get selector with caching - sub-5ms target for cache hits
+   */
+  async getCachedSelector(testId: string, urlPattern?: string): Promise<CachedSelector | null> {
+    return selectorCache.getSelectorByTestId(testId, urlPattern);
+  }
+
+  /**
+   * Cache a discovered selector for fast future lookups
+   */
+  async cacheDiscoveredSelector(
+    selector: ComponentSelector, 
+    urlPattern: string,
+    cssSelector: string,
+    xpathSelector?: string
+  ): Promise<string> {
+    const domain = this.extractDomain(urlPattern);
+    return selectorCache.cacheSelector({
+      domain,
+      urlPattern,
+      testId: selector.testId,
+      cssSelector,
+      xpathSelector: xpathSelector || null,
+      elementType: selector.type === 'other' ? 'other' : selector.type,
+      description: selector.description,
+      confidence: 1.0,
+      successCount: 0,
+      failureCount: 0,
+      ttlMs: this.CACHE_TTL,
+      alternatives: [],
+    });
+  }
+
+  /**
+   * Record selector usage for confidence tracking
+   */
+  recordSelectorSuccess(testId: string, urlPattern: string) {
+    selectorCache.recordSuccess(testId, urlPattern);
+  }
+
+  /**
+   * Record selector failure and attempt auto-heal
+   */
+  recordSelectorFailure(testId: string, urlPattern: string): CachedSelector | null {
+    return selectorCache.recordFailure(testId, urlPattern);
+  }
+
+  /**
+   * Notify of navigation for predictive pre-fetching
+   */
+  async onNavigation(fromUrl: string, toUrl: string) {
+    this.currentUrl = toUrl;
+    selectorCache.recordNavigation(fromUrl, toUrl);
+  }
+
+  /**
+   * Pre-fetch selectors for predicted next pages
+   */
+  async prefetchSelectors(currentUrl: string) {
+    this.currentUrl = currentUrl;
+    await selectorCache.prefetchForNavigation(currentUrl);
+  }
+
+  /**
+   * Get cache statistics
+   */
+  getCacheStats() {
+    return selectorCache.getStats();
+  }
+
+  /**
+   * Get selectors with low confidence for review
+   */
+  getLowConfidenceSelectors(threshold?: number) {
+    return selectorCache.getLowConfidenceSelectors(threshold);
+  }
+
+  /**
+   * Add alternative selectors for auto-healing
+   */
+  addSelectorAlternatives(testId: string, urlPattern: string, alternatives: string[]) {
+    selectorCache.addAlternatives(testId, urlPattern, alternatives);
+  }
+
+  private extractDomain(url: string): string {
+    try {
+      const parsed = new URL(url);
+      return parsed.hostname;
+    } catch {
+      return url.split('/')[0] || 'localhost';
+    }
   }
 }
 
