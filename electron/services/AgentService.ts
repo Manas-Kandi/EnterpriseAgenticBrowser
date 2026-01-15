@@ -16,6 +16,8 @@ import { safeParseTOON, TOON_SUMMARY_PROMPT_TEMPLATE } from '../lib/toon';
 import { safeValidateToonSummary, createToonSummary, ToonSummary } from '../lib/validateToonSummary';
 import { selectorDiscoveryService } from './SelectorDiscoveryService';
 import { WorkflowOrchestrator } from './WorkflowOrchestrator';
+import { speculativeExecutor, PredictionContext } from './SpeculativeExecutor';
+import { modelRouter, ModelTier } from './ModelRouter';
 
 // Type for browser_navigate args
 interface BrowserNavigateArgs {
@@ -338,6 +340,17 @@ export class AgentService {
     });
   }
 
+  private createModelForRouting(tier: ModelTier): Runnable {
+    return new ChatOpenAI({
+      configuration: { baseURL: this.llmConfig.baseUrl, apiKey: this.llmConfig.apiKey ?? 'local' },
+      modelName: tier.modelName,
+      temperature: tier.temperature,
+      maxTokens: tier.maxTokens,
+      streaming: false,
+      modelKwargs: { response_format: { type: 'json_object' } },
+    });
+  }
+
   setModel(modelId: string) {
     this.currentModelId = modelId;
     this.model = this.createModel(modelId);
@@ -458,12 +471,28 @@ You can answer questions about what's on the page, explain content, summarize in
     let pendingErrorForReflection: string | null = null;
     let stepCount = 0;
     const toolsUsed: string[] = [];
+    let lastTool: string | null = null;
+    let lastToolResult: string | null = null;
+    let lastThought: string | null = null;
+    let speculativeHits = 0;
+    let speculativeMisses = 0;
 
     telemetryService.emit({ eventId: uuidv4(), runId, ts: new Date().toISOString(), type: 'agent_run_start', data: { userMessage: userMessage.slice(0, 100), model: this.currentModelId } });
     auditService.log({ actor: 'agent', action: 'agent_run_start', details: { runId, userMessage: userMessage.slice(0, 100) }, status: 'pending' });
 
     const intentClassification = classifyIntent(userMessage, browserContext);
     this.emitStep('thought', `Intent: ${intentClassification.type} (${Math.round(intentClassification.confidence * 100)}% confidence) - ${intentClassification.reason}`, { phase: 'intent_classification', intent: intentClassification });
+
+    // Adaptive Model Routing - select optimal model based on task complexity
+    const routingDecision = modelRouter.route(userMessage, browserContext);
+    const selectedModelId = routingDecision.selectedModel.id;
+    let currentModelForRun = this.createModelForRouting(routingDecision.selectedModel);
+    this.emitStep('thought', `🎯 Model: ${routingDecision.selectedModel.name} (${routingDecision.classification.complexity} task, ${Math.round(routingDecision.classification.confidence * 100)}% confidence)`, { 
+      phase: 'model_routing', 
+      model: selectedModelId,
+      complexity: routingDecision.classification.complexity,
+      confidence: routingDecision.classification.confidence 
+    });
 
     try {
       const selectors = await selectorDiscoveryService.discoverSelectors();
@@ -534,7 +563,7 @@ Available tools:\n${langChainTools.map((t) => `- ${t.name}: ${t.description}`).j
         let response: AIMessage;
         try {
           const timeoutPromise = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('LLM timeout')), timeoutMs));
-          response = (await Promise.race([this.model.invoke(messages), timeoutPromise])) as AIMessage;
+          response = (await Promise.race([currentModelForRun.invoke(messages), timeoutPromise])) as AIMessage;
         } catch (err: unknown) {
           await this.logFailure(runId, userMessage, 'Request timed out', stepCount, toolsUsed, Date.now() - runStartedAt);
           telemetryService.emit({ eventId: uuidv4(), runId, ts: new Date().toISOString(), type: 'agent_run_end', data: { success: false, reason: 'timeout', durationMs: Date.now() - runStartedAt } });
@@ -595,14 +624,67 @@ Available tools:\n${langChainTools.map((t) => `- ${t.name}: ${t.description}`).j
           auditService.log({ actor: 'agent', action: 'tool_execution', details: { runId, tool: tool.name, args: action.args }, status: 'pending' });
           const toolStartedAt = Date.now();
           try {
-            const toolResult = await tool.invoke(action.args);
-            const resStr = String(toolResult);
-            const durationMs = Date.now() - toolStartedAt;
-            telemetryService.emit({ eventId: uuidv4(), runId, ts: new Date().toISOString(), type: 'tool_call_end', name: tool.name, data: { success: true, durationMs } });
+            // Check if we have a matching speculative result
+            const speculativeMatch = speculativeExecutor.getMatchingSpeculation(
+              tool.name, 
+              action.args as Record<string, unknown>
+            );
+            
+            let resStr: string;
+            let durationMs: number;
+            
+            if (speculativeMatch && speculativeMatch.result) {
+              // Use speculative result - huge latency savings!
+              resStr = speculativeMatch.result;
+              durationMs = 0; // Already executed
+              speculativeHits++;
+              this.emitStep('thought', `⚡ Speculative hit! Saved ${speculativeMatch.executionTimeMs}ms`, { 
+                phase: 'speculative_hit', 
+                savedMs: speculativeMatch.executionTimeMs 
+              });
+              telemetryService.emit({ eventId: uuidv4(), runId, ts: new Date().toISOString(), type: 'tool_call_end', name: tool.name, data: { success: true, durationMs: 0, speculative: true, savedMs: speculativeMatch.executionTimeMs } });
+            } else {
+              // Normal execution
+              if (speculativeMatch) speculativeMisses++;
+              const toolResult = await tool.invoke(action.args);
+              resStr = String(toolResult);
+              durationMs = Date.now() - toolStartedAt;
+              telemetryService.emit({ eventId: uuidv4(), runId, ts: new Date().toISOString(), type: 'tool_call_end', name: tool.name, data: { success: true, durationMs } });
+            }
+            
             this.emitStep('observation', resStr, { tool: tool.name, result: resStr, durationMs, ok: true });
             if (tool.name.startsWith('browser_')) usedBrowserTools = true;
             messages.push(new AIMessage(content));
             messages.push(new SystemMessage(`Tool Output:\n${resStr}`));
+            
+            // Update context for next prediction
+            lastTool = tool.name;
+            lastToolResult = resStr;
+            lastThought = action.thought || null;
+            
+            // Trigger speculative execution for next likely tool
+            const predictionContext: PredictionContext = {
+              lastTool,
+              lastToolResult,
+              lastThought,
+              userMessage: safeUserMessage,
+              browserUrl: context.includes('URL:') ? context.match(/URL:\s*([^\n]+)/)?.[1] || null : null,
+              browserTitle: null,
+              visibleElements: [],
+              conversationHistory: [],
+              pendingGoal: safeUserMessage,
+            };
+            
+            const prediction = speculativeExecutor.predict(predictionContext);
+            if (prediction) {
+              this.emitStep('thought', `🔮 Speculating: ${prediction.tool} (${Math.round(prediction.confidence * 100)}% confidence)`, { 
+                phase: 'speculative_predict', 
+                tool: prediction.tool,
+                confidence: prediction.confidence 
+              });
+              // Execute speculatively in background (don't await)
+              speculativeExecutor.executeSpeculative(prediction).catch(() => {});
+            }
           } catch (e: unknown) {
             const durationMs = Date.now() - toolStartedAt;
             const errMsg = e instanceof Error ? e.message : String(e);
@@ -610,6 +692,10 @@ Available tools:\n${langChainTools.map((t) => `- ${t.name}: ${t.description}`).j
             this.emitStep('observation', `Tool Error: ${errMsg}`, { tool: tool.name, errorMessage: errMsg, durationMs, ok: false });
             messages.push(new AIMessage(content));
             messages.push(new SystemMessage(`Tool Error: ${errMsg}`));
+            
+            // Update context even on error
+            lastTool = tool.name;
+            lastToolResult = `Error: ${errMsg}`;
           }
         } else {
           messages.push(new AIMessage(content));

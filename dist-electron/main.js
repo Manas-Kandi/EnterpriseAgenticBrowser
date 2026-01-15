@@ -45512,6 +45512,957 @@ Rules:
     }
   }
 }
+const _SpeculativeExecutor = class _SpeculativeExecutor {
+  constructor() {
+    __publicField(this, "patterns", []);
+    __publicField(this, "pendingSpeculations", /* @__PURE__ */ new Map());
+    __publicField(this, "domSnapshots", /* @__PURE__ */ new Map());
+    __publicField(this, "rollbackStack", []);
+    __publicField(this, "stats", {
+      totalPredictions: 0,
+      correctPredictions: 0,
+      executedSpeculations: 0,
+      rolledBack: 0,
+      totalLatencySavedMs: 0
+    });
+    this.setupDefaultPatterns();
+  }
+  setupDefaultPatterns() {
+    this.addPattern({
+      name: "navigate-then-observe",
+      priority: 100,
+      match: (ctx) => ctx.lastTool === "browser_navigate",
+      predict: (_ctx) => ({
+        tool: "browser_observe",
+        args: {},
+        confidence: 0.95,
+        reason: "After navigation, observation is almost always needed"
+      })
+    });
+    this.addPattern({
+      name: "observe-form-interaction",
+      priority: 90,
+      match: (ctx) => {
+        var _a3;
+        if (ctx.lastTool !== "browser_observe") return false;
+        const resultText = ((_a3 = ctx.lastToolResult) == null ? void 0 : _a3.toLowerCase()) || "";
+        return resultText.includes("input") || resultText.includes("form") || resultText.includes("button");
+      },
+      predict: (ctx) => {
+        var _a3, _b, _c;
+        ((_a3 = ctx.lastToolResult) == null ? void 0 : _a3.toLowerCase()) || "";
+        const userMsg = ctx.userMessage.toLowerCase();
+        if (userMsg.includes("search") || userMsg.includes("type") || userMsg.includes("enter")) {
+          const inputMatch = (_b = ctx.lastToolResult) == null ? void 0 : _b.match(/data-testid="([^"]*input[^"]*)"/i);
+          if (inputMatch) {
+            return {
+              tool: "browser_click",
+              args: { selector: `[data-testid="${inputMatch[1]}"]` },
+              confidence: 0.88,
+              reason: "User wants to type, clicking input field first"
+            };
+          }
+        }
+        if (userMsg.includes("click") || userMsg.includes("submit") || userMsg.includes("go")) {
+          const buttonMatch = (_c = ctx.lastToolResult) == null ? void 0 : _c.match(/data-testid="([^"]*button[^"]*)"/i);
+          if (buttonMatch) {
+            return {
+              tool: "browser_click",
+              args: { selector: `[data-testid="${buttonMatch[1]}"]` },
+              confidence: 0.86,
+              reason: "User wants to click, found matching button"
+            };
+          }
+        }
+        return null;
+      }
+    });
+    this.addPattern({
+      name: "search-intent",
+      priority: 80,
+      match: (ctx) => {
+        var _a3;
+        const msg = ctx.userMessage.toLowerCase();
+        return (msg.includes("search for") || msg.includes("look up") || msg.includes("find info")) && !((_a3 = ctx.browserUrl) == null ? void 0 : _a3.includes("duckduckgo"));
+      },
+      predict: (ctx) => {
+        const searchMatch = ctx.userMessage.match(/(?:search for|look up|find info about)\s+["']?([^"'\n]+)/i);
+        if (searchMatch) {
+          const query = encodeURIComponent(searchMatch[1].trim());
+          return {
+            tool: "browser_navigate",
+            args: { url: `https://duckduckgo.com/?q=${query}` },
+            confidence: 0.9,
+            reason: "User wants to search, navigating to DuckDuckGo"
+          };
+        }
+        return null;
+      }
+    });
+    this.addPattern({
+      name: "click-then-observe",
+      priority: 95,
+      match: (ctx) => ctx.lastTool === "browser_click",
+      predict: (_ctx) => ({
+        tool: "browser_observe",
+        args: {},
+        confidence: 0.92,
+        reason: "After clicking, need to observe the result"
+      })
+    });
+    this.addPattern({
+      name: "type-then-submit",
+      priority: 85,
+      match: (ctx) => ctx.lastTool === "browser_type",
+      predict: (ctx) => {
+        var _a3, _b;
+        const submitMatch = ((_a3 = ctx.lastToolResult) == null ? void 0 : _a3.match(/data-testid="([^"]*submit[^"]*)"/i)) || ((_b = ctx.lastToolResult) == null ? void 0 : _b.match(/data-testid="([^"]*search[^"]*button[^"]*)"/i));
+        if (submitMatch) {
+          return {
+            tool: "browser_click",
+            args: { selector: `[data-testid="${submitMatch[1]}"]` },
+            confidence: 0.87,
+            reason: "After typing, clicking submit button"
+          };
+        }
+        return null;
+      }
+    });
+    this.addPattern({
+      name: "url-in-message",
+      priority: 70,
+      match: (ctx) => {
+        return /https?:\/\/[^\s]+/.test(ctx.userMessage) || /\b[a-z0-9-]+\.(com|org|net|io)\b/i.test(ctx.userMessage);
+      },
+      predict: (ctx) => {
+        let urlMatch = ctx.userMessage.match(/(https?:\/\/[^\s]+)/);
+        if (!urlMatch) {
+          const domainMatch = ctx.userMessage.match(/\b([a-z0-9-]+\.(com|org|net|io)[^\s]*)/i);
+          if (domainMatch) {
+            urlMatch = [`https://${domainMatch[1]}`, `https://${domainMatch[1]}`];
+          }
+        }
+        if (urlMatch) {
+          return {
+            tool: "browser_navigate",
+            args: { url: urlMatch[1] },
+            confidence: 0.88,
+            reason: "URL detected in user message"
+          };
+        }
+        return null;
+      }
+    });
+    this.addPattern({
+      name: "navigation-intent",
+      priority: 75,
+      match: (ctx) => {
+        const msg = ctx.userMessage.toLowerCase();
+        return msg.includes("go to") || msg.includes("open") || msg.includes("navigate to");
+      },
+      predict: (ctx) => {
+        const navMatch = ctx.userMessage.match(/(?:go to|open|navigate to)\s+["']?([^\s"']+)/i);
+        if (navMatch) {
+          let url = navMatch[1];
+          if (!url.startsWith("http")) {
+            url = `https://${url}`;
+          }
+          return {
+            tool: "browser_navigate",
+            args: { url },
+            confidence: 0.86,
+            reason: "Navigation intent detected"
+          };
+        }
+        return null;
+      }
+    });
+  }
+  addPattern(pattern) {
+    this.patterns.push(pattern);
+    this.patterns.sort((a, b) => b.priority - a.priority);
+  }
+  removePattern(name) {
+    this.patterns = this.patterns.filter((p) => p.name !== name);
+  }
+  /**
+   * Predict the next likely tool call based on current context
+   */
+  predict(context) {
+    for (const pattern of this.patterns) {
+      if (pattern.match(context)) {
+        const prediction = pattern.predict(context);
+        if (prediction && prediction.confidence >= _SpeculativeExecutor.CONFIDENCE_THRESHOLD) {
+          this.stats.totalPredictions++;
+          return prediction;
+        }
+      }
+    }
+    return null;
+  }
+  /**
+   * Execute a speculative prediction
+   */
+  async executeSpeculative(prediction) {
+    const predictionId = v4$2();
+    const startTime = Date.now();
+    const result = {
+      predictionId,
+      prediction,
+      result: null,
+      executed: false,
+      matched: false,
+      executionTimeMs: 0
+    };
+    if (this.pendingSpeculations.size >= _SpeculativeExecutor.MAX_SPECULATIVE_QUEUE) {
+      return result;
+    }
+    const safeTool = this.isSafeForSpeculation(prediction.tool);
+    if (!safeTool) {
+      return result;
+    }
+    try {
+      await this.captureSnapshot(predictionId);
+      const tools = toolRegistry.toLangChainTools();
+      const tool2 = tools.find((t2) => t2.name === prediction.tool);
+      if (tool2) {
+        const toolResult = await tool2.invoke(prediction.args);
+        result.result = String(toolResult);
+        result.executed = true;
+        result.executionTimeMs = Date.now() - startTime;
+        this.stats.executedSpeculations++;
+        this.rollbackStack.push({
+          snapshotId: predictionId,
+          toolName: prediction.tool,
+          args: prediction.args,
+          canRollback: this.canRollback(prediction.tool)
+        });
+        telemetryService.emit({
+          eventId: v4$2(),
+          runId: agentRunContext.getRunId() ?? void 0,
+          ts: (/* @__PURE__ */ new Date()).toISOString(),
+          type: "tool_call_start",
+          name: "SpeculativeExecutor",
+          data: {
+            predictionId,
+            tool: prediction.tool,
+            confidence: prediction.confidence,
+            speculative: true,
+            executionTimeMs: result.executionTimeMs
+          }
+        });
+      }
+    } catch (e) {
+      console.error("[SpeculativeExecutor] Speculative execution failed:", e);
+    }
+    this.pendingSpeculations.set(predictionId, result);
+    return result;
+  }
+  /**
+   * Verify if the actual LLM output matches our prediction
+   */
+  verifyPrediction(predictionId, actualTool, actualArgs) {
+    const speculation = this.pendingSpeculations.get(predictionId);
+    if (!speculation) {
+      return { matched: false, result: null };
+    }
+    const matched = speculation.prediction.tool === actualTool && this.argsMatch(speculation.prediction.args, actualArgs);
+    speculation.matched = matched;
+    if (matched) {
+      this.stats.correctPredictions++;
+      this.stats.totalLatencySavedMs += speculation.executionTimeMs;
+    }
+    telemetryService.emit({
+      eventId: v4$2(),
+      runId: agentRunContext.getRunId() ?? void 0,
+      ts: (/* @__PURE__ */ new Date()).toISOString(),
+      type: "tool_call_end",
+      name: "SpeculativeExecutor",
+      data: {
+        predictionId,
+        matched,
+        predictedTool: speculation.prediction.tool,
+        actualTool,
+        latencySavedMs: matched ? speculation.executionTimeMs : 0
+      }
+    });
+    return { matched, result: speculation };
+  }
+  /**
+   * Rollback a mis-predicted speculative execution
+   */
+  async rollback(predictionId) {
+    const rollbackState = this.rollbackStack.find((r) => r.snapshotId === predictionId);
+    if (!rollbackState || !rollbackState.canRollback) {
+      return false;
+    }
+    const snapshot = this.domSnapshots.get(predictionId);
+    if (!snapshot) {
+      return false;
+    }
+    try {
+      if (rollbackState.toolName === "browser_navigate") {
+        const tools = toolRegistry.toLangChainTools();
+        const navTool = tools.find((t2) => t2.name === "browser_navigate");
+        if (navTool && snapshot.url) {
+          await navTool.invoke({ url: snapshot.url });
+          this.stats.rolledBack++;
+          return true;
+        }
+      }
+      if (rollbackState.toolName === "browser_click") {
+        const tools = toolRegistry.toLangChainTools();
+        const navTool = tools.find((t2) => t2.name === "browser_navigate");
+        if (navTool && snapshot.url) {
+          await navTool.invoke({ url: snapshot.url });
+          this.stats.rolledBack++;
+          return true;
+        }
+      }
+    } catch (e) {
+      console.error("[SpeculativeExecutor] Rollback failed:", e);
+    }
+    return false;
+  }
+  /**
+   * Get a pending speculation result if it matches the requested tool
+   */
+  getMatchingSpeculation(tool2, args) {
+    for (const [, speculation] of this.pendingSpeculations) {
+      if (speculation.executed && speculation.prediction.tool === tool2 && this.argsMatch(speculation.prediction.args, args)) {
+        return speculation;
+      }
+    }
+    return null;
+  }
+  /**
+   * Clear all pending speculations
+   */
+  clearPending() {
+    this.pendingSpeculations.clear();
+    this.rollbackStack = [];
+  }
+  /**
+   * Get speculation statistics
+   */
+  getStats() {
+    const hitRate = this.stats.totalPredictions > 0 ? this.stats.correctPredictions / this.stats.totalPredictions * 100 : 0;
+    return {
+      ...this.stats,
+      hitRate: Math.round(hitRate * 100) / 100,
+      avgLatencySavedMs: this.stats.correctPredictions > 0 ? Math.round(this.stats.totalLatencySavedMs / this.stats.correctPredictions) : 0
+    };
+  }
+  /**
+   * Reset statistics
+   */
+  resetStats() {
+    this.stats = {
+      totalPredictions: 0,
+      correctPredictions: 0,
+      executedSpeculations: 0,
+      rolledBack: 0,
+      totalLatencySavedMs: 0
+    };
+  }
+  isSafeForSpeculation(toolName) {
+    const safeTool = [
+      "browser_observe",
+      "browser_navigate",
+      "browser_click",
+      "api_web_search"
+    ];
+    return safeTool.includes(toolName);
+  }
+  canRollback(toolName) {
+    const rollbackable = ["browser_navigate", "browser_click"];
+    return rollbackable.includes(toolName);
+  }
+  argsMatch(predicted, actual) {
+    const predictedKeys = Object.keys(predicted);
+    for (const key of predictedKeys) {
+      if (predicted[key] !== actual[key]) {
+        if (key === "url" && typeof predicted[key] === "string" && typeof actual[key] === "string") {
+          const normalizedPredicted = this.normalizeUrl(predicted[key]);
+          const normalizedActual = this.normalizeUrl(actual[key]);
+          if (normalizedPredicted !== normalizedActual) {
+            return false;
+          }
+        } else {
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+  normalizeUrl(url) {
+    try {
+      const parsed = new URL(url);
+      return `${parsed.hostname}${parsed.pathname}`.replace(/\/$/, "").toLowerCase();
+    } catch {
+      return url.toLowerCase().replace(/\/$/, "");
+    }
+  }
+  async captureSnapshot(id) {
+    const snapshot = {
+      id,
+      timestamp: Date.now(),
+      url: "",
+      // Would be populated from browser
+      html: "",
+      // Would be populated from browser
+      scrollPosition: { x: 0, y: 0 },
+      activeElement: null
+    };
+    this.domSnapshots.set(id, snapshot);
+    if (this.domSnapshots.size > 10) {
+      const oldest = Array.from(this.domSnapshots.keys())[0];
+      this.domSnapshots.delete(oldest);
+    }
+  }
+  /**
+   * Update snapshot with actual browser state
+   */
+  updateSnapshot(id, state) {
+    const snapshot = this.domSnapshots.get(id);
+    if (snapshot) {
+      Object.assign(snapshot, state);
+    }
+  }
+};
+__publicField(_SpeculativeExecutor, "CONFIDENCE_THRESHOLD", 0.85);
+__publicField(_SpeculativeExecutor, "MAX_SPECULATIVE_QUEUE", 3);
+let SpeculativeExecutor = _SpeculativeExecutor;
+const speculativeExecutor = new SpeculativeExecutor();
+const MODEL_TIERS = [
+  // Fast tier - for trivial/simple tasks
+  {
+    id: "llama-3.2-3b",
+    name: "Llama 3.2 3B (Ultra Fast)",
+    modelName: "meta/llama-3.2-3b-instruct",
+    tier: "fast",
+    avgLatencyMs: 50,
+    maxTokens: 2048,
+    temperature: 0.1,
+    supportsThinking: false,
+    complexities: [
+      "trivial"
+      /* TRIVIAL */
+    ]
+  },
+  {
+    id: "llama-3.1-8b",
+    name: "Llama 3.1 8B (Fast)",
+    modelName: "meta/llama-3.1-8b-instruct",
+    tier: "fast",
+    avgLatencyMs: 100,
+    maxTokens: 4096,
+    temperature: 0.1,
+    supportsThinking: false,
+    complexities: [
+      "trivial",
+      "simple"
+      /* SIMPLE */
+    ]
+  },
+  // Balanced tier - for moderate tasks
+  {
+    id: "llama-3.1-70b",
+    name: "Llama 3.1 70B (Balanced)",
+    modelName: "meta/llama-3.1-70b-instruct",
+    tier: "balanced",
+    avgLatencyMs: 300,
+    maxTokens: 4096,
+    temperature: 0.1,
+    supportsThinking: false,
+    complexities: [
+      "simple",
+      "moderate"
+      /* MODERATE */
+    ]
+  },
+  {
+    id: "llama-3.3-70b",
+    name: "Llama 3.3 70B (Balanced+)",
+    modelName: "meta/llama-3.3-70b-instruct",
+    tier: "balanced",
+    avgLatencyMs: 350,
+    maxTokens: 4096,
+    temperature: 0.1,
+    supportsThinking: false,
+    complexities: [
+      "moderate",
+      "complex"
+      /* COMPLEX */
+    ]
+  },
+  // Powerful tier - for complex/expert tasks
+  {
+    id: "qwen3-235b",
+    name: "Qwen3 235B (Powerful)",
+    modelName: "qwen/qwen3-235b-a22b",
+    tier: "powerful",
+    avgLatencyMs: 1500,
+    maxTokens: 4096,
+    temperature: 0.6,
+    supportsThinking: false,
+    complexities: [
+      "complex",
+      "expert"
+      /* EXPERT */
+    ]
+  },
+  {
+    id: "deepseek-v3.1",
+    name: "DeepSeek V3.1 (Thinking)",
+    modelName: "deepseek-ai/deepseek-v3.1-terminus",
+    tier: "powerful",
+    avgLatencyMs: 2e3,
+    maxTokens: 8192,
+    temperature: 0.2,
+    supportsThinking: true,
+    complexities: [
+      "complex",
+      "expert"
+      /* EXPERT */
+    ]
+  },
+  {
+    id: "kimi-k2",
+    name: "Kimi K2 (Expert Thinking)",
+    modelName: "moonshotai/kimi-k2-thinking",
+    tier: "powerful",
+    avgLatencyMs: 3e3,
+    maxTokens: 16384,
+    temperature: 1,
+    supportsThinking: true,
+    complexities: [
+      "expert"
+      /* EXPERT */
+    ]
+  }
+];
+const COMPLEXITY_INDICATORS = {
+  trivial: [
+    /^(hi|hello|hey|thanks|thank you|ok|okay|yes|no|sure)$/i,
+    /^what (is|are) (the )?(time|date|weather)/i,
+    /^(open|go to|navigate to) [a-z0-9.-]+\.(com|org|net|io)/i
+  ],
+  simple: [
+    /^(search for|look up|find) .{1,50}$/i,
+    /^(click|tap|press) (on |the )?\w+/i,
+    /^(scroll|go) (up|down|to)/i,
+    /^(show|display|list) .{1,30}$/i
+  ],
+  moderate: [
+    /^(create|make|add|new) (a |an )?\w+ (in|on|for)/i,
+    /^(update|edit|modify|change) .{1,100}$/i,
+    /^(fill|complete) (the |this )?(form|fields)/i,
+    /multi.?step/i,
+    /then .+ then/i
+  ],
+  complex: [
+    /^(analyze|compare|evaluate|assess)/i,
+    /^(integrate|sync|connect|link) .+ (with|to|and)/i,
+    /^(automate|workflow|process)/i,
+    /multiple (systems|apps|platforms)/i,
+    /cross.?(platform|system|app)/i
+  ],
+  expert: [
+    /^(debug|troubleshoot|diagnose|investigate)/i,
+    /^(optimize|refactor|architect)/i,
+    /complex (logic|workflow|integration)/i,
+    /enterprise.?(wide|level|grade)/i,
+    /mission.?critical/i
+  ]
+};
+const TOKEN_THRESHOLDS = {
+  trivial: 20,
+  simple: 50,
+  moderate: 150,
+  complex: 300
+};
+const _ModelRouter = class _ModelRouter {
+  constructor() {
+    __publicField(this, "performanceStats", /* @__PURE__ */ new Map());
+    __publicField(this, "escalationHistory", []);
+    for (const model of MODEL_TIERS) {
+      this.performanceStats.set(model.id, {
+        modelId: model.id,
+        totalCalls: 0,
+        successfulCalls: 0,
+        failedCalls: 0,
+        escalations: 0,
+        avgLatencyMs: model.avgLatencyMs,
+        totalLatencyMs: 0,
+        avgConfidence: 0,
+        lastUsed: 0
+      });
+    }
+  }
+  /**
+   * Classify the complexity of a task based on the user message
+   */
+  classifyComplexity(userMessage, context) {
+    const indicators = [];
+    let scores = {
+      [
+        "trivial"
+        /* TRIVIAL */
+      ]: 0,
+      [
+        "simple"
+        /* SIMPLE */
+      ]: 0,
+      [
+        "moderate"
+        /* MODERATE */
+      ]: 0,
+      [
+        "complex"
+        /* COMPLEX */
+      ]: 0,
+      [
+        "expert"
+        /* EXPERT */
+      ]: 0
+    };
+    const message = userMessage.toLowerCase().trim();
+    const tokenCount = this.estimateTokens(userMessage);
+    for (const [complexity, patterns] of Object.entries(COMPLEXITY_INDICATORS)) {
+      for (const pattern of patterns) {
+        if (pattern.test(message)) {
+          scores[complexity] += 5;
+          indicators.push(`Pattern match: ${complexity}`);
+        }
+      }
+    }
+    if (tokenCount <= TOKEN_THRESHOLDS.trivial) {
+      scores[
+        "trivial"
+        /* TRIVIAL */
+      ] += 1;
+      indicators.push(`Short message (${tokenCount} tokens)`);
+    } else if (tokenCount <= TOKEN_THRESHOLDS.simple) {
+      scores[
+        "simple"
+        /* SIMPLE */
+      ] += 1;
+      indicators.push(`Brief message (${tokenCount} tokens)`);
+    } else if (tokenCount <= TOKEN_THRESHOLDS.moderate) {
+      scores[
+        "moderate"
+        /* MODERATE */
+      ] += 1;
+      indicators.push(`Medium message (${tokenCount} tokens)`);
+    } else if (tokenCount <= TOKEN_THRESHOLDS.complex) {
+      scores[
+        "complex"
+        /* COMPLEX */
+      ] += 2;
+      indicators.push(`Long message (${tokenCount} tokens)`);
+    } else {
+      scores[
+        "expert"
+        /* EXPERT */
+      ] += 3;
+      indicators.push(`Very long message (${tokenCount} tokens)`);
+    }
+    const stepIndicators = (message.match(/\b(then|after|next|finally|first|second|third)\b/gi) || []).length;
+    if (stepIndicators >= 3) {
+      scores[
+        "complex"
+        /* COMPLEX */
+      ] += 3;
+      indicators.push(`Multi-step task (${stepIndicators} step indicators)`);
+    } else if (stepIndicators >= 1) {
+      scores[
+        "moderate"
+        /* MODERATE */
+      ] += 2;
+      indicators.push(`Sequential task (${stepIndicators} step indicators)`);
+    }
+    const technicalTerms = (message.match(/\b(api|database|server|deploy|config|auth|token|webhook|endpoint)\b/gi) || []).length;
+    if (technicalTerms >= 3) {
+      scores[
+        "complex"
+        /* COMPLEX */
+      ] += 2;
+      indicators.push(`Technical task (${technicalTerms} technical terms)`);
+    }
+    if (/^(how|why|what if|explain|compare)/i.test(message)) {
+      scores[
+        "moderate"
+        /* MODERATE */
+      ] += 1;
+      indicators.push("Analytical question");
+    }
+    if (context) {
+      const contextLength = context.length;
+      if (contextLength > 5e3) {
+        scores[
+          "complex"
+          /* COMPLEX */
+        ] += 1;
+        indicators.push("Large context");
+      }
+    }
+    let maxScore = 0;
+    let selectedComplexity = "moderate";
+    for (const [complexity, score] of Object.entries(scores)) {
+      if (score > maxScore) {
+        maxScore = score;
+        selectedComplexity = complexity;
+      }
+    }
+    const sortedScores = Object.values(scores).sort((a, b) => b - a);
+    const margin = sortedScores[0] - (sortedScores[1] || 0);
+    const totalScore = sortedScores.reduce((a, b) => a + b, 0);
+    const confidence = totalScore > 0 ? Math.min(0.95, 0.5 + margin / totalScore * 0.5 + maxScore / 10 * 0.2) : 0.5;
+    return {
+      complexity: selectedComplexity,
+      confidence: Math.round(confidence * 100) / 100,
+      reason: this.getComplexityReason(selectedComplexity, indicators),
+      indicators
+    };
+  }
+  /**
+   * Route to the optimal model based on task complexity
+   */
+  route(userMessage, context) {
+    const classification = this.classifyComplexity(userMessage, context);
+    const eligibleModels = MODEL_TIERS.filter(
+      (m) => m.complexities.includes(classification.complexity)
+    );
+    if (eligibleModels.length === 0) {
+      const fallback = MODEL_TIERS.find((m) => m.id === "llama-3.3-70b");
+      return {
+        selectedModel: fallback,
+        classification,
+        fallbackModel: MODEL_TIERS.find((m) => m.id === "qwen3-235b") || null,
+        reason: "No model found for complexity, using balanced fallback"
+      };
+    }
+    const sortedModels = eligibleModels.sort((a, b) => {
+      const statsA = this.performanceStats.get(a.id);
+      const statsB = this.performanceStats.get(b.id);
+      if (statsA && statsB && statsA.totalCalls > 10 && statsB.totalCalls > 10) {
+        const successRateA = statsA.successfulCalls / statsA.totalCalls;
+        const successRateB = statsB.successfulCalls / statsB.totalCalls;
+        if (successRateA < 0.8 && successRateB >= 0.8) return 1;
+        if (successRateB < 0.8 && successRateA >= 0.8) return -1;
+      }
+      return a.avgLatencyMs - b.avgLatencyMs;
+    });
+    const selectedModel = sortedModels[0];
+    let fallbackModel = null;
+    if (selectedModel.tier === "fast") {
+      fallbackModel = MODEL_TIERS.find((m) => m.tier === "balanced") || null;
+    } else if (selectedModel.tier === "balanced") {
+      fallbackModel = MODEL_TIERS.find((m) => m.tier === "powerful") || null;
+    }
+    telemetryService.emit({
+      eventId: v4$2(),
+      runId: agentRunContext.getRunId() ?? void 0,
+      ts: (/* @__PURE__ */ new Date()).toISOString(),
+      type: "plan_step_start",
+      name: "ModelRouter",
+      data: {
+        complexity: classification.complexity,
+        confidence: classification.confidence,
+        selectedModel: selectedModel.id,
+        fallbackModel: fallbackModel == null ? void 0 : fallbackModel.id,
+        indicators: classification.indicators
+      }
+    });
+    return {
+      selectedModel,
+      classification,
+      fallbackModel,
+      reason: `Selected ${selectedModel.name} for ${classification.complexity} task (${Math.round(classification.confidence * 100)}% confidence)`
+    };
+  }
+  /**
+   * Check if we should escalate to a more powerful model
+   */
+  shouldEscalate(currentModelId, confidence, errorOccurred = false) {
+    const currentModel = MODEL_TIERS.find((m) => m.id === currentModelId);
+    if (!currentModel) {
+      return { escalate: false, targetModel: null, reason: "Current model not found" };
+    }
+    if (currentModel.tier === "powerful" && currentModel.supportsThinking) {
+      return { escalate: false, targetModel: null, reason: "Already at highest tier" };
+    }
+    const shouldEscalate = confidence < _ModelRouter.ESCALATION_CONFIDENCE_THRESHOLD || errorOccurred;
+    if (!shouldEscalate) {
+      return { escalate: false, targetModel: null, reason: "Confidence sufficient" };
+    }
+    let targetModel = null;
+    if (currentModel.tier === "fast") {
+      targetModel = MODEL_TIERS.find((m) => m.tier === "balanced") || null;
+    } else if (currentModel.tier === "balanced") {
+      targetModel = MODEL_TIERS.find((m) => m.tier === "powerful") || null;
+    } else if (currentModel.tier === "powerful" && !currentModel.supportsThinking) {
+      targetModel = MODEL_TIERS.find((m) => m.tier === "powerful" && m.supportsThinking) || null;
+    }
+    if (targetModel) {
+      const reason = errorOccurred ? `Error occurred, escalating from ${currentModel.name} to ${targetModel.name}` : `Low confidence (${Math.round(confidence * 100)}%), escalating from ${currentModel.name} to ${targetModel.name}`;
+      this.escalationHistory.push({
+        from: currentModelId,
+        to: targetModel.id,
+        reason,
+        timestamp: Date.now()
+      });
+      if (this.escalationHistory.length > _ModelRouter.MAX_ESCALATION_HISTORY) {
+        this.escalationHistory = this.escalationHistory.slice(-100);
+      }
+      const stats = this.performanceStats.get(currentModelId);
+      if (stats) {
+        stats.escalations++;
+      }
+      return { escalate: true, targetModel, reason };
+    }
+    return { escalate: false, targetModel: null, reason: "No higher tier available" };
+  }
+  /**
+   * Record model performance for a completed call
+   */
+  recordPerformance(modelId, success, latencyMs, confidence) {
+    const stats = this.performanceStats.get(modelId);
+    if (!stats) return;
+    stats.totalCalls++;
+    if (success) {
+      stats.successfulCalls++;
+    } else {
+      stats.failedCalls++;
+    }
+    stats.totalLatencyMs += latencyMs;
+    stats.avgLatencyMs = Math.round(stats.totalLatencyMs / stats.totalCalls);
+    stats.avgConfidence = (stats.avgConfidence * (stats.totalCalls - 1) + confidence) / stats.totalCalls;
+    stats.lastUsed = Date.now();
+    telemetryService.emit({
+      eventId: v4$2(),
+      runId: agentRunContext.getRunId() ?? void 0,
+      ts: (/* @__PURE__ */ new Date()).toISOString(),
+      type: "plan_step_end",
+      name: "ModelRouter",
+      data: {
+        modelId,
+        success,
+        latencyMs,
+        confidence,
+        avgLatencyMs: stats.avgLatencyMs,
+        successRate: stats.successfulCalls / stats.totalCalls
+      }
+    });
+  }
+  /**
+   * Get performance statistics for all models
+   */
+  getPerformanceStats() {
+    return Array.from(this.performanceStats.values());
+  }
+  /**
+   * Get performance dashboard data
+   */
+  getDashboard() {
+    const models = Array.from(this.performanceStats.values()).map((stats) => {
+      const model = MODEL_TIERS.find((m) => m.id === stats.modelId);
+      return {
+        ...stats,
+        tier: (model == null ? void 0 : model.tier) || "unknown",
+        successRate: stats.totalCalls > 0 ? stats.successfulCalls / stats.totalCalls : 0
+      };
+    });
+    const totalCalls = models.reduce((sum, m) => sum + m.totalCalls, 0);
+    const totalEscalations = models.reduce((sum, m) => sum + m.escalations, 0);
+    const escalationRate = totalCalls > 0 ? totalEscalations / totalCalls : 0;
+    const avgLatencyByTier = {};
+    for (const tier of ["fast", "balanced", "powerful"]) {
+      const tierModels = models.filter((m) => m.tier === tier && m.totalCalls > 0);
+      if (tierModels.length > 0) {
+        avgLatencyByTier[tier] = Math.round(
+          tierModels.reduce((sum, m) => sum + m.avgLatencyMs, 0) / tierModels.length
+        );
+      }
+    }
+    const recommendations = [];
+    for (const model of models) {
+      if (model.totalCalls > 20 && model.successRate < 0.8) {
+        recommendations.push(`Consider avoiding ${model.modelId} - success rate is ${Math.round(model.successRate * 100)}%`);
+      }
+      if (model.escalations > model.totalCalls * 0.3) {
+        recommendations.push(`${model.modelId} has high escalation rate - consider routing to higher tier directly`);
+      }
+    }
+    if (escalationRate > 0.2) {
+      recommendations.push("High overall escalation rate - consider adjusting complexity thresholds");
+    }
+    return {
+      models,
+      escalationRate,
+      avgLatencyByTier,
+      recommendations
+    };
+  }
+  /**
+   * Get all available model tiers
+   */
+  getModelTiers() {
+    return [...MODEL_TIERS];
+  }
+  /**
+   * Reset performance statistics
+   */
+  resetStats() {
+    for (const model of MODEL_TIERS) {
+      this.performanceStats.set(model.id, {
+        modelId: model.id,
+        totalCalls: 0,
+        successfulCalls: 0,
+        failedCalls: 0,
+        escalations: 0,
+        avgLatencyMs: model.avgLatencyMs,
+        totalLatencyMs: 0,
+        avgConfidence: 0,
+        lastUsed: 0
+      });
+    }
+    this.escalationHistory = [];
+  }
+  estimateTokens(text) {
+    return Math.ceil(text.length / 4);
+  }
+  getComplexityReason(complexity, indicators) {
+    const reasons = {
+      [
+        "trivial"
+        /* TRIVIAL */
+      ]: "Simple greeting or single-action request",
+      [
+        "simple"
+        /* SIMPLE */
+      ]: "Basic task with clear intent",
+      [
+        "moderate"
+        /* MODERATE */
+      ]: "Multi-step task or form interaction",
+      [
+        "complex"
+        /* COMPLEX */
+      ]: "Cross-system integration or analysis required",
+      [
+        "expert"
+        /* EXPERT */
+      ]: "Advanced reasoning or debugging needed"
+    };
+    return `${reasons[complexity]}. Indicators: ${indicators.slice(0, 3).join(", ")}`;
+  }
+};
+__publicField(_ModelRouter, "ESCALATION_CONFIDENCE_THRESHOLD", 0.7);
+__publicField(_ModelRouter, "MAX_ESCALATION_HISTORY", 100);
+let ModelRouter = _ModelRouter;
+const modelRouter = new ModelRouter();
 dotenv.config();
 const AVAILABLE_MODELS = [
   {
@@ -45779,6 +46730,16 @@ const _AgentService = class _AgentService {
       modelKwargs: { response_format: { type: "json_object" }, ...cfg.extraBody ?? {} }
     });
   }
+  createModelForRouting(tier) {
+    return new ChatOpenAI({
+      configuration: { baseURL: this.llmConfig.baseUrl, apiKey: this.llmConfig.apiKey ?? "local" },
+      modelName: tier.modelName,
+      temperature: tier.temperature,
+      maxTokens: tier.maxTokens,
+      streaming: false,
+      modelKwargs: { response_format: { type: "json_object" } }
+    });
+  }
   setModel(modelId) {
     this.currentModelId = modelId;
     this.model = this.createModel(modelId);
@@ -45888,6 +46849,7 @@ You can answer questions about what's on the page, explain content, summarize in
     }
   }
   async doMode(userMessage, browserContext) {
+    var _a3;
     const runId = agentRunContext.getRunId() ?? v4$2();
     const runStartedAt = Date.now();
     const langChainTools = toolRegistry.toLangChainTools();
@@ -45897,10 +46859,24 @@ You can answer questions about what's on the page, explain content, summarize in
     let pendingErrorForReflection = null;
     let stepCount = 0;
     const toolsUsed = [];
+    let lastTool = null;
+    let lastToolResult = null;
+    let lastThought = null;
+    let speculativeHits = 0;
+    let speculativeMisses = 0;
     telemetryService.emit({ eventId: v4$2(), runId, ts: (/* @__PURE__ */ new Date()).toISOString(), type: "agent_run_start", data: { userMessage: userMessage.slice(0, 100), model: this.currentModelId } });
     auditService.log({ actor: "agent", action: "agent_run_start", details: { runId, userMessage: userMessage.slice(0, 100) }, status: "pending" });
     const intentClassification = classifyIntent(userMessage);
     this.emitStep("thought", `Intent: ${intentClassification.type} (${Math.round(intentClassification.confidence * 100)}% confidence) - ${intentClassification.reason}`, { phase: "intent_classification", intent: intentClassification });
+    const routingDecision = modelRouter.route(userMessage, browserContext);
+    const selectedModelId = routingDecision.selectedModel.id;
+    let currentModelForRun = this.createModelForRouting(routingDecision.selectedModel);
+    this.emitStep("thought", `🎯 Model: ${routingDecision.selectedModel.name} (${routingDecision.classification.complexity} task, ${Math.round(routingDecision.classification.confidence * 100)}% confidence)`, {
+      phase: "model_routing",
+      model: selectedModelId,
+      complexity: routingDecision.classification.complexity,
+      confidence: routingDecision.classification.confidence
+    });
     try {
       const selectors = await selectorDiscoveryService.discoverSelectors();
       const selectorContext = Array.from(selectors.entries()).map(([p, s]) => `${p}: ${s.map((x) => x.testId).join(",")}`).join("\n");
@@ -45967,7 +46943,7 @@ User request: ${safeUserMessage}`));
         let response;
         try {
           const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("LLM timeout")), timeoutMs));
-          response = await Promise.race([this.model.invoke(messages), timeoutPromise]);
+          response = await Promise.race([currentModelForRun.invoke(messages), timeoutPromise]);
         } catch (err) {
           await this.logFailure(runId, userMessage, "Request timed out", stepCount, toolsUsed, Date.now() - runStartedAt);
           telemetryService.emit({ eventId: v4$2(), runId, ts: (/* @__PURE__ */ new Date()).toISOString(), type: "agent_run_end", data: { success: false, reason: "timeout", durationMs: Date.now() - runStartedAt } });
@@ -46024,15 +47000,57 @@ User request: ${safeUserMessage}`));
           auditService.log({ actor: "agent", action: "tool_execution", details: { runId, tool: tool2.name, args: action.args }, status: "pending" });
           const toolStartedAt = Date.now();
           try {
-            const toolResult = await tool2.invoke(action.args);
-            const resStr = String(toolResult);
-            const durationMs = Date.now() - toolStartedAt;
-            telemetryService.emit({ eventId: v4$2(), runId, ts: (/* @__PURE__ */ new Date()).toISOString(), type: "tool_call_end", name: tool2.name, data: { success: true, durationMs } });
+            const speculativeMatch = speculativeExecutor.getMatchingSpeculation(
+              tool2.name,
+              action.args
+            );
+            let resStr;
+            let durationMs;
+            if (speculativeMatch && speculativeMatch.result) {
+              resStr = speculativeMatch.result;
+              durationMs = 0;
+              speculativeHits++;
+              this.emitStep("thought", `⚡ Speculative hit! Saved ${speculativeMatch.executionTimeMs}ms`, {
+                phase: "speculative_hit",
+                savedMs: speculativeMatch.executionTimeMs
+              });
+              telemetryService.emit({ eventId: v4$2(), runId, ts: (/* @__PURE__ */ new Date()).toISOString(), type: "tool_call_end", name: tool2.name, data: { success: true, durationMs: 0, speculative: true, savedMs: speculativeMatch.executionTimeMs } });
+            } else {
+              if (speculativeMatch) speculativeMisses++;
+              const toolResult = await tool2.invoke(action.args);
+              resStr = String(toolResult);
+              durationMs = Date.now() - toolStartedAt;
+              telemetryService.emit({ eventId: v4$2(), runId, ts: (/* @__PURE__ */ new Date()).toISOString(), type: "tool_call_end", name: tool2.name, data: { success: true, durationMs } });
+            }
             this.emitStep("observation", resStr, { tool: tool2.name, result: resStr, durationMs, ok: true });
             if (tool2.name.startsWith("browser_")) usedBrowserTools = true;
             messages.push(new AIMessage(content));
             messages.push(new SystemMessage(`Tool Output:
 ${resStr}`));
+            lastTool = tool2.name;
+            lastToolResult = resStr;
+            lastThought = action.thought || null;
+            const predictionContext = {
+              lastTool,
+              lastToolResult,
+              lastThought,
+              userMessage: safeUserMessage,
+              browserUrl: context.includes("URL:") ? ((_a3 = context.match(/URL:\s*([^\n]+)/)) == null ? void 0 : _a3[1]) || null : null,
+              browserTitle: null,
+              visibleElements: [],
+              conversationHistory: [],
+              pendingGoal: safeUserMessage
+            };
+            const prediction = speculativeExecutor.predict(predictionContext);
+            if (prediction) {
+              this.emitStep("thought", `🔮 Speculating: ${prediction.tool} (${Math.round(prediction.confidence * 100)}% confidence)`, {
+                phase: "speculative_predict",
+                tool: prediction.tool,
+                confidence: prediction.confidence
+              });
+              speculativeExecutor.executeSpeculative(prediction).catch(() => {
+              });
+            }
           } catch (e) {
             const durationMs = Date.now() - toolStartedAt;
             const errMsg = e instanceof Error ? e.message : String(e);
@@ -46040,6 +47058,8 @@ ${resStr}`));
             this.emitStep("observation", `Tool Error: ${errMsg}`, { tool: tool2.name, errorMessage: errMsg, durationMs, ok: false });
             messages.push(new AIMessage(content));
             messages.push(new SystemMessage(`Tool Error: ${errMsg}`));
+            lastTool = tool2.name;
+            lastToolResult = `Error: ${errMsg}`;
           }
         } else {
           messages.push(new AIMessage(content));
