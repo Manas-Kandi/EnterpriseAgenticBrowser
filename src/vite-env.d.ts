@@ -128,6 +128,17 @@ interface Window {
       truncated: boolean;
     }>;
     getMinimalContext: () => Promise<{ url: string; title: string; summary: string }>;
-    executeCode: (code: string) => Promise<{ success: boolean; result?: unknown; error?: string; duration: number }>;
+    executeCode: (code: string, options?: { timeout?: number }) => Promise<{
+      success: boolean;
+      result?: unknown;
+      error?: string;
+      stack?: string;
+      duration: number;
+      timedOut?: boolean;
+    }>;
+    evaluate: (expression: string) => Promise<{ success: boolean; result?: unknown; error?: string; duration: number }>;
+    queryDOM: (selector: string) => Promise<{ success: boolean; result?: unknown; error?: string; duration: number }>;
+    click: (selector: string) => Promise<{ success: boolean; result?: unknown; error?: string; duration: number }>;
+    type: (selector: string, text: string) => Promise<{ success: boolean; result?: unknown; error?: string; duration: number }>;
   }
 }

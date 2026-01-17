@@ -169,5 +169,10 @@ contextBridge.exposeInMainWorld('benchmark', {
 contextBridge.exposeInMainWorld('terminal', {
   getContext: () => ipcRenderer.invoke('terminal:getContext'),
   getMinimalContext: () => ipcRenderer.invoke('terminal:getMinimalContext'),
-  executeCode: (code: string) => ipcRenderer.invoke('terminal:executeCode', code),
+  executeCode: (code: string, options?: { timeout?: number }) => 
+    ipcRenderer.invoke('terminal:executeCode', code, options),
+  evaluate: (expression: string) => ipcRenderer.invoke('terminal:evaluate', expression),
+  queryDOM: (selector: string) => ipcRenderer.invoke('terminal:queryDOM', selector),
+  click: (selector: string) => ipcRenderer.invoke('terminal:click', selector),
+  type: (selector: string, text: string) => ipcRenderer.invoke('terminal:type', selector, text),
 })

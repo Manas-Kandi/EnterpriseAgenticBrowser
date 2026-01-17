@@ -604,28 +604,29 @@ app.whenReady().then(async () => {
     return domContextService.getMinimalContext();
   });
 
-  ipcMain.handle('terminal:executeCode', async (_, code: string) => {
-    const { browserTargetService } = await import('./services/BrowserTargetService');
-    const wc = browserTargetService.getActiveWebContents();
-    if (!wc || wc.isDestroyed()) {
-      return { success: false, error: 'No active webview available' };
-    }
-    const startTime = Date.now();
-    try {
-      const result = await wc.executeJavaScript(code);
-      return {
-        success: true,
-        result,
-        duration: Date.now() - startTime,
-      };
-    } catch (err: unknown) {
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      return {
-        success: false,
-        error: errorMessage,
-        duration: Date.now() - startTime,
-      };
-    }
+  ipcMain.handle('terminal:executeCode', async (_, code: string, options?: { timeout?: number }) => {
+    const { codeExecutorService } = await import('./services/CodeExecutorService');
+    return codeExecutorService.execute(code, options);
+  });
+
+  ipcMain.handle('terminal:evaluate', async (_, expression: string) => {
+    const { codeExecutorService } = await import('./services/CodeExecutorService');
+    return codeExecutorService.evaluate(expression);
+  });
+
+  ipcMain.handle('terminal:queryDOM', async (_, selector: string) => {
+    const { codeExecutorService } = await import('./services/CodeExecutorService');
+    return codeExecutorService.queryDOM(selector);
+  });
+
+  ipcMain.handle('terminal:click', async (_, selector: string) => {
+    const { codeExecutorService } = await import('./services/CodeExecutorService');
+    return codeExecutorService.click(selector);
+  });
+
+  ipcMain.handle('terminal:type', async (_, selector: string, text: string) => {
+    const { codeExecutorService } = await import('./services/CodeExecutorService');
+    return codeExecutorService.type(selector, text);
   });
 
   // Agent IPC Handlers
