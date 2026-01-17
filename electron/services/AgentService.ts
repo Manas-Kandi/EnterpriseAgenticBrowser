@@ -14,10 +14,10 @@ import { auditService } from './AuditService';
 import { classifyIntent, shouldNavigateActiveTab } from './IntentClassifier';
 import { safeParseTOON, TOON_SUMMARY_PROMPT_TEMPLATE } from '../lib/toon';
 import { safeValidateToonSummary, createToonSummary, ToonSummary } from '../lib/validateToonSummary';
-import { selectorDiscoveryService } from './SelectorDiscoveryService';
+import { selectorDiscoveryService, ComponentSelector } from './SelectorDiscoveryService';
 import { WorkflowOrchestrator } from './WorkflowOrchestrator';
 import { speculativeExecutor, PredictionContext } from './SpeculativeExecutor';
-import { modelRouter, ModelTier } from './ModelRouter';
+import { modelRouter, ModelTier, TaskComplexity } from './ModelRouter';
 import { browserTargetService } from './BrowserTargetService';
 import { agentTabOpenService } from './AgentTabOpenService';
 import { BrowserWindow } from 'electron';
@@ -261,6 +261,14 @@ export class AgentService {
     return null;
   }
 
+  private extractDirectNavigationUrl(text: string): string | null {
+    const match = text.match(/(?:open|go to|navigate to|visit)\s+(?:the\s+)?["']?(https?:\/\/[^\s"']+|(?:[a-z0-9-]+\.)+[a-z]{2,}[^\s"']*)/i);
+    if (!match) return null;
+    let url = match[1].replace(/[),.!?]+$/, '');
+    if (!/^https?:\/\//i.test(url)) url = `https://${url}`;
+    return url;
+  }
+
   private inferToolFromText(text: string): { tool: string; args: unknown; thought?: string } | null {
     const lower = text.toLowerCase();
     let toolName: string | null = null;
@@ -275,11 +283,19 @@ export class AgentService {
       const match = text.match(/search(?:ing)? (?:for )?["']?([^"'\n]+?)["']?(?: on | in | using |$|\.|,)/i);
       if (match) args = { query: match[1].trim() };
     } else if (toolName === 'browser_navigate') {
-      const match = text.match(/(?:navigate to|go to|open) ["']?(https?:\/\/[^\s"']+|[a-z0-9.-]+\.[a-z]{2,}[^\s"']*)/i);
+      const match = text.match(/(?:navigate to|go to|open|visit) (?:the |this )?["']?(https?:\/\/[^\s"']+|[a-z0-9.-]+\.[a-z]{2,}[^\s"']*)/i);
       if (match) {
         let url = match[1];
         if (!url.startsWith('http')) url = 'https://' + url;
         args = { url };
+      }
+      if (Object.keys(args).length === 0) {
+        const domainMatch = text.match(/https?:\/\/[^\s"']+|(?:[a-z0-9-]+\.)+[a-z]{2,}(?:\/[\S]*)?/i);
+        if (domainMatch) {
+          let url = domainMatch[0];
+          if (!url.startsWith('http')) url = 'https://' + url;
+          args = { url };
+        }
       }
     }
     if (Object.keys(args).length === 0) return null;
@@ -295,8 +311,18 @@ export class AgentService {
     if (!parsed) parsed = tryParse(candidate.replace(/,\s*([}\]])/g, '$1'));
     if (!parsed) parsed = tryParse(candidate.replace(/:\s*"([^"]*)\n([^"]*)"/g, ': "$1\\n$2"'));
     if (parsed) {
+      const normalizedTool = (() => {
+        if (typeof parsed.tool === 'string') return parsed.tool;
+        if (typeof parsed.action === 'string') return parsed.action;
+        if (typeof parsed.command === 'string') return parsed.command;
+        return null;
+      })();
       if (Array.isArray(parsed.tools) && parsed.tools.length > 0) {
         return { tool: parsed.tools[0].tool, args: parsed.tools[0].args, thought: parsed.thought, tools: parsed.tools };
+      }
+      if (normalizedTool) {
+        const parsedArgs = parsed.args ?? parsed.input ?? {};
+        return { tool: normalizedTool, args: parsedArgs, thought: parsed.thought };
       }
       return parsed;
     }
@@ -501,6 +527,7 @@ You can answer questions about what's on the page, explain content, summarize in
     // Adaptive Model Routing - select optimal model based on task complexity
     const routingDecision = modelRouter.route(userMessage, browserContext);
     const selectedModelId = routingDecision.selectedModel.id;
+    const isTrivialOrSimple = [TaskComplexity.TRIVIAL, TaskComplexity.SIMPLE].includes(routingDecision.classification.complexity);
     let currentModelForRun = this.createModelForRouting(routingDecision.selectedModel);
     this.emitStep('thought', `🎯 Model: ${routingDecision.selectedModel.name} (${routingDecision.classification.complexity} task, ${Math.round(routingDecision.classification.confidence * 100)}% confidence)`, { 
       phase: 'model_routing', 
@@ -510,11 +537,94 @@ You can answer questions about what's on the page, explain content, summarize in
     });
 
     try {
-      const selectors = await selectorDiscoveryService.discoverSelectors();
-      const selectorContext = Array.from(selectors.entries()).map(([p, s]) => `${p}: ${s.map(x => x.testId).join(',')}`).join('\n');
+      const directNavUrl = this.extractDirectNavigationUrl(userMessage);
+      if (directNavUrl && isTrivialOrSimple) {
+        const navTool = langChainTools.find(t => t.name === 'browser_navigate');
+        if (navTool) {
+          try {
+            const navCheck = shouldNavigateActiveTab(userMessage, directNavUrl, activeUrl);
+            let tabId: string | null = null;
+            if (!navCheck.allowNavigation) {
+              const targetToken = (() => {
+                try {
+                  const host = new URL(directNavUrl).hostname.toLowerCase();
+                  if (!host) return null;
+                  if (host === 'localhost') return 'localhost';
+                  const parts = host.split('.').filter(Boolean);
+                  const cleaned = parts[0] === 'www' ? parts.slice(1) : parts;
+                  if (cleaned.length >= 2) return cleaned[cleaned.length - 2];
+                  return cleaned[0] ?? null;
+                } catch {
+                  return null;
+                }
+              })();
+
+              if (targetToken) {
+                tabId = browserTargetService.getMostRecentTabForDomainToken(targetToken);
+              }
+              if (!tabId) {
+                tabId = await agentTabOpenService.openAgentTab({
+                  url: directNavUrl,
+                  background: Boolean(intentClassification.openInBackground),
+                  agentCreated: true,
+                });
+              } else if (!intentClassification.openInBackground) {
+                const win = BrowserWindow.getAllWindows()[0];
+                if (win) win.webContents.send('browser:activate-tab', { tabId });
+              }
+            }
+
+            const toolArgs = { url: directNavUrl, ...(tabId ? { tabId } : {}) };
+            stepCount++;
+            toolsUsed.push(navTool.name);
+            this.emitStep('action', `Executing ${navTool.name}`, { tool: navTool.name, args: toolArgs, phase: 'direct_nav_fast_path' });
+            auditService.log({ actor: 'agent', action: 'tool_execution', details: { runId, tool: navTool.name, args: toolArgs }, status: 'pending' });
+
+            const toolResult = await navTool.invoke(toolArgs);
+            const resStr = String(toolResult);
+            const ok = !resStr.toLowerCase().startsWith('failed');
+            this.emitStep('observation', resStr, { tool: navTool.name, result: resStr, ok, phase: 'direct_nav_fast_path', tabId: tabId ?? undefined });
+            usedBrowserTools = true;
+
+            telemetryService.emit({ eventId: uuidv4(), runId, ts: new Date().toISOString(), type: 'agent_run_end', data: { success: ok, via: 'direct_nav_fast_path', stepCount, durationMs: Date.now() - runStartedAt } });
+            auditService.log({ actor: 'agent', action: 'agent_run_complete', details: { runId, stepCount, toolsUsed }, status: ok ? 'success' : 'failure' });
+            return resStr;
+          } catch (e: unknown) {
+            const errMsg = e instanceof Error ? e.message : String(e);
+            await this.logFailure(runId, userMessage, errMsg, stepCount, toolsUsed, Date.now() - runStartedAt);
+            telemetryService.emit({ eventId: uuidv4(), runId, ts: new Date().toISOString(), type: 'agent_run_end', data: { success: false, reason: 'direct_nav_error', durationMs: Date.now() - runStartedAt } });
+            auditService.log({ actor: 'agent', action: 'agent_run_error', details: { runId, error: errMsg }, status: 'failure' });
+            return `Error: ${errMsg}`;
+          }
+        }
+      }
+
       let context = browserContext || 'Current browser state: No context provided';
       context = this.redactSecrets(context);
       const safeUserMessage = this.redactSecrets(userMessage);
+      const shouldLoadSelectors = context.includes('localhost:3000') || safeUserMessage.toLowerCase().includes('aerocore');
+      const selectors: Map<string, ComponentSelector[]> = shouldLoadSelectors
+        ? await selectorDiscoveryService.discoverSelectors()
+        : new Map();
+      const selectorContext = shouldLoadSelectors
+        ? Array.from(selectors.entries()).map(([p, s]) => `${p}: ${s.map(x => x.testId).join(',')}`).join('\n')
+        : '';
+      const withTimeout = async <T>(promise: Promise<T>, timeoutMs: number, fallback: T, label: string): Promise<T> => {
+        let timer: NodeJS.Timeout | null = null;
+        let timedOut = false;
+        const timeoutPromise = new Promise<T>((resolve) => {
+          timer = setTimeout(() => {
+            timedOut = true;
+            resolve(fallback);
+          }, timeoutMs);
+        });
+        const result = await Promise.race([promise, timeoutPromise]);
+        if (timer) clearTimeout(timer);
+        if (timedOut) {
+          this.emitStep('observation', `${label} timed out after ${timeoutMs}ms. Continuing.`, { phase: 'timeout', ok: false, step: label });
+        }
+        return result;
+      };
 
       this.systemPrompt = new SystemMessage(`<role>You are a helpful enterprise assistant integrated into a browser. Your goal is to help users complete tasks by using tools effectively and safely.</role>
 <tool_calling>You MUST respond ONLY with a single JSON object. JSON schema: { "thought": "brief reasoning", "tool": "tool_name", "args": { ... } } Final response: { "thought": "brief completion summary", "tool": "final_response", "args": { "message": "your message" } }</tool_calling>
@@ -538,9 +648,14 @@ Available tools:\n${langChainTools.map((t) => `- ${t.name}: ${t.description}`).j
       await this.maybeSummarize();
       const messages = this.buildMessagesWithSummaries(this.systemPrompt);
 
-      // Workflow Check
-      if (userMessage.length > 10) {
-        const workflowHit = await taskKnowledgeService.findNearest(userMessage, 0.85);
+      // Workflow Check (skip for trivial/simple tasks to avoid unnecessary LLM calls)
+      if (!isTrivialOrSimple && userMessage.length > 10) {
+        const workflowHit = await withTimeout(
+          taskKnowledgeService.findNearest(userMessage, 0.85),
+          8000,
+          null,
+          'Workflow lookup'
+        ).catch(() => null);
         if (workflowHit && workflowHit.skill.isWorkflow) {
           this.emitStep('thought', `Executing workflow: "${workflowHit.skill.name}".`);
           const result = await this.orchestrator.execute(workflowHit.skill.steps.map(s => ({ id: s.id!, name: s.name || s.tool!, tool: s.tool!, args: (s.args as Record<string, unknown>) || {}, dependencies: s.dependencies || [], status: 'pending' as const })), (type, content, metadata) => this.emitStep(type, content, metadata));
@@ -550,7 +665,12 @@ Available tools:\n${langChainTools.map((t) => `- ${t.name}: ${t.description}`).j
           }
         }
 
-        const workflowTasks = await this.orchestrator.plan(userMessage, context);
+        const workflowTasks = await withTimeout(
+          this.orchestrator.plan(userMessage, context),
+          15000,
+          [],
+          'Workflow planning'
+        ).catch(() => []);
         if (workflowTasks.length > 1) {
           this.emitStep('thought', `Planned ${workflowTasks.length} steps. Executing...`);
           const result = await this.orchestrator.execute(workflowTasks, (type, content, metadata) => this.emitStep(type, content, metadata));

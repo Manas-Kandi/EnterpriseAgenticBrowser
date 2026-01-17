@@ -430,6 +430,9 @@ export class TaskKnowledgeService {
       return this.computeEmbedding(text);
     }
 
+    const timeoutMs = Number(process.env.SKILL_EMBEDDING_TIMEOUT_MS ?? 5000);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const response = await fetch('https://api.openai.com/v1/embeddings', {
         method: 'POST',
@@ -441,6 +444,7 @@ export class TaskKnowledgeService {
           model: 'text-embedding-3-small',
           input: text.substring(0, 8000), // Limit input length
         }),
+        signal: controller.signal,
       });
 
       if (!response.ok) {
@@ -454,6 +458,8 @@ export class TaskKnowledgeService {
       }
     } catch (e) {
       console.warn('[TaskKnowledge] Embedding API failed:', e);
+    } finally {
+      clearTimeout(timeout);
     }
 
     return this.computeEmbedding(text);

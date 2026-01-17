@@ -43818,6 +43818,9 @@ class TaskKnowledgeService {
       console.warn("[TaskKnowledge] No OPENAI_API_KEY, using local embedding");
       return this.computeEmbedding(text);
     }
+    const timeoutMs = Number(process.env.SKILL_EMBEDDING_TIMEOUT_MS ?? 5e3);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const response = await fetch("https://api.openai.com/v1/embeddings", {
         method: "POST",
@@ -43829,7 +43832,8 @@ class TaskKnowledgeService {
           model: "text-embedding-3-small",
           input: text.substring(0, 8e3)
           // Limit input length
-        })
+        }),
+        signal: controller.signal
       });
       if (!response.ok) {
         console.warn("[TaskKnowledge] Embedding API error:", response.status);
@@ -43841,6 +43845,8 @@ class TaskKnowledgeService {
       }
     } catch (e) {
       console.warn("[TaskKnowledge] Embedding API failed:", e);
+    } finally {
+      clearTimeout(timeout);
     }
     return this.computeEmbedding(text);
   }
@@ -46037,12 +46043,13 @@ class SelectorDiscoveryService {
 }
 const selectorDiscoveryService = new SelectorDiscoveryService();
 class WorkflowOrchestrator {
-  // Track agent-created background tabs
   constructor(model) {
     __publicField(this, "tasks", /* @__PURE__ */ new Map());
     __publicField(this, "context", {});
     __publicField(this, "model");
     __publicField(this, "availableTabs", []);
+    // Track agent-created background tabs
+    __publicField(this, "browserToolQueue", Promise.resolve());
     this.model = model;
   }
   /**
@@ -46098,6 +46105,7 @@ Rules:
     tasks.forEach((t2) => this.tasks.set(t2.id, t2));
     this.context = {};
     this.availableTabs = [];
+    this.browserToolQueue = Promise.resolve();
     let hasFailure = false;
     while (this.getPendingTasks().length > 0 || this.getRunningTasks().length > 0) {
       const readyTasks = this.getPendingTasks().filter(
@@ -46119,7 +46127,7 @@ Rules:
           if (!tool2) {
             throw new Error(`Tool not found: ${task.tool}`);
           }
-          const result = await tool2.invoke(resolvedArgs);
+          const result = await this.invokeWithBrowserLock(task.tool, () => tool2.invoke(resolvedArgs));
           task.result = String(result);
           if (task.assertions && task.assertions.length > 0) {
             onStep == null ? void 0 : onStep("thought", `Verifying task: ${task.name} with ${task.assertions.length} assertions...`, { taskId: task.id });
@@ -46131,7 +46139,7 @@ Rules:
                   tabId: resolvedArgs.tabId,
                   timeoutMs: assertion.timeoutMs || 5e3
                 };
-                const verificationResult = await assertionTool.invoke(assertionArgs);
+                const verificationResult = await this.invokeWithBrowserLock(assertionTool.name, () => assertionTool.invoke(assertionArgs));
                 if (verificationResult.includes("Timeout") || verificationResult.includes("Did not find")) {
                   throw new Error(`Assertion failed: ${assertion.type} "${assertion.value}" - ${verificationResult}`);
                 }
@@ -46180,6 +46188,26 @@ Rules:
     const toolName = type === "text_exists" ? "browser_wait_for_text" : type === "selector_exists" ? "browser_wait_for_selector" : "browser_wait_for_url";
     const langChainTools = toolRegistry.toLangChainTools();
     return langChainTools.find((t2) => t2.name === toolName);
+  }
+  async invokeWithBrowserLock(toolName, fn) {
+    if (!this.isBrowserTool(toolName)) {
+      return fn();
+    }
+    const previous = this.browserToolQueue;
+    let release = () => void 0;
+    const next = new Promise((resolve) => {
+      release = resolve;
+    });
+    this.browserToolQueue = previous.then(() => next);
+    await previous;
+    try {
+      return await fn();
+    } finally {
+      release();
+    }
+  }
+  isBrowserTool(toolName) {
+    return toolName.startsWith("browser_");
   }
   resolveArgs(args) {
     const resolved = { ...args };
@@ -46572,8 +46600,6 @@ const _SpeculativeExecutor = class _SpeculativeExecutor {
   isSafeForSpeculation(toolName) {
     const safeTool = [
       "browser_observe",
-      "browser_navigate",
-      "browser_click",
       "api_web_search"
     ];
     return safeTool.includes(toolName);
@@ -46638,6 +46664,14 @@ __publicField(_SpeculativeExecutor, "CONFIDENCE_THRESHOLD", 0.85);
 __publicField(_SpeculativeExecutor, "MAX_SPECULATIVE_QUEUE", 3);
 let SpeculativeExecutor = _SpeculativeExecutor;
 const speculativeExecutor = new SpeculativeExecutor();
+var TaskComplexity = /* @__PURE__ */ ((TaskComplexity2) => {
+  TaskComplexity2["TRIVIAL"] = "trivial";
+  TaskComplexity2["SIMPLE"] = "simple";
+  TaskComplexity2["MODERATE"] = "moderate";
+  TaskComplexity2["COMPLEX"] = "complex";
+  TaskComplexity2["EXPERT"] = "expert";
+  return TaskComplexity2;
+})(TaskComplexity || {});
 const MODEL_TIERS = [
   // Fast tier - for trivial/simple tasks
   {
@@ -47491,6 +47525,13 @@ const _AgentService = class _AgentService {
     }
     return null;
   }
+  extractDirectNavigationUrl(text) {
+    const match = text.match(/(?:open|go to|navigate to|visit)\s+(?:the\s+)?["']?(https?:\/\/[^\s"']+|(?:[a-z0-9-]+\.)+[a-z]{2,}[^\s"']*)/i);
+    if (!match) return null;
+    let url = match[1].replace(/[),.!?]+$/, "");
+    if (!/^https?:\/\//i.test(url)) url = `https://${url}`;
+    return url;
+  }
   inferToolFromText(text) {
     const lower = text.toLowerCase();
     let toolName = null;
@@ -47505,11 +47546,19 @@ const _AgentService = class _AgentService {
       const match = text.match(/search(?:ing)? (?:for )?["']?([^"'\n]+?)["']?(?: on | in | using |$|\.|,)/i);
       if (match) args = { query: match[1].trim() };
     } else if (toolName === "browser_navigate") {
-      const match = text.match(/(?:navigate to|go to|open) ["']?(https?:\/\/[^\s"']+|[a-z0-9.-]+\.[a-z]{2,}[^\s"']*)/i);
+      const match = text.match(/(?:navigate to|go to|open|visit) (?:the |this )?["']?(https?:\/\/[^\s"']+|[a-z0-9.-]+\.[a-z]{2,}[^\s"']*)/i);
       if (match) {
         let url = match[1];
         if (!url.startsWith("http")) url = "https://" + url;
         args = { url };
+      }
+      if (Object.keys(args).length === 0) {
+        const domainMatch = text.match(/https?:\/\/[^\s"']+|(?:[a-z0-9-]+\.)+[a-z]{2,}(?:\/[\S]*)?/i);
+        if (domainMatch) {
+          let url = domainMatch[0];
+          if (!url.startsWith("http")) url = "https://" + url;
+          args = { url };
+        }
       }
     }
     if (Object.keys(args).length === 0) return null;
@@ -47530,8 +47579,18 @@ const _AgentService = class _AgentService {
     if (!parsed) parsed = tryParse(candidate.replace(/,\s*([}\]])/g, "$1"));
     if (!parsed) parsed = tryParse(candidate.replace(/:\s*"([^"]*)\n([^"]*)"/g, ': "$1\\n$2"'));
     if (parsed) {
+      const normalizedTool = (() => {
+        if (typeof parsed.tool === "string") return parsed.tool;
+        if (typeof parsed.action === "string") return parsed.action;
+        if (typeof parsed.command === "string") return parsed.command;
+        return null;
+      })();
       if (Array.isArray(parsed.tools) && parsed.tools.length > 0) {
         return { tool: parsed.tools[0].tool, args: parsed.tools[0].args, thought: parsed.thought, tools: parsed.tools };
+      }
+      if (normalizedTool) {
+        const parsedArgs = parsed.args ?? parsed.input ?? {};
+        return { tool: normalizedTool, args: parsedArgs, thought: parsed.thought };
       }
       return parsed;
     }
@@ -47712,6 +47771,7 @@ You can answer questions about what's on the page, explain content, summarize in
     let parseFailures = 0;
     let loopAlertCount = 0;
     let pendingErrorForReflection = null;
+    let verificationFailures = 0;
     let stepCount = 0;
     const toolsUsed = [];
     let lastTool = null;
@@ -47733,6 +47793,7 @@ You can answer questions about what's on the page, explain content, summarize in
     this.emitStep("thought", `Intent: ${intentClassification.type} (${Math.round(intentClassification.confidence * 100)}% confidence) - ${intentClassification.reason}`, { phase: "intent_classification", intent: intentClassification });
     const routingDecision = modelRouter.route(userMessage, browserContext);
     const selectedModelId = routingDecision.selectedModel.id;
+    const isTrivialOrSimple = [TaskComplexity.TRIVIAL, TaskComplexity.SIMPLE].includes(routingDecision.classification.complexity);
     let currentModelForRun = this.createModelForRouting(routingDecision.selectedModel);
     this.emitStep("thought", `🎯 Model: ${routingDecision.selectedModel.name} (${routingDecision.classification.complexity} task, ${Math.round(routingDecision.classification.confidence * 100)}% confidence)`, {
       phase: "model_routing",
@@ -47741,11 +47802,85 @@ You can answer questions about what's on the page, explain content, summarize in
       confidence: routingDecision.classification.confidence
     });
     try {
-      const selectors = await selectorDiscoveryService.discoverSelectors();
-      const selectorContext = Array.from(selectors.entries()).map(([p, s]) => `${p}: ${s.map((x) => x.testId).join(",")}`).join("\n");
+      const directNavUrl = this.extractDirectNavigationUrl(userMessage);
+      if (directNavUrl && isTrivialOrSimple) {
+        const navTool = langChainTools.find((t2) => t2.name === "browser_navigate");
+        if (navTool) {
+          try {
+            const navCheck = shouldNavigateActiveTab(userMessage, directNavUrl, activeUrl);
+            let tabId = null;
+            if (!navCheck.allowNavigation) {
+              const targetToken = (() => {
+                try {
+                  const host = new URL(directNavUrl).hostname.toLowerCase();
+                  if (!host) return null;
+                  if (host === "localhost") return "localhost";
+                  const parts = host.split(".").filter(Boolean);
+                  const cleaned = parts[0] === "www" ? parts.slice(1) : parts;
+                  if (cleaned.length >= 2) return cleaned[cleaned.length - 2];
+                  return cleaned[0] ?? null;
+                } catch {
+                  return null;
+                }
+              })();
+              if (targetToken) {
+                tabId = browserTargetService.getMostRecentTabForDomainToken(targetToken);
+              }
+              if (!tabId) {
+                tabId = await agentTabOpenService.openAgentTab({
+                  url: directNavUrl,
+                  background: Boolean(intentClassification.openInBackground),
+                  agentCreated: true
+                });
+              } else if (!intentClassification.openInBackground) {
+                const win2 = BrowserWindow.getAllWindows()[0];
+                if (win2) win2.webContents.send("browser:activate-tab", { tabId });
+              }
+            }
+            const toolArgs = { url: directNavUrl, ...tabId ? { tabId } : {} };
+            stepCount++;
+            toolsUsed.push(navTool.name);
+            this.emitStep("action", `Executing ${navTool.name}`, { tool: navTool.name, args: toolArgs, phase: "direct_nav_fast_path" });
+            auditService.log({ actor: "agent", action: "tool_execution", details: { runId, tool: navTool.name, args: toolArgs }, status: "pending" });
+            const toolResult = await navTool.invoke(toolArgs);
+            const resStr = String(toolResult);
+            const ok = !resStr.toLowerCase().startsWith("failed");
+            this.emitStep("observation", resStr, { tool: navTool.name, result: resStr, ok, phase: "direct_nav_fast_path", tabId: tabId ?? void 0 });
+            usedBrowserTools = true;
+            telemetryService.emit({ eventId: v4$2(), runId, ts: (/* @__PURE__ */ new Date()).toISOString(), type: "agent_run_end", data: { success: ok, via: "direct_nav_fast_path", stepCount, durationMs: Date.now() - runStartedAt } });
+            auditService.log({ actor: "agent", action: "agent_run_complete", details: { runId, stepCount, toolsUsed }, status: ok ? "success" : "failure" });
+            return resStr;
+          } catch (e) {
+            const errMsg = e instanceof Error ? e.message : String(e);
+            await this.logFailure(runId, userMessage, errMsg, stepCount, toolsUsed, Date.now() - runStartedAt);
+            telemetryService.emit({ eventId: v4$2(), runId, ts: (/* @__PURE__ */ new Date()).toISOString(), type: "agent_run_end", data: { success: false, reason: "direct_nav_error", durationMs: Date.now() - runStartedAt } });
+            auditService.log({ actor: "agent", action: "agent_run_error", details: { runId, error: errMsg }, status: "failure" });
+            return `Error: ${errMsg}`;
+          }
+        }
+      }
       let context = browserContext || "Current browser state: No context provided";
       context = this.redactSecrets(context);
       const safeUserMessage = this.redactSecrets(userMessage);
+      const shouldLoadSelectors = context.includes("localhost:3000") || safeUserMessage.toLowerCase().includes("aerocore");
+      const selectors = shouldLoadSelectors ? await selectorDiscoveryService.discoverSelectors() : /* @__PURE__ */ new Map();
+      const selectorContext = shouldLoadSelectors ? Array.from(selectors.entries()).map(([p, s]) => `${p}: ${s.map((x) => x.testId).join(",")}`).join("\n") : "";
+      const withTimeout = async (promise, timeoutMs, fallback, label) => {
+        let timer = null;
+        let timedOut = false;
+        const timeoutPromise = new Promise((resolve) => {
+          timer = setTimeout(() => {
+            timedOut = true;
+            resolve(fallback);
+          }, timeoutMs);
+        });
+        const result2 = await Promise.race([promise, timeoutPromise]);
+        if (timer) clearTimeout(timer);
+        if (timedOut) {
+          this.emitStep("observation", `${label} timed out after ${timeoutMs}ms. Continuing.`, { phase: "timeout", ok: false, step: label });
+        }
+        return result2;
+      };
       this.systemPrompt = new SystemMessage(`<role>You are a helpful enterprise assistant integrated into a browser. Your goal is to help users complete tasks by using tools effectively and safely.</role>
 <tool_calling>You MUST respond ONLY with a single JSON object. JSON schema: { "thought": "brief reasoning", "tool": "tool_name", "args": { ... } } Final response: { "thought": "brief completion summary", "tool": "final_response", "args": { "message": "your message" } }</tool_calling>
 <strategy>API-FIRST, BROWSER-FALLBACK: - Try API tools first. - If api_web_search returns status="browser_required", immediately use browser_navigate. - Use DuckDuckGo for browser searches.</strategy>
@@ -47770,8 +47905,13 @@ User request: ${safeUserMessage}`));
       this.trimConversationHistory();
       await this.maybeSummarize();
       const messages = this.buildMessagesWithSummaries(this.systemPrompt);
-      if (userMessage.length > 10) {
-        const workflowHit = await taskKnowledgeService.findNearest(userMessage, 0.85);
+      if (!isTrivialOrSimple && userMessage.length > 10) {
+        const workflowHit = await withTimeout(
+          taskKnowledgeService.findNearest(userMessage, 0.85),
+          8e3,
+          null,
+          "Workflow lookup"
+        ).catch(() => null);
         if (workflowHit && workflowHit.skill.isWorkflow) {
           this.emitStep("thought", `Executing workflow: "${workflowHit.skill.name}".`);
           const result2 = await this.orchestrator.execute(workflowHit.skill.steps.map((s) => ({ id: s.id, name: s.name || s.tool, tool: s.tool, args: s.args || {}, dependencies: s.dependencies || [], status: "pending" })), (type, content, metadata) => this.emitStep(type, content, metadata));
@@ -47780,7 +47920,12 @@ User request: ${safeUserMessage}`));
             return `Completed via workflow ${workflowHit.skill.name}`;
           }
         }
-        const workflowTasks = await this.orchestrator.plan(userMessage, context);
+        const workflowTasks = await withTimeout(
+          this.orchestrator.plan(userMessage, context),
+          15e3,
+          [],
+          "Workflow planning"
+        ).catch(() => []);
         if (workflowTasks.length > 1) {
           this.emitStep("thought", `Planned ${workflowTasks.length} steps. Executing...`);
           const result2 = await this.orchestrator.execute(workflowTasks, (type, content, metadata) => this.emitStep(type, content, metadata));
@@ -47835,12 +47980,19 @@ User request: ${safeUserMessage}`));
         }
         if (action.thought) this.emitStep("thought", action.thought);
         if (action.tool === "final_response") {
-          const finalMessage = action.args.message || content;
+          let finalMessage = action.args.message || content;
           if (usedBrowserTools) {
             const verification = await this.verifyTaskSuccess(userMessage, String(messages[messages.length - 1].content));
             if (!verification.success) {
-              messages.push(new SystemMessage(`Verification failed: ${verification.reason}. Please double check.`));
-              continue;
+              verificationFailures += 1;
+              if (verificationFailures <= 1) {
+                messages.push(new SystemMessage(`Verification failed: ${verification.reason}. Please double check.`));
+                continue;
+              }
+              this.emitStep("observation", `Verification failed twice (${verification.reason}). Returning best-effort response.`, { ok: false, phase: "verification_soft_fail" });
+              finalMessage = `${finalMessage}
+
+(Verification warning: ${verification.reason})`;
             }
           }
           this.conversationHistory.push(new AIMessage(JSON.stringify(action)));
