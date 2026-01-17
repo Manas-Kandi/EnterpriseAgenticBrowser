@@ -362,10 +362,25 @@ export function TerminalPanel() {
       return;
     }
 
+    // Check for agentic mode (prefix with /agent or @agent)
+    const isAgentMode = command.startsWith('/agent ') || command.startsWith('@agent ');
+    const actualCommand = isAgentMode ? command.replace(/^[@/]agent\s+/, '') : command;
+
     // Direct execution (no confirmation)
     setIsExecuting(true);
     try {
-      const result = await window.terminal?.run(command);
+      // Use agentic pipeline for /agent commands
+      if (isAgentMode) {
+        const result = await (window.terminal as any)?.agent(actualCommand);
+        if (result?.success) {
+          addEntry('result', result.result);
+        } else {
+          addEntry('error', result?.error || 'Agent pipeline failed');
+        }
+        return;
+      }
+
+      const result = await window.terminal?.run(actualCommand);
       
       if (!result) {
         addEntry('error', 'Terminal API not available');

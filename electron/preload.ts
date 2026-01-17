@@ -205,6 +205,8 @@ contextBridge.exposeInMainWorld('terminal', {
     ipcRenderer.invoke('terminal:isMultiStepCommand', command),
   run: (command: string, options?: { autoRetry?: boolean }) =>
     ipcRenderer.invoke('terminal:run', command, options),
+  agent: (query: string) =>
+    ipcRenderer.invoke('terminal:agent', query),
   onStep: (callback: (step: { phase: string; status: string; data?: unknown; error?: string }) => void) => {
     const listener = (_: unknown, step: { phase: string; status: string; data?: unknown; error?: string }) => callback(step);
     ipcRenderer.on('terminal:step', listener);

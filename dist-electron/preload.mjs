@@ -165,6 +165,7 @@ electron.contextBridge.exposeInMainWorld("terminal", {
   executeMultiStepPlan: (plan) => electron.ipcRenderer.invoke("terminal:executeMultiStepPlan", plan),
   isMultiStepCommand: (command) => electron.ipcRenderer.invoke("terminal:isMultiStepCommand", command),
   run: (command, options) => electron.ipcRenderer.invoke("terminal:run", command, options),
+  agent: (query) => electron.ipcRenderer.invoke("terminal:agent", query),
   onStep: (callback) => {
     const listener = (_, step) => callback(step);
     electron.ipcRenderer.on("terminal:step", listener);

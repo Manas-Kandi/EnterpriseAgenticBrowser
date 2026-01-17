@@ -25,6 +25,7 @@ import './integrations/BrowserAutomationService'; // Initialize Playwright Autom
 import './services/WebAPIService'; // Initialize Web API tools (GitHub, HN, Wikipedia APIs)
 import './services/CodeExecutionService'; // Initialize dynamic code execution for agent
 import './services/TerminalIntegrationTool'; // Initialize AI Terminal integration for agent
+import './services/BrowserAgentPipeline'; // Initialize 4-step agentic reasoning pipeline
 
 const { app, BrowserWindow, ipcMain, webContents } = electron;
 
@@ -838,6 +839,24 @@ app.whenReady().then(async () => {
   ipcMain.handle('terminal:isMultiStepCommand', async (_, command: string) => {
     const { codeGeneratorService } = await import('./services/CodeGeneratorService');
     return codeGeneratorService.isMultiStepCommand(command);
+  });
+
+  // Agentic Pipeline: 4-step reasoning (Reason -> Plan -> Execute -> Present)
+  ipcMain.handle('terminal:agent', async (event, query: string) => {
+    const { browserAgentPipeline } = await import('./services/BrowserAgentPipeline');
+    
+    // Send progress updates
+    event.sender.send('terminal:step', { phase: 'agent', status: 'running', message: 'Starting agentic pipeline...' });
+    
+    try {
+      const result = await browserAgentPipeline.runPipeline(query);
+      event.sender.send('terminal:step', { phase: 'agent', status: 'done' });
+      return { success: true, result };
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      event.sender.send('terminal:step', { phase: 'agent', status: 'error', error: errorMsg });
+      return { success: false, error: errorMsg };
+    }
   });
 
   // Terminal: Full end-to-end pipeline
