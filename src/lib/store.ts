@@ -159,7 +159,7 @@ export interface TabGroup {
 
 export type TabsLayout = 'horizontal' | 'vertical';
 
-export type SidebarPanel = 'agent' | 'tabs' | 'workflows' | null;
+export type SidebarPanel = 'agent' | 'terminal' | 'tabs' | 'workflows' | null;
 
 export type DockCoreItemId = 'agent' | 'tabs' | 'workflows';
 export type DockAeroItemId = 'aerocore-portal' | 'aerocore-admin' | 'aerocore-dispatch' | 'aerocore-fleet';

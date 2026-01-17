@@ -1,6 +1,7 @@
 import { useBrowserStore } from '@/lib/store';
 import { X } from 'lucide-react';
 import { AgentPanel } from './AgentPanel';
+import { TerminalPanel } from './TerminalPanel';
 import { useMemo, useState } from 'react';
 import { cn } from '@/lib/utils';
 
@@ -59,6 +60,8 @@ export function WorkspacePanel() {
             <div className="flex-1 overflow-hidden relative flex flex-col">
                 {activeSidebarPanel === 'agent' ? (
                     <AgentPanel />
+                ) : activeSidebarPanel === 'terminal' ? (
+                    <TerminalPanel />
                 ) : activeSidebarPanel === 'tabs' ? (
                     <div className="flex-1 overflow-auto browser-minimal-scrollbar">
                         <div className="p-3 border-b border-border/50">
