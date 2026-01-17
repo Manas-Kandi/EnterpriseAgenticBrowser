@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { cn } from '@/lib/utils';
-import { Terminal, ChevronDown, ChevronRight, Copy, Check, Loader2 } from 'lucide-react';
+import { Terminal, ChevronDown, ChevronRight, Copy, Check, Loader2, Download, Table, FileJson } from 'lucide-react';
+import { formatResult, exportAsCSV, exportAsJSON, FormattedResult } from '@/lib/resultFormatter';
 
 // Terminal output entry types
 type OutputType = 'command' | 'code' | 'result' | 'error' | 'info';
@@ -11,6 +12,8 @@ interface TerminalEntry {
   content: string;
   timestamp: number;
   collapsed?: boolean;
+  formatted?: FormattedResult;
+  rawResult?: unknown;
 }
 
 const HISTORY_KEY = 'terminal-command-history';
@@ -74,13 +77,15 @@ export function TerminalPanel() {
     return () => off?.();
   }, []);
 
-  const addEntry = useCallback((type: OutputType, content: string) => {
+  const addEntry = useCallback((type: OutputType, content: string, rawResult?: unknown) => {
     const entry: TerminalEntry = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
       type,
       content,
       timestamp: Date.now(),
       collapsed: type === 'code',
+      rawResult,
+      formatted: type === 'result' && rawResult !== undefined ? formatResult(rawResult) : undefined,
     };
     setEntries(prev => [...prev, entry]);
     return entry.id;
@@ -138,10 +143,8 @@ export function TerminalPanel() {
 
       // Show result or error
       if (result.success) {
-        const resultStr = typeof result.result === 'string' 
-          ? result.result 
-          : JSON.stringify(result.result, null, 2);
-        addEntry('result', resultStr || '(no output)');
+        const formatted = formatResult(result.result);
+        addEntry('result', formatted.display, result.result);
       } else {
         const errorMsg = result.stack || result.error || 'Unknown error';
         addEntry('error', errorMsg);
@@ -245,8 +248,38 @@ export function TerminalPanel() {
         );
 
       case 'result':
+        const isTable = entry.formatted?.type === 'table';
+        const canExportCSV = isTable || (entry.formatted?.type === 'json' && Array.isArray(entry.rawResult));
         return (
           <div key={entry.id} className="mt-1 mb-2">
+            {/* Result type indicator and export buttons */}
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-xs text-muted-foreground flex items-center gap-1">
+                {isTable && <Table className="w-3 h-3" />}
+                {entry.formatted?.type === 'json' && <FileJson className="w-3 h-3" />}
+                {entry.formatted?.type || 'result'}
+                {isTable && entry.formatted?.rows && ` (${entry.formatted.rows.length} rows)`}
+              </span>
+              <div className="flex-1" />
+              {canExportCSV && (
+                <button
+                  onClick={() => entry.formatted && exportAsCSV(entry.formatted, `export-${Date.now()}.csv`)}
+                  className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
+                  title="Export as CSV"
+                >
+                  <Download className="w-3 h-3" />
+                  CSV
+                </button>
+              )}
+              <button
+                onClick={() => entry.formatted && exportAsJSON(entry.formatted, `export-${Date.now()}.json`)}
+                className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
+                title="Export as JSON"
+              >
+                <Download className="w-3 h-3" />
+                JSON
+              </button>
+            </div>
             <div className="relative rounded bg-secondary/30 border border-border/20">
               <button
                 onClick={() => copyToClipboard(entry.content, entry.id)}
@@ -259,8 +292,13 @@ export function TerminalPanel() {
                   <Copy className="w-3.5 h-3.5 text-muted-foreground" />
                 )}
               </button>
-              <pre className="p-3 pr-10 text-xs overflow-x-auto">
-                <code className="text-green-400/90">{entry.content}</code>
+              <pre className={cn(
+                "p-3 pr-10 text-xs overflow-x-auto",
+                isTable ? "font-mono" : ""
+              )}>
+                <code className={cn(
+                  isTable ? "text-cyan-400/90" : "text-green-400/90"
+                )}>{entry.content}</code>
               </pre>
             </div>
           </div>
