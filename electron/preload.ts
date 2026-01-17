@@ -175,8 +175,26 @@ contextBridge.exposeInMainWorld('terminal', {
   queryDOM: (selector: string) => ipcRenderer.invoke('terminal:queryDOM', selector),
   click: (selector: string) => ipcRenderer.invoke('terminal:click', selector),
   type: (selector: string, text: string) => ipcRenderer.invoke('terminal:type', selector, text),
+  waitForElementToDisappear: (selector: string, timeout?: number) =>
+    ipcRenderer.invoke('terminal:waitForElementToDisappear', selector, timeout),
+  waitForURLChange: (pattern?: string, timeout?: number) =>
+    ipcRenderer.invoke('terminal:waitForURLChange', pattern, timeout),
+  waitForDOMStable: (stabilityMs?: number, timeout?: number) =>
+    ipcRenderer.invoke('terminal:waitForDOMStable', stabilityMs, timeout),
+  waitForCondition: (conditionCode: string, timeout?: number, pollInterval?: number) =>
+    ipcRenderer.invoke('terminal:waitForCondition', conditionCode, timeout, pollInterval),
+  waitForNetworkIdle: (idleMs?: number, timeout?: number) =>
+    ipcRenderer.invoke('terminal:waitForNetworkIdle', idleMs, timeout),
   generateCode: (command: string, options?: { includeExplanation?: boolean }) =>
     ipcRenderer.invoke('terminal:generateCode', command, options),
+  generateCodeStream: (command: string) =>
+    ipcRenderer.invoke('terminal:generateCodeStream', command),
+  cancelStream: () => ipcRenderer.invoke('terminal:cancelStream'),
+  onStreamToken: (callback: (token: { type: string; content: string; code?: string }) => void) => {
+    const listener = (_: unknown, token: { type: string; content: string; code?: string }) => callback(token);
+    ipcRenderer.on('terminal:streamToken', listener);
+    return () => ipcRenderer.off('terminal:streamToken', listener);
+  },
   generateCodeWithRetry: (command: string, previousCode: string, error: string) =>
     ipcRenderer.invoke('terminal:generateCodeWithRetry', command, previousCode, error),
   generateMultiStepPlan: (command: string) =>
@@ -191,5 +209,45 @@ contextBridge.exposeInMainWorld('terminal', {
     const listener = (_: unknown, step: { phase: string; status: string; data?: unknown; error?: string }) => callback(step);
     ipcRenderer.on('terminal:step', listener);
     return () => ipcRenderer.off('terminal:step', listener);
+  },
+})
+
+// Telemetry API
+contextBridge.exposeInMainWorld('telemetry', {
+  getTerminalLogs: (limit?: number) => ipcRenderer.invoke('telemetry:getTerminalLogs', limit),
+  getTerminalStats: () => ipcRenderer.invoke('telemetry:getTerminalStats'),
+  exportTerminalLogs: (outputPath: string) => ipcRenderer.invoke('telemetry:exportTerminalLogs', outputPath),
+  clearTerminalLogs: () => ipcRenderer.invoke('telemetry:clearTerminalLogs'),
+})
+
+// Script Library API
+contextBridge.exposeInMainWorld('scripts', {
+  save: (config: { name: string; command: string; code: string; urlPattern?: string; tags?: string[]; description?: string }) =>
+    ipcRenderer.invoke('scripts:save', config),
+  getAll: () => ipcRenderer.invoke('scripts:getAll'),
+  get: (id: string) => ipcRenderer.invoke('scripts:get', id),
+  update: (id: string, updates: Record<string, unknown>) => ipcRenderer.invoke('scripts:update', id, updates),
+  delete: (id: string) => ipcRenderer.invoke('scripts:delete', id),
+  recordUsage: (id: string) => ipcRenderer.invoke('scripts:recordUsage', id),
+  suggestForUrl: (url: string) => ipcRenderer.invoke('scripts:suggestForUrl', url),
+  search: (query: string) => ipcRenderer.invoke('scripts:search', query),
+  generateName: (command: string) => ipcRenderer.invoke('scripts:generateName', command),
+})
+
+// Page Monitor API
+contextBridge.exposeInMainWorld('monitor', {
+  create: (config: { name: string; url: string; tabId?: string; checkCode: string; description: string; intervalMs?: number }) =>
+    ipcRenderer.invoke('monitor:create', config),
+  getAll: () => ipcRenderer.invoke('monitor:getAll'),
+  get: (id: string) => ipcRenderer.invoke('monitor:get', id),
+  pause: (id: string) => ipcRenderer.invoke('monitor:pause', id),
+  resume: (id: string) => ipcRenderer.invoke('monitor:resume', id),
+  delete: (id: string) => ipcRenderer.invoke('monitor:delete', id),
+  reset: (id: string) => ipcRenderer.invoke('monitor:reset', id),
+  check: (id: string) => ipcRenderer.invoke('monitor:check', id),
+  onTriggered: (callback: (data: { monitor: unknown; result: unknown }) => void) => {
+    const listener = (_: unknown, data: { monitor: unknown; result: unknown }) => callback(data);
+    ipcRenderer.on('monitor:triggered', listener);
+    return () => ipcRenderer.off('monitor:triggered', listener);
   },
 })

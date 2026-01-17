@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, webContents } from 'electron'
+import * as electron from 'electron'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import crypto from 'node:crypto'
@@ -25,6 +25,8 @@ import './integrations/BrowserAutomationService'; // Initialize Playwright Autom
 import './services/WebAPIService'; // Initialize Web API tools (GitHub, HN, Wikipedia APIs)
 import './services/CodeExecutionService'; // Initialize dynamic code execution for agent
 
+const { app, BrowserWindow, ipcMain, webContents } = electron;
+
 const planMemory = new PlanMemory();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -47,7 +49,7 @@ export const RENDERER_DIST = path.join(process.env.APP_ROOT, 'dist')
 
 process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path.join(process.env.APP_ROOT, 'public') : RENDERER_DIST
 
-let win: BrowserWindow | null
+let win: electron.BrowserWindow | null
 
 const newTabDashboardService = new NewTabDashboardService(new DummyAeroCoreDataSource());
 let newTabDashboardTimer: NodeJS.Timeout | null = null;
@@ -221,7 +223,7 @@ async function createWindow(sessionState?: SessionMetadata | null) {
   });
 
   if (VITE_DEV_SERVER_URL) {
-    win.loadURL(VITE_DEV_SERVER_URL).catch((e) => {
+    win.loadURL(VITE_DEV_SERVER_URL).catch((e: unknown) => {
       console.error('Failed to load dev server URL:', e);
     });
     // Open DevTools in development mode to see any errors
@@ -629,9 +631,185 @@ app.whenReady().then(async () => {
     return codeExecutorService.type(selector, text);
   });
 
+  ipcMain.handle('terminal:waitForElementToDisappear', async (_, selector: string, timeout?: number) => {
+    const { codeExecutorService } = await import('./services/CodeExecutorService');
+    return codeExecutorService.waitForElementToDisappear(selector, timeout);
+  });
+
+  ipcMain.handle('terminal:waitForURLChange', async (_, pattern?: string, timeout?: number) => {
+    const { codeExecutorService } = await import('./services/CodeExecutorService');
+    return codeExecutorService.waitForURLChange(pattern, timeout);
+  });
+
+  ipcMain.handle('terminal:waitForDOMStable', async (_, stabilityMs?: number, timeout?: number) => {
+    const { codeExecutorService } = await import('./services/CodeExecutorService');
+    return codeExecutorService.waitForDOMStable(stabilityMs, timeout);
+  });
+
+  ipcMain.handle('terminal:waitForCondition', async (_, conditionCode: string, timeout?: number, pollInterval?: number) => {
+    const { codeExecutorService } = await import('./services/CodeExecutorService');
+    return codeExecutorService.waitForCondition(conditionCode, timeout, pollInterval);
+  });
+
+  ipcMain.handle('terminal:waitForNetworkIdle', async (_, idleMs?: number, timeout?: number) => {
+    const { codeExecutorService } = await import('./services/CodeExecutorService');
+    return codeExecutorService.waitForNetworkIdle(idleMs, timeout);
+  });
+
+  // Page Monitor IPC Handlers
+  ipcMain.handle('monitor:create', async (_, config: { name: string; url: string; tabId?: string; checkCode: string; description: string; intervalMs?: number }) => {
+    const { pageMonitorService } = await import('./services/PageMonitorService');
+    return pageMonitorService.createMonitor(config);
+  });
+
+  ipcMain.handle('monitor:getAll', async () => {
+    const { pageMonitorService } = await import('./services/PageMonitorService');
+    return pageMonitorService.getMonitors();
+  });
+
+  ipcMain.handle('monitor:get', async (_, id: string) => {
+    const { pageMonitorService } = await import('./services/PageMonitorService');
+    return pageMonitorService.getMonitor(id);
+  });
+
+  ipcMain.handle('monitor:pause', async (_, id: string) => {
+    const { pageMonitorService } = await import('./services/PageMonitorService');
+    return pageMonitorService.pauseMonitor(id);
+  });
+
+  ipcMain.handle('monitor:resume', async (_, id: string) => {
+    const { pageMonitorService } = await import('./services/PageMonitorService');
+    return pageMonitorService.resumeMonitor(id);
+  });
+
+  ipcMain.handle('monitor:delete', async (_, id: string) => {
+    const { pageMonitorService } = await import('./services/PageMonitorService');
+    return pageMonitorService.deleteMonitor(id);
+  });
+
+  ipcMain.handle('monitor:reset', async (_, id: string) => {
+    const { pageMonitorService } = await import('./services/PageMonitorService');
+    return pageMonitorService.resetMonitor(id);
+  });
+
+  ipcMain.handle('monitor:check', async (_, id: string) => {
+    const { pageMonitorService } = await import('./services/PageMonitorService');
+    return pageMonitorService.checkMonitor(id);
+  });
+
+  // Telemetry IPC Handlers
+  ipcMain.handle('telemetry:getTerminalLogs', async (_, limit?: number) => {
+    const { telemetryService } = await import('./services/TelemetryService');
+    return telemetryService.getTerminalLogs(limit);
+  });
+
+  ipcMain.handle('telemetry:getTerminalStats', async () => {
+    const { telemetryService } = await import('./services/TelemetryService');
+    return telemetryService.getTerminalStats();
+  });
+
+  ipcMain.handle('telemetry:exportTerminalLogs', async (_, outputPath: string) => {
+    const { telemetryService } = await import('./services/TelemetryService');
+    return telemetryService.exportTerminalLogs(outputPath);
+  });
+
+  ipcMain.handle('telemetry:clearTerminalLogs', async () => {
+    const { telemetryService } = await import('./services/TelemetryService');
+    return telemetryService.clearTerminalLogs();
+  });
+
+  // Script Library IPC Handlers
+  ipcMain.handle('scripts:save', async (_, config: { name: string; command: string; code: string; urlPattern?: string; tags?: string[]; description?: string }) => {
+    const { scriptLibraryService } = await import('./services/ScriptLibraryService');
+    return scriptLibraryService.saveScript(config);
+  });
+
+  ipcMain.handle('scripts:getAll', async () => {
+    const { scriptLibraryService } = await import('./services/ScriptLibraryService');
+    return scriptLibraryService.getScripts();
+  });
+
+  ipcMain.handle('scripts:get', async (_, id: string) => {
+    const { scriptLibraryService } = await import('./services/ScriptLibraryService');
+    return scriptLibraryService.getScript(id);
+  });
+
+  ipcMain.handle('scripts:update', async (_, id: string, updates: Record<string, unknown>) => {
+    const { scriptLibraryService } = await import('./services/ScriptLibraryService');
+    return scriptLibraryService.updateScript(id, updates);
+  });
+
+  ipcMain.handle('scripts:delete', async (_, id: string) => {
+    const { scriptLibraryService } = await import('./services/ScriptLibraryService');
+    return scriptLibraryService.deleteScript(id);
+  });
+
+  ipcMain.handle('scripts:recordUsage', async (_, id: string) => {
+    const { scriptLibraryService } = await import('./services/ScriptLibraryService');
+    return scriptLibraryService.recordUsage(id);
+  });
+
+  ipcMain.handle('scripts:suggestForUrl', async (_, url: string) => {
+    const { scriptLibraryService } = await import('./services/ScriptLibraryService');
+    return scriptLibraryService.suggestForUrl(url);
+  });
+
+  ipcMain.handle('scripts:search', async (_, query: string) => {
+    const { scriptLibraryService } = await import('./services/ScriptLibraryService');
+    return scriptLibraryService.search(query);
+  });
+
+  ipcMain.handle('scripts:generateName', async (_, command: string) => {
+    const { scriptLibraryService } = await import('./services/ScriptLibraryService');
+    return scriptLibraryService.generateName(command);
+  });
+
   ipcMain.handle('terminal:generateCode', async (_, command: string, options?: { includeExplanation?: boolean }) => {
     const { codeGeneratorService } = await import('./services/CodeGeneratorService');
     return codeGeneratorService.generate(command, undefined, options);
+  });
+
+  // Streaming code generation - sends tokens via IPC events
+  let activeStreamAbort: AbortController | null = null;
+  
+  ipcMain.handle('terminal:generateCodeStream', async (event, command: string) => {
+    const { codeGeneratorService } = await import('./services/CodeGeneratorService');
+    
+    // Create abort controller for cancellation
+    activeStreamAbort = new AbortController();
+    
+    try {
+      const generator = codeGeneratorService.generateStream(command);
+      
+      for await (const chunk of generator) {
+        if (activeStreamAbort?.signal.aborted) {
+          event.sender.send('terminal:streamToken', { type: 'cancelled', content: '' });
+          break;
+        }
+        event.sender.send('terminal:streamToken', chunk);
+        
+        if (chunk.type === 'done' || chunk.type === 'error') {
+          break;
+        }
+      }
+    } catch (err) {
+      event.sender.send('terminal:streamToken', { 
+        type: 'error', 
+        content: err instanceof Error ? err.message : String(err) 
+      });
+    } finally {
+      activeStreamAbort = null;
+    }
+    
+    return { started: true };
+  });
+
+  ipcMain.handle('terminal:cancelStream', async () => {
+    if (activeStreamAbort) {
+      activeStreamAbort.abort();
+      return { cancelled: true };
+    }
+    return { cancelled: false };
   });
 
   ipcMain.handle('terminal:generateCodeWithRetry', async (_, command: string, previousCode: string, error: string) => {
@@ -765,6 +943,26 @@ app.whenReady().then(async () => {
       data: execResult.success ? { result: execResult.result } : { errorHistory },
       error: execResult.error
     });
+
+    // Log execution telemetry
+    const { telemetryService } = await import('./services/TelemetryService');
+    const contextHash = context ? 
+      Buffer.from(JSON.stringify({ url: context.url, title: context.title })).toString('base64').slice(0, 16) : 
+      undefined;
+    
+    await telemetryService.logTerminalExecution({
+      id: `exec-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      timestamp: Date.now(),
+      command,
+      code: generatedCode,
+      success: execResult.success,
+      result: execResult.success ? execResult.result : undefined,
+      error: execResult.error,
+      duration: Date.now() - startTime,
+      contextHash,
+      url: context?.url,
+      retryCount,
+    }).catch(err => console.error('[Telemetry] Failed to log execution:', err));
 
     return {
       success: execResult.success,

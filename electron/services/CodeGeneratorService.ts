@@ -1,9 +1,65 @@
 import { ChatOpenAI } from "@langchain/openai";
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
-import dotenv from 'dotenv';
 import { domContextService, DOMContext } from './DOMContextService';
+import { app } from 'electron';
+import path from 'node:path';
+import fs from 'node:fs';
+import dotenv from 'dotenv';
+import { fileURLToPath } from 'node:url';
 
-dotenv.config();
+function findUp(startDir: string, filename: string, maxHops: number = 8): string | null {
+  let dir = startDir;
+  for (let i = 0; i < maxHops; i++) {
+    const candidate = path.join(dir, filename);
+    if (fs.existsSync(candidate)) return candidate;
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return null;
+}
+
+function ensureEnvLoaded(): void {
+  if (process.env.NVIDIA_API_KEY || process.env.OPENAI_API_KEY) return;
+
+  const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+  const appPath = (() => {
+    try { return app.getAppPath(); } catch { return null; }
+  })();
+
+  const roots = [
+    moduleDir,
+    process.cwd(),
+    appPath ?? undefined,
+  ].filter((v): v is string => Boolean(v));
+
+  for (const root of roots) {
+    const envPath = findUp(root, '.env');
+    if (envPath) {
+      dotenv.config({ path: envPath });
+      // Debug: confirm where we loaded env from
+      console.log('[CodeGeneratorService] Loaded .env from:', envPath);
+      console.log('[CodeGeneratorService] NVIDIA_API_KEY set after dotenv:', Boolean(process.env.NVIDIA_API_KEY));
+      return;
+    }
+  }
+
+  // Debug: report what we tried
+  console.warn('[CodeGeneratorService] Failed to locate .env. Roots tried:', roots);
+}
+
+// Helper to get API key - ensures env loaded, then reads from process.env
+function getApiKey(): { key: string; isNvidia: boolean } | null {
+  ensureEnvLoaded();
+  // Debug: report what we see (do NOT log key value)
+  console.log('[CodeGeneratorService] Env key presence:', {
+    NVIDIA_API_KEY: Boolean(process.env.NVIDIA_API_KEY),
+    OPENAI_API_KEY: Boolean(process.env.OPENAI_API_KEY),
+  });
+  if (process.env.NVIDIA_API_KEY) return { key: process.env.NVIDIA_API_KEY, isNvidia: true };
+  if (process.env.OPENAI_API_KEY) return { key: process.env.OPENAI_API_KEY, isNvidia: false };
+  return null;
+}
 
 /**
  * Result of code generation
@@ -120,23 +176,23 @@ export class CodeGeneratorService {
    * Initialize or get the LLM model
    */
   private getModel(options: CodeGenerationOptions = {}): ChatOpenAI {
-    const apiKey = process.env.NVIDIA_API_KEY || process.env.OPENAI_API_KEY;
+    const apiKeyInfo = getApiKey();
     
-    if (!apiKey) {
-      throw new Error('No API key found. Set NVIDIA_API_KEY or OPENAI_API_KEY environment variable.');
+    if (!apiKeyInfo) {
+      throw new Error('No API key found. Set NVIDIA_API_KEY or OPENAI_API_KEY in .env file.');
     }
 
     // Use NVIDIA API by default, fall back to OpenAI
-    const baseUrl = process.env.NVIDIA_API_KEY 
+    const baseUrl = apiKeyInfo.isNvidia 
       ? 'https://integrate.api.nvidia.com/v1'
       : undefined;
 
-    const modelName = process.env.NVIDIA_API_KEY
+    const modelName = apiKeyInfo.isNvidia
       ? 'meta/llama-3.3-70b-instruct'  // Fast, good at code
       : 'gpt-4o-mini';  // OpenAI fallback
 
     return new ChatOpenAI({
-      openAIApiKey: apiKey,
+      openAIApiKey: apiKeyInfo.key,
       modelName,
       temperature: options.temperature ?? 0.1,  // Low temp for deterministic code
       maxTokens: options.maxTokens ?? 2048,
@@ -189,6 +245,52 @@ export class CodeGeneratorService {
         success: false,
         error: err instanceof Error ? err.message : String(err),
         duration: Date.now() - startTime,
+      };
+    }
+  }
+
+  /**
+   * Generate code with streaming - yields tokens as they arrive
+   */
+  async *generateStream(
+    command: string,
+    context?: DOMContext,
+    options: CodeGenerationOptions = {}
+  ): AsyncGenerator<{ type: 'token' | 'done' | 'error'; content: string; code?: string }> {
+    const startTime = Date.now();
+
+    try {
+      const domContext = context ?? await domContextService.getContext().catch(() => null);
+      const userPrompt = this.buildUserPrompt(command, domContext, options);
+      const model = this.getModel(options);
+
+      // Use streaming
+      const stream = await model.stream([
+        new SystemMessage(CODE_GENERATOR_SYSTEM_PROMPT),
+        new HumanMessage(userPrompt),
+      ]);
+
+      let fullContent = '';
+
+      for await (const chunk of stream) {
+        const token = typeof chunk.content === 'string' ? chunk.content : '';
+        if (token) {
+          fullContent += token;
+          yield { type: 'token', content: token };
+        }
+      }
+
+      // Clean and return final code
+      const code = this.cleanCode(fullContent);
+      yield { 
+        type: 'done', 
+        content: '', 
+        code,
+      };
+    } catch (err) {
+      yield { 
+        type: 'error', 
+        content: err instanceof Error ? err.message : String(err) 
       };
     }
   }

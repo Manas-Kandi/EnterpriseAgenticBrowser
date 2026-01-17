@@ -292,6 +292,299 @@ export class CodeExecutorService {
   }
 
   /**
+   * Wait for an element to disappear (e.g., loading spinner)
+   */
+  async waitForElementToDisappear(
+    selector: string,
+    timeout: number = 10000,
+    options: ExecutionOptions = {}
+  ): Promise<ExecutionResult> {
+    const code = `
+      return new Promise((resolve, reject) => {
+        const el = document.querySelector(${JSON.stringify(selector)});
+        if (!el) {
+          resolve({ disappeared: true, wasPresent: false });
+          return;
+        }
+        
+        const observer = new MutationObserver(() => {
+          const el = document.querySelector(${JSON.stringify(selector)});
+          if (!el) {
+            observer.disconnect();
+            resolve({ disappeared: true, wasPresent: true });
+          }
+        });
+        
+        observer.observe(document.body, { childList: true, subtree: true, attributes: true });
+        
+        setTimeout(() => {
+          observer.disconnect();
+          const stillExists = !!document.querySelector(${JSON.stringify(selector)});
+          if (stillExists) {
+            reject(new Error('Timeout waiting for element to disappear: ${selector}'));
+          } else {
+            resolve({ disappeared: true, wasPresent: true });
+          }
+        }, ${timeout});
+      });
+    `;
+    return this.execute(code, { ...options, timeout: timeout + 1000 });
+  }
+
+  /**
+   * Wait for URL to change (SPA navigation)
+   */
+  async waitForURLChange(
+    expectedPattern?: string | RegExp,
+    timeout: number = 10000,
+    options: ExecutionOptions = {}
+  ): Promise<ExecutionResult> {
+    const patternStr = expectedPattern 
+      ? (expectedPattern instanceof RegExp ? expectedPattern.source : expectedPattern)
+      : null;
+    const isRegex = expectedPattern instanceof RegExp;
+    
+    const code = `
+      return new Promise((resolve, reject) => {
+        const initialUrl = window.location.href;
+        const pattern = ${patternStr ? JSON.stringify(patternStr) : 'null'};
+        const isRegex = ${isRegex};
+        
+        const checkUrl = () => {
+          const currentUrl = window.location.href;
+          if (currentUrl !== initialUrl) {
+            if (pattern) {
+              const matches = isRegex 
+                ? new RegExp(pattern).test(currentUrl)
+                : currentUrl.includes(pattern);
+              if (matches) {
+                return { changed: true, from: initialUrl, to: currentUrl, matched: true };
+              }
+            } else {
+              return { changed: true, from: initialUrl, to: currentUrl };
+            }
+          }
+          return null;
+        };
+        
+        // Check immediately
+        const immediate = checkUrl();
+        if (immediate) {
+          resolve(immediate);
+          return;
+        }
+        
+        // Use popstate for history changes
+        const onPopState = () => {
+          const result = checkUrl();
+          if (result) {
+            cleanup();
+            resolve(result);
+          }
+        };
+        
+        // Use MutationObserver for SPA changes that don't trigger popstate
+        const observer = new MutationObserver(() => {
+          const result = checkUrl();
+          if (result) {
+            cleanup();
+            resolve(result);
+          }
+        });
+        
+        const cleanup = () => {
+          window.removeEventListener('popstate', onPopState);
+          observer.disconnect();
+        };
+        
+        window.addEventListener('popstate', onPopState);
+        observer.observe(document.body, { childList: true, subtree: true });
+        
+        // Also poll periodically for pushState changes
+        const pollInterval = setInterval(() => {
+          const result = checkUrl();
+          if (result) {
+            clearInterval(pollInterval);
+            cleanup();
+            resolve(result);
+          }
+        }, 100);
+        
+        setTimeout(() => {
+          clearInterval(pollInterval);
+          cleanup();
+          const currentUrl = window.location.href;
+          if (currentUrl !== initialUrl) {
+            resolve({ changed: true, from: initialUrl, to: currentUrl, timedOut: false });
+          } else {
+            reject(new Error('Timeout waiting for URL change'));
+          }
+        }, ${timeout});
+      });
+    `;
+    return this.execute(code, { ...options, timeout: timeout + 1000 });
+  }
+
+  /**
+   * Wait for DOM to stabilize (no mutations for a period)
+   */
+  async waitForDOMStable(
+    stabilityMs: number = 500,
+    timeout: number = 10000,
+    options: ExecutionOptions = {}
+  ): Promise<ExecutionResult> {
+    const code = `
+      return new Promise((resolve, reject) => {
+        let lastMutationTime = Date.now();
+        let checkInterval;
+        
+        const observer = new MutationObserver(() => {
+          lastMutationTime = Date.now();
+        });
+        
+        observer.observe(document.body, { 
+          childList: true, 
+          subtree: true, 
+          attributes: true,
+          characterData: true 
+        });
+        
+        checkInterval = setInterval(() => {
+          const timeSinceLastMutation = Date.now() - lastMutationTime;
+          if (timeSinceLastMutation >= ${stabilityMs}) {
+            clearInterval(checkInterval);
+            observer.disconnect();
+            resolve({ stable: true, stableFor: timeSinceLastMutation });
+          }
+        }, 100);
+        
+        setTimeout(() => {
+          clearInterval(checkInterval);
+          observer.disconnect();
+          reject(new Error('Timeout waiting for DOM to stabilize'));
+        }, ${timeout});
+      });
+    `;
+    return this.execute(code, { ...options, timeout: timeout + 1000 });
+  }
+
+  /**
+   * Wait for a condition to become true
+   */
+  async waitForCondition(
+    conditionCode: string,
+    timeout: number = 10000,
+    pollInterval: number = 100,
+    options: ExecutionOptions = {}
+  ): Promise<ExecutionResult> {
+    const code = `
+      return new Promise((resolve, reject) => {
+        const checkCondition = () => {
+          try {
+            const result = (function() { ${conditionCode} })();
+            return result;
+          } catch (e) {
+            return false;
+          }
+        };
+        
+        // Check immediately
+        if (checkCondition()) {
+          resolve({ conditionMet: true, immediate: true });
+          return;
+        }
+        
+        const interval = setInterval(() => {
+          if (checkCondition()) {
+            clearInterval(interval);
+            resolve({ conditionMet: true, immediate: false });
+          }
+        }, ${pollInterval});
+        
+        setTimeout(() => {
+          clearInterval(interval);
+          reject(new Error('Timeout waiting for condition'));
+        }, ${timeout});
+      });
+    `;
+    return this.execute(code, { ...options, timeout: timeout + 1000 });
+  }
+
+  /**
+   * Wait for network idle (no pending requests)
+   */
+  async waitForNetworkIdle(
+    idleMs: number = 500,
+    timeout: number = 10000,
+    options: ExecutionOptions = {}
+  ): Promise<ExecutionResult> {
+    const code = `
+      return new Promise((resolve, reject) => {
+        let pendingRequests = 0;
+        let lastActivityTime = Date.now();
+        
+        const originalFetch = window.fetch;
+        const originalXHROpen = XMLHttpRequest.prototype.open;
+        const originalXHRSend = XMLHttpRequest.prototype.send;
+        
+        // Track fetch requests
+        window.fetch = function(...args) {
+          pendingRequests++;
+          lastActivityTime = Date.now();
+          return originalFetch.apply(this, args).finally(() => {
+            pendingRequests--;
+            lastActivityTime = Date.now();
+          });
+        };
+        
+        // Track XHR requests
+        XMLHttpRequest.prototype.open = function(...args) {
+          this.__tracked = true;
+          return originalXHROpen.apply(this, args);
+        };
+        
+        XMLHttpRequest.prototype.send = function(...args) {
+          if (this.__tracked) {
+            pendingRequests++;
+            lastActivityTime = Date.now();
+            this.addEventListener('loadend', () => {
+              pendingRequests--;
+              lastActivityTime = Date.now();
+            });
+          }
+          return originalXHRSend.apply(this, args);
+        };
+        
+        const cleanup = () => {
+          window.fetch = originalFetch;
+          XMLHttpRequest.prototype.open = originalXHROpen;
+          XMLHttpRequest.prototype.send = originalXHRSend;
+        };
+        
+        const checkInterval = setInterval(() => {
+          const timeSinceActivity = Date.now() - lastActivityTime;
+          if (pendingRequests === 0 && timeSinceActivity >= ${idleMs}) {
+            clearInterval(checkInterval);
+            cleanup();
+            resolve({ networkIdle: true, idleFor: timeSinceActivity });
+          }
+        }, 100);
+        
+        setTimeout(() => {
+          clearInterval(checkInterval);
+          cleanup();
+          if (pendingRequests === 0) {
+            resolve({ networkIdle: true, timedOut: true });
+          } else {
+            reject(new Error('Timeout waiting for network idle, ' + pendingRequests + ' requests pending'));
+          }
+        }, ${timeout});
+      });
+    `;
+    return this.execute(code, { ...options, timeout: timeout + 1000 });
+  }
+
+  /**
    * Scroll to an element or position
    */
   async scroll(

@@ -1,8 +1,34 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { cn } from '@/lib/utils';
-import { Terminal, ChevronDown, ChevronRight, Copy, Check, Loader2, Download, Table, FileJson, Play, X, Edit3, Settings } from 'lucide-react';
+import { Terminal, ChevronDown, ChevronRight, Copy, Check, Loader2, Download, Table, FileJson, Play, X, Edit3, Settings, Bell, Trash2, RefreshCw, Pause } from 'lucide-react';
 import { formatResult, exportAsCSV, exportAsJSON, FormattedResult } from '@/lib/resultFormatter';
 import { useBrowserStore } from '@/lib/store';
+
+// Monitor type
+interface PageMonitor {
+  id: string;
+  name: string;
+  url: string;
+  description: string;
+  intervalMs: number;
+  active: boolean;
+  triggered: boolean;
+  lastCheckedAt?: number;
+  triggeredAt?: number;
+}
+
+// Script type
+interface SavedScript {
+  id: string;
+  name: string;
+  command: string;
+  code: string;
+  urlPattern?: string;
+  tags: string[];
+  createdAt: number;
+  lastUsedAt?: number;
+  useCount: number;
+}
 
 // Terminal output entry types
 type OutputType = 'command' | 'code' | 'result' | 'error' | 'info';
@@ -37,6 +63,14 @@ export function TerminalPanel() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [pendingCode, setPendingCode] = useState<PendingCode | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [showMonitors, setShowMonitors] = useState(false);
+  const [monitors, setMonitors] = useState<PageMonitor[]>([]);
+  const [showScripts, setShowScripts] = useState(false);
+  const [scripts, setScripts] = useState<SavedScript[]>([]);
+  const [lastSuccessfulExecution, setLastSuccessfulExecution] = useState<{ command: string; code: string } | null>(null);
+  const [showSavePrompt, setShowSavePrompt] = useState(false);
+  const [streamingCode, setStreamingCode] = useState<string>('');
+  const [isStreaming, setIsStreaming] = useState(false);
   
   const { terminalConfirmBeforeExecution, setTerminalConfirmBeforeExecution } = useBrowserStore();
   
@@ -119,6 +153,98 @@ export function TerminalPanel() {
     setEntries(prev => [...prev, entry]);
     return entry.id;
   }, []);
+
+  // Load monitors and listen for trigger events
+  const loadMonitors = useCallback(async () => {
+    const allMonitors = await window.monitor?.getAll();
+    if (allMonitors) {
+      setMonitors(allMonitors);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadMonitors();
+    const off = window.monitor?.onTriggered?.((data) => {
+      const mon = data.monitor as PageMonitor;
+      addEntry('info', `🔔 Monitor triggered: ${mon.name} - ${mon.description}`);
+      loadMonitors();
+    });
+    return () => off?.();
+  }, [loadMonitors, addEntry]);
+
+  // Listen for streaming tokens
+  useEffect(() => {
+    const off = window.terminal?.onStreamToken?.((token) => {
+      if (token.type === 'token') {
+        setStreamingCode(prev => prev + token.content);
+      } else if (token.type === 'done') {
+        setIsStreaming(false);
+      } else if (token.type === 'error' || token.type === 'cancelled') {
+        setIsStreaming(false);
+        if (token.type === 'error') {
+          addEntry('error', token.content);
+        }
+      }
+    });
+    return () => off?.();
+  }, [addEntry]);
+
+  // Load scripts
+  const loadScripts = useCallback(async () => {
+    const allScripts = await window.scripts?.getAll();
+    if (allScripts) {
+      setScripts(allScripts);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadScripts();
+  }, [loadScripts]);
+
+  // Save script handler
+  const handleSaveScript = useCallback(async (name?: string) => {
+    if (!lastSuccessfulExecution) return;
+    
+    const scriptName = name || await window.scripts?.generateName(lastSuccessfulExecution.command);
+    const currentUrl = await window.terminal?.evaluate('window.location.href');
+    const urlPattern = currentUrl?.result ? new URL(String(currentUrl.result)).hostname : undefined;
+    
+    await window.scripts?.save({
+      name: scriptName || 'Untitled Script',
+      command: lastSuccessfulExecution.command,
+      code: lastSuccessfulExecution.code,
+      urlPattern,
+    });
+    
+    addEntry('info', `📁 Script saved: ${scriptName}`);
+    setShowSavePrompt(false);
+    setLastSuccessfulExecution(null);
+    loadScripts();
+  }, [lastSuccessfulExecution, addEntry, loadScripts]);
+
+  // Run a saved script
+  const runScript = useCallback(async (script: SavedScript) => {
+    addEntry('command', `[Script: ${script.name}] ${script.command}`);
+    addEntry('code', script.code);
+    setIsExecuting(true);
+    
+    try {
+      const result = await window.terminal?.executeCode(script.code);
+      await window.scripts?.recordUsage(script.id);
+      
+      if (result?.success) {
+        const formatted = formatResult(result.result);
+        addEntry('result', formatted.display, result.result);
+      } else {
+        addEntry('error', result?.error || 'Execution failed');
+      }
+    } catch (err) {
+      addEntry('error', err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsExecuting(false);
+      loadScripts();
+    }
+  }, [addEntry, loadScripts]);
 
   const toggleCollapse = useCallback((id: string) => {
     setEntries(prev => prev.map(e => 
@@ -253,6 +379,11 @@ export function TerminalPanel() {
       if (result.success) {
         const formatted = formatResult(result.result);
         addEntry('result', formatted.display, result.result);
+        // Track successful execution for save prompt
+        if (result.code) {
+          setLastSuccessfulExecution({ command, code: result.code });
+          setShowSavePrompt(true);
+        }
       } else {
         const errorMsg = result.stack || result.error || 'Unknown error';
         addEntry('error', errorMsg);
@@ -265,6 +396,46 @@ export function TerminalPanel() {
       inputRef.current?.focus();
     }
   }, [input, isExecuting, pendingCode, terminalConfirmBeforeExecution, addEntry]);
+
+  // Cancel current execution
+  const cancelExecution = useCallback(async () => {
+    if (isStreaming) {
+      await window.terminal?.cancelStream();
+      setIsStreaming(false);
+      setStreamingCode('');
+      addEntry('info', 'Generation cancelled');
+    }
+    if (isExecuting) {
+      setIsExecuting(false);
+      addEntry('info', 'Execution cancelled');
+    }
+    if (pendingCode) {
+      setPendingCode(null);
+      addEntry('info', 'Cancelled');
+    }
+  }, [isStreaming, isExecuting, pendingCode, addEntry]);
+
+  // Tab autocomplete from script library
+  const handleTabComplete = useCallback(async () => {
+    if (!input.trim()) return false;
+    
+    const matches = scripts.filter(s => 
+      s.name.toLowerCase().startsWith(input.toLowerCase()) ||
+      s.command.toLowerCase().startsWith(input.toLowerCase())
+    );
+    
+    if (matches.length === 1) {
+      // Single match - run it
+      runScript(matches[0]);
+      setInput('');
+      return true;
+    } else if (matches.length > 1) {
+      // Multiple matches - show them
+      addEntry('info', `Matching scripts: ${matches.map(s => s.name).join(', ')}`);
+      return true;
+    }
+    return false;
+  }, [input, scripts, runScript, addEntry]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
     // Ctrl+Enter: Submit and bypass confirmation
@@ -285,6 +456,20 @@ export function TerminalPanel() {
     if (e.ctrlKey && e.key === 'l') {
       e.preventDefault();
       clearTerminal();
+      return;
+    }
+
+    // Ctrl+C: Cancel current execution
+    if (e.ctrlKey && e.key === 'c') {
+      e.preventDefault();
+      cancelExecution();
+      return;
+    }
+
+    // Tab: Autocomplete from script library
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      handleTabComplete();
       return;
     }
 
@@ -312,14 +497,18 @@ export function TerminalPanel() {
       return;
     }
 
-    // Escape: Clear input
+    // Escape: Clear input or cancel pending
     if (e.key === 'Escape') {
       e.preventDefault();
-      setInput('');
-      setHistoryIndex(-1);
+      if (pendingCode || isStreaming || isExecuting) {
+        cancelExecution();
+      } else {
+        setInput('');
+        setHistoryIndex(-1);
+      }
       return;
     }
-  }, [handleSubmit, clearTerminal, commandHistory, historyIndex]);
+  }, [handleSubmit, clearTerminal, cancelExecution, handleTabComplete, commandHistory, historyIndex, pendingCode, isStreaming, isExecuting]);
 
   const renderEntry = (entry: TerminalEntry) => {
     switch (entry.type) {
@@ -449,7 +638,27 @@ export function TerminalPanel() {
           {terminalConfirmBeforeExecution ? 'Ctrl+Enter to run directly' : 'Ctrl+L to clear'}
         </span>
         <button
-          onClick={() => setShowSettings(!showSettings)}
+          onClick={() => { setShowScripts(!showScripts); setShowMonitors(false); setShowSettings(false); }}
+          className={cn(
+            "p-1 rounded hover:bg-secondary transition-colors",
+            showScripts && "bg-secondary"
+          )}
+          title="Scripts Library"
+        >
+          <FileJson className={cn("w-3.5 h-3.5", scripts.length > 0 ? "text-blue-400" : "text-muted-foreground")} />
+        </button>
+        <button
+          onClick={() => { setShowMonitors(!showMonitors); setShowScripts(false); setShowSettings(false); }}
+          className={cn(
+            "p-1 rounded hover:bg-secondary transition-colors",
+            showMonitors && "bg-secondary"
+          )}
+          title="Monitors"
+        >
+          <Bell className={cn("w-3.5 h-3.5", monitors.some(m => m.triggered) ? "text-amber-400" : "text-muted-foreground")} />
+        </button>
+        <button
+          onClick={() => { setShowSettings(!showSettings); setShowScripts(false); setShowMonitors(false); }}
           className={cn(
             "p-1 rounded hover:bg-secondary transition-colors",
             showSettings && "bg-secondary"
@@ -476,6 +685,128 @@ export function TerminalPanel() {
         </div>
       )}
 
+      {/* Scripts Panel */}
+      {showScripts && (
+        <div className="px-3 py-2 border-b border-border/30 bg-secondary/10 max-h-48 overflow-y-auto">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-medium">Saved Scripts</span>
+            <button
+              onClick={loadScripts}
+              className="p-1 rounded hover:bg-secondary transition-colors"
+              title="Refresh"
+            >
+              <RefreshCw className="w-3 h-3 text-muted-foreground" />
+            </button>
+          </div>
+          {scripts.length === 0 ? (
+            <p className="text-xs text-muted-foreground">No saved scripts. Run a command and click "Save" to add one.</p>
+          ) : (
+            <div className="space-y-2">
+              {scripts.map((script) => (
+                <div key={script.id} className="flex items-center gap-2 p-2 rounded text-xs bg-secondary/30">
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium truncate">{script.name}</div>
+                    <div className="text-muted-foreground truncate">{script.command}</div>
+                    <div className="text-muted-foreground/70 text-[10px]">
+                      {script.urlPattern && `🌐 ${script.urlPattern}`}
+                      {script.useCount > 0 && ` • Used ${script.useCount}x`}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => runScript(script)}
+                      disabled={isExecuting}
+                      className="p-1 rounded hover:bg-secondary text-green-400 disabled:opacity-50"
+                      title="Run Script"
+                    >
+                      <Play className="w-3 h-3" />
+                    </button>
+                    <button
+                      onClick={async () => { await window.scripts?.delete(script.id); loadScripts(); }}
+                      className="p-1 rounded hover:bg-secondary text-red-400"
+                      title="Delete"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Monitors Panel */}
+      {showMonitors && (
+        <div className="px-3 py-2 border-b border-border/30 bg-secondary/10 max-h-48 overflow-y-auto">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-medium">Active Monitors</span>
+            <button
+              onClick={loadMonitors}
+              className="p-1 rounded hover:bg-secondary transition-colors"
+              title="Refresh"
+            >
+              <RefreshCw className="w-3 h-3 text-muted-foreground" />
+            </button>
+          </div>
+          {monitors.length === 0 ? (
+            <p className="text-xs text-muted-foreground">No monitors. Use "monitor" commands to create one.</p>
+          ) : (
+            <div className="space-y-2">
+              {monitors.map((mon) => (
+                <div key={mon.id} className={cn(
+                  "flex items-center gap-2 p-2 rounded text-xs",
+                  mon.triggered ? "bg-amber-500/10 border border-amber-500/30" : "bg-secondary/30"
+                )}>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium truncate">{mon.name}</div>
+                    <div className="text-muted-foreground truncate">{mon.description}</div>
+                    <div className="text-muted-foreground/70 text-[10px]">
+                      {mon.triggered ? '🔔 Triggered' : mon.active ? '👁 Watching' : '⏸ Paused'}
+                      {mon.lastCheckedAt && ` • Last: ${new Date(mon.lastCheckedAt).toLocaleTimeString()}`}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    {mon.triggered ? (
+                      <button
+                        onClick={async () => { await window.monitor?.reset(mon.id); loadMonitors(); }}
+                        className="p-1 rounded hover:bg-secondary"
+                        title="Reset & Resume"
+                      >
+                        <RefreshCw className="w-3 h-3" />
+                      </button>
+                    ) : mon.active ? (
+                      <button
+                        onClick={async () => { await window.monitor?.pause(mon.id); loadMonitors(); }}
+                        className="p-1 rounded hover:bg-secondary"
+                        title="Pause"
+                      >
+                        <Pause className="w-3 h-3" />
+                      </button>
+                    ) : (
+                      <button
+                        onClick={async () => { await window.monitor?.resume(mon.id); loadMonitors(); }}
+                        className="p-1 rounded hover:bg-secondary"
+                        title="Resume"
+                      >
+                        <Play className="w-3 h-3" />
+                      </button>
+                    )}
+                    <button
+                      onClick={async () => { await window.monitor?.delete(mon.id); loadMonitors(); }}
+                      className="p-1 rounded hover:bg-secondary text-red-400"
+                      title="Delete"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Output Area */}
       <div
         ref={outputRef}
@@ -496,7 +827,7 @@ export function TerminalPanel() {
         {entries.map(renderEntry)}
         
         {/* Executing indicator */}
-        {isExecuting && !pendingCode && (
+        {isExecuting && !pendingCode && !isStreaming && (
           <div className="flex flex-col gap-1">
             <div className="flex items-center gap-2 text-muted-foreground">
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -515,6 +846,55 @@ export function TerminalPanel() {
                 {retryInfo.error.length > 100 ? retryInfo.error.slice(0, 100) + '...' : retryInfo.error}
               </div>
             )}
+          </div>
+        )}
+
+        {/* Streaming code display */}
+        {isStreaming && streamingCode && (
+          <div className="mt-2 mb-2 rounded border border-green-500/30 bg-green-500/5">
+            <div className="flex items-center justify-between px-3 py-2 border-b border-green-500/20">
+              <div className="flex items-center gap-2">
+                <Loader2 className="w-3 h-3 animate-spin text-green-400" />
+                <span className="text-xs text-green-400 font-medium">Generating code...</span>
+              </div>
+              <button
+                onClick={async () => {
+                  await window.terminal?.cancelStream();
+                  setIsStreaming(false);
+                  setStreamingCode('');
+                  addEntry('info', 'Code generation cancelled');
+                }}
+                className="px-2 py-1 text-xs rounded bg-red-600/20 hover:bg-red-600/30 text-red-400 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+            <pre className="p-3 text-xs overflow-x-auto max-h-64 overflow-y-auto">
+              <code className="text-green-300/90">{streamingCode}<span className="animate-pulse">▌</span></code>
+            </pre>
+          </div>
+        )}
+
+        {/* Save Script Prompt */}
+        {showSavePrompt && lastSuccessfulExecution && (
+          <div className="mt-2 mb-2 rounded border border-blue-500/30 bg-blue-500/5 p-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-blue-400">💾 Save this script for reuse?</span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handleSaveScript()}
+                  className="px-2 py-1 text-xs rounded bg-blue-600 hover:bg-blue-500 text-white transition-colors"
+                >
+                  Save
+                </button>
+                <button
+                  onClick={() => { setShowSavePrompt(false); setLastSuccessfulExecution(null); }}
+                  className="px-2 py-1 text-xs rounded bg-secondary hover:bg-secondary/80 text-foreground transition-colors"
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
           </div>
         )}
 

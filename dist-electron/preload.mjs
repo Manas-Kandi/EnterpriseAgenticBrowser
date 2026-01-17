@@ -139,3 +139,67 @@ electron.contextBridge.exposeInMainWorld("session", {
 electron.contextBridge.exposeInMainWorld("benchmark", {
   runSuite: (filter) => electron.ipcRenderer.invoke("benchmark:runSuite", filter)
 });
+electron.contextBridge.exposeInMainWorld("terminal", {
+  getContext: () => electron.ipcRenderer.invoke("terminal:getContext"),
+  getMinimalContext: () => electron.ipcRenderer.invoke("terminal:getMinimalContext"),
+  executeCode: (code, options) => electron.ipcRenderer.invoke("terminal:executeCode", code, options),
+  evaluate: (expression) => electron.ipcRenderer.invoke("terminal:evaluate", expression),
+  queryDOM: (selector) => electron.ipcRenderer.invoke("terminal:queryDOM", selector),
+  click: (selector) => electron.ipcRenderer.invoke("terminal:click", selector),
+  type: (selector, text) => electron.ipcRenderer.invoke("terminal:type", selector, text),
+  waitForElementToDisappear: (selector, timeout) => electron.ipcRenderer.invoke("terminal:waitForElementToDisappear", selector, timeout),
+  waitForURLChange: (pattern, timeout) => electron.ipcRenderer.invoke("terminal:waitForURLChange", pattern, timeout),
+  waitForDOMStable: (stabilityMs, timeout) => electron.ipcRenderer.invoke("terminal:waitForDOMStable", stabilityMs, timeout),
+  waitForCondition: (conditionCode, timeout, pollInterval) => electron.ipcRenderer.invoke("terminal:waitForCondition", conditionCode, timeout, pollInterval),
+  waitForNetworkIdle: (idleMs, timeout) => electron.ipcRenderer.invoke("terminal:waitForNetworkIdle", idleMs, timeout),
+  generateCode: (command, options) => electron.ipcRenderer.invoke("terminal:generateCode", command, options),
+  generateCodeStream: (command) => electron.ipcRenderer.invoke("terminal:generateCodeStream", command),
+  cancelStream: () => electron.ipcRenderer.invoke("terminal:cancelStream"),
+  onStreamToken: (callback) => {
+    const listener = (_, token) => callback(token);
+    electron.ipcRenderer.on("terminal:streamToken", listener);
+    return () => electron.ipcRenderer.off("terminal:streamToken", listener);
+  },
+  generateCodeWithRetry: (command, previousCode, error) => electron.ipcRenderer.invoke("terminal:generateCodeWithRetry", command, previousCode, error),
+  generateMultiStepPlan: (command) => electron.ipcRenderer.invoke("terminal:generateMultiStepPlan", command),
+  executeMultiStepPlan: (plan) => electron.ipcRenderer.invoke("terminal:executeMultiStepPlan", plan),
+  isMultiStepCommand: (command) => electron.ipcRenderer.invoke("terminal:isMultiStepCommand", command),
+  run: (command, options) => electron.ipcRenderer.invoke("terminal:run", command, options),
+  onStep: (callback) => {
+    const listener = (_, step) => callback(step);
+    electron.ipcRenderer.on("terminal:step", listener);
+    return () => electron.ipcRenderer.off("terminal:step", listener);
+  }
+});
+electron.contextBridge.exposeInMainWorld("telemetry", {
+  getTerminalLogs: (limit) => electron.ipcRenderer.invoke("telemetry:getTerminalLogs", limit),
+  getTerminalStats: () => electron.ipcRenderer.invoke("telemetry:getTerminalStats"),
+  exportTerminalLogs: (outputPath) => electron.ipcRenderer.invoke("telemetry:exportTerminalLogs", outputPath),
+  clearTerminalLogs: () => electron.ipcRenderer.invoke("telemetry:clearTerminalLogs")
+});
+electron.contextBridge.exposeInMainWorld("scripts", {
+  save: (config) => electron.ipcRenderer.invoke("scripts:save", config),
+  getAll: () => electron.ipcRenderer.invoke("scripts:getAll"),
+  get: (id) => electron.ipcRenderer.invoke("scripts:get", id),
+  update: (id, updates) => electron.ipcRenderer.invoke("scripts:update", id, updates),
+  delete: (id) => electron.ipcRenderer.invoke("scripts:delete", id),
+  recordUsage: (id) => electron.ipcRenderer.invoke("scripts:recordUsage", id),
+  suggestForUrl: (url) => electron.ipcRenderer.invoke("scripts:suggestForUrl", url),
+  search: (query) => electron.ipcRenderer.invoke("scripts:search", query),
+  generateName: (command) => electron.ipcRenderer.invoke("scripts:generateName", command)
+});
+electron.contextBridge.exposeInMainWorld("monitor", {
+  create: (config) => electron.ipcRenderer.invoke("monitor:create", config),
+  getAll: () => electron.ipcRenderer.invoke("monitor:getAll"),
+  get: (id) => electron.ipcRenderer.invoke("monitor:get", id),
+  pause: (id) => electron.ipcRenderer.invoke("monitor:pause", id),
+  resume: (id) => electron.ipcRenderer.invoke("monitor:resume", id),
+  delete: (id) => electron.ipcRenderer.invoke("monitor:delete", id),
+  reset: (id) => electron.ipcRenderer.invoke("monitor:reset", id),
+  check: (id) => electron.ipcRenderer.invoke("monitor:check", id),
+  onTriggered: (callback) => {
+    const listener = (_, data) => callback(data);
+    electron.ipcRenderer.on("monitor:triggered", listener);
+    return () => electron.ipcRenderer.off("monitor:triggered", listener);
+  }
+});

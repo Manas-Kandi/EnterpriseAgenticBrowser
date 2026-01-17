@@ -9,7 +9,7 @@ import { useEffect, useState } from 'react';
 import { useBrowserStore } from '@/lib/store';
 
 function App() {
-  const { addTab, addTabInBackground, removeTab, updateTab, activeTabId, appMode, setAppMode, tabsLayout, llmSettings, setUser, tabs } = useBrowserStore();
+  const { addTab, addTabInBackground, removeTab, updateTab, activeTabId, appMode, setAppMode, tabsLayout, llmSettings, setUser, tabs, activeSidebarPanel, setSidebarPanel } = useBrowserStore();
   const [sessionRestored, setSessionRestored] = useState<{ lastSessionTime: number; tabCount: number } | null>(null);
 
   useEffect(() => {
@@ -31,11 +31,27 @@ function App() {
         e.preventDefault();
         if (activeTabId) updateTab(activeTabId, { action: 'reload' });
       }
+
+      // Ctrl+` or F12: Toggle terminal
+      if ((e.ctrlKey && e.key === '`') || e.key === 'F12') {
+        e.preventDefault();
+        setSidebarPanel(activeSidebarPanel === 'terminal' ? null : 'terminal');
+      }
+
+      // Escape: Close terminal (when open and not focused on input)
+      if (e.key === 'Escape' && activeSidebarPanel === 'terminal') {
+        const activeEl = document.activeElement;
+        const isInputFocused = activeEl?.tagName === 'INPUT' || activeEl?.tagName === 'TEXTAREA';
+        if (!isInputFocused) {
+          e.preventDefault();
+          setSidebarPanel(null);
+        }
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [addTab, removeTab, updateTab, activeTabId]);
+  }, [addTab, removeTab, updateTab, activeTabId, activeSidebarPanel, setSidebarPanel]);
 
   useEffect(() => {
     if (!window.agent?.setLlmConfig) return;

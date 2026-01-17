@@ -39,150 +39,172 @@ export interface DOMContext {
 }
 
 /**
- * JavaScript code to inject into the page for DOM extraction.
- * This runs in the page context, not Node.js.
+ * Optimized JavaScript code for fast, token-efficient DOM extraction.
+ * Target: <100ms execution, <2000 tokens output for most pages.
  */
 const DOM_EXTRACTION_SCRIPT = `
 (function() {
-  const MAX_TEXT_LENGTH = 100;
-  const MAX_ELEMENTS = 500;
-  const MAX_DEPTH = 10;
+  const startTime = performance.now();
   
-  function truncateText(text, maxLen = MAX_TEXT_LENGTH) {
-    if (!text) return undefined;
-    const cleaned = text.trim().replace(/\\s+/g, ' ');
-    if (cleaned.length <= maxLen) return cleaned || undefined;
-    return cleaned.slice(0, maxLen) + '...';
-  }
+  // Aggressive limits for token efficiency
+  const MAX_TEXT = 60;
+  const MAX_BUTTONS = 20;
+  const MAX_LINKS = 30;
+  const MAX_INPUTS = 20;
+  const MAX_SELECTS = 10;
+  const MAX_CONTENT = 50;
   
+  // Viewport bounds for visibility check
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  
+  // Fast visibility check (avoid getComputedStyle when possible)
   function isVisible(el) {
-    if (!el || el.nodeType !== 1) return false;
-    const style = window.getComputedStyle(el);
-    if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
-    const rect = el.getBoundingClientRect();
-    if (rect.width === 0 && rect.height === 0) return false;
+    if (!el || el.offsetParent === null) return false;
+    const r = el.getBoundingClientRect();
+    // Skip zero-size and off-screen elements
+    if (r.width === 0 || r.height === 0) return false;
+    // Skip elements far off-screen (allow some buffer)
+    if (r.bottom < -100 || r.top > vh + 500 || r.right < -100 || r.left > vw + 100) return false;
     return true;
   }
   
-  function extractElement(el, depth = 0) {
-    if (!el || depth > MAX_DEPTH) return null;
+  // Fast text extraction with aggressive truncation
+  function getText(el) {
+    if (!el) return undefined;
+    // Prefer aria-label or title for buttons/links
+    const label = el.getAttribute('aria-label') || el.title;
+    if (label) return label.slice(0, MAX_TEXT).trim() || undefined;
+    // Get innerText (faster than traversing childNodes)
+    const t = (el.innerText || el.textContent || '').trim().replace(/\\s+/g, ' ');
+    return t ? t.slice(0, MAX_TEXT) : undefined;
+  }
+  
+  // Compact element extraction - only essential attributes
+  function extract(el) {
+    const tag = el.tagName.toLowerCase();
+    const r = { t: tag };
     
-    const tag = el.tagName?.toLowerCase();
-    if (!tag) return null;
+    // Priority: data-testid > id > name (for selectors)
+    const testId = el.getAttribute('data-testid');
+    if (testId) { r.d = testId; }
+    else if (el.id) { r.i = el.id; }
+    else if (el.name) { r.n = el.name; }
     
-    // Skip script, style, svg internals, etc.
-    if (['script', 'style', 'noscript', 'svg', 'path', 'meta', 'link', 'head'].includes(tag)) {
-      return null;
+    // Text content
+    const text = getText(el);
+    if (text) r.x = text;
+    
+    // Type-specific attributes
+    if (tag === 'a' && el.href) {
+      // Shorten URLs - just path for same-origin
+      try {
+        const u = new URL(el.href);
+        r.h = u.origin === location.origin ? u.pathname + u.search : el.href;
+      } catch { r.h = el.href; }
     }
-    
-    const result = { tag };
-    
-    if (el.id) result.id = el.id;
-    if (el.className && typeof el.className === 'string') {
-      const classes = el.className.split(' ').filter(c => c.trim()).slice(0, 5);
-      if (classes.length > 0) result.classes = classes;
+    if (tag === 'input') {
+      if (el.type && el.type !== 'text') r.y = el.type;
+      if (el.placeholder) r.p = el.placeholder.slice(0, 30);
     }
+    if (el.getAttribute('role')) r.r = el.getAttribute('role');
     
-    // Get text content (direct text only, not children)
-    const directText = Array.from(el.childNodes)
-      .filter(n => n.nodeType === 3)
-      .map(n => n.textContent)
-      .join(' ');
-    const text = truncateText(directText);
-    if (text) result.text = text;
-    
-    // Common attributes
-    if (el.href) result.href = el.href;
-    if (el.src) result.src = el.src;
-    if (el.type) result.type = el.type;
-    if (el.name) result.name = el.name;
-    if (el.placeholder) result.placeholder = el.placeholder;
-    if (el.value && ['input', 'select', 'textarea'].includes(tag)) {
-      result.value = truncateText(el.value, 50);
+    return r;
+  }
+  
+  // Deduplicate similar elements (e.g., repeated list items)
+  function dedupeByText(elements) {
+    const seen = new Set();
+    const result = [];
+    for (const el of elements) {
+      const key = el.x || el.d || el.i || '';
+      if (key && seen.has(key)) continue;
+      if (key) seen.add(key);
+      result.push(el);
     }
-    if (el.getAttribute('role')) result.role = el.getAttribute('role');
-    if (el.getAttribute('aria-label')) result.ariaLabel = el.getAttribute('aria-label');
-    if (el.getAttribute('data-testid')) result.dataTestId = el.getAttribute('data-testid');
-    
     return result;
   }
   
-  function collectInteractiveElements() {
-    const buttons = [];
-    const links = [];
-    const inputs = [];
-    const selects = [];
+  // Collect interactive elements with priority scoring
+  function collectInteractive() {
+    const buttons = [], links = [], inputs = [], selects = [];
     
-    // Buttons
-    document.querySelectorAll('button, [role="button"], input[type="submit"], input[type="button"]').forEach(el => {
-      if (isVisible(el) && buttons.length < 50) {
-        const extracted = extractElement(el);
-        if (extracted) buttons.push(extracted);
-      }
-    });
+    // Buttons - prioritize visible, with text
+    for (const el of document.querySelectorAll('button, [role="button"], input[type="submit"], input[type="button"]')) {
+      if (buttons.length >= MAX_BUTTONS) break;
+      if (!isVisible(el)) continue;
+      const e = extract(el);
+      if (e.x || e.d || e.i) buttons.push(e);
+    }
     
-    // Links
-    document.querySelectorAll('a[href]').forEach(el => {
-      if (isVisible(el) && links.length < 100) {
-        const extracted = extractElement(el);
-        if (extracted) links.push(extracted);
-      }
-    });
+    // Links - prioritize navigation, skip repetitive
+    const linkSet = new Set();
+    for (const el of document.querySelectorAll('a[href]')) {
+      if (links.length >= MAX_LINKS) break;
+      if (!isVisible(el)) continue;
+      // Skip duplicate hrefs
+      if (linkSet.has(el.href)) continue;
+      linkSet.add(el.href);
+      const e = extract(el);
+      if (e.x || e.d || e.i) links.push(e);
+    }
     
-    // Inputs
-    document.querySelectorAll('input, textarea').forEach(el => {
-      if (isVisible(el) && inputs.length < 50) {
-        const extracted = extractElement(el);
-        if (extracted) inputs.push(extracted);
-      }
-    });
+    // Inputs - all visible
+    for (const el of document.querySelectorAll('input:not([type="hidden"]), textarea')) {
+      if (inputs.length >= MAX_INPUTS) break;
+      if (!isVisible(el)) continue;
+      inputs.push(extract(el));
+    }
     
     // Selects
-    document.querySelectorAll('select').forEach(el => {
-      if (isVisible(el) && selects.length < 20) {
-        const extracted = extractElement(el);
-        if (extracted) selects.push(extracted);
-      }
-    });
+    for (const el of document.querySelectorAll('select')) {
+      if (selects.length >= MAX_SELECTS) break;
+      if (!isVisible(el)) continue;
+      selects.push(extract(el));
+    }
     
-    return { buttons, links, inputs, selects };
+    return { b: buttons, l: links, i: inputs, s: selects };
   }
   
-  function collectMainContent() {
+  // Collect important content areas (headings, key text)
+  function collectContent() {
     const content = [];
-    const mainEl = document.querySelector('main, [role="main"], article, .content, #content');
-    const target = mainEl || document.body;
     
-    // Get significant elements from main content area
-    const significantTags = ['h1', 'h2', 'h3', 'h4', 'p', 'li', 'td', 'th', 'span', 'div'];
+    // Find main content area
+    const main = document.querySelector('main, [role="main"], article, #content, .content, #main');
+    const scope = main || document.body;
     
-    target.querySelectorAll(significantTags.join(',')).forEach(el => {
-      if (content.length >= MAX_ELEMENTS) return;
-      if (!isVisible(el)) return;
-      
-      const extracted = extractElement(el);
-      if (extracted && (extracted.text || extracted.id || extracted.dataTestId)) {
-        content.push(extracted);
-      }
-    });
+    // Headings are high priority
+    for (const el of scope.querySelectorAll('h1, h2, h3')) {
+      if (content.length >= 10) break;
+      if (!isVisible(el)) continue;
+      const e = extract(el);
+      if (e.x) content.push(e);
+    }
     
-    return content;
+    // Key content indicators
+    for (const el of scope.querySelectorAll('[data-testid], [role="listitem"], .product, .item, .card, .result')) {
+      if (content.length >= MAX_CONTENT) break;
+      if (!isVisible(el)) continue;
+      const e = extract(el);
+      if (e.x || e.d) content.push(e);
+    }
+    
+    return dedupeByText(content);
   }
   
-  // Main extraction
-  const interactiveElements = collectInteractiveElements();
-  const mainContent = collectMainContent();
-  
-  // Get meta description
+  // Build result
+  const ie = collectInteractive();
+  const mc = collectContent();
   const metaDesc = document.querySelector('meta[name="description"]');
   
   const result = {
-    url: window.location.href,
-    title: document.title || '',
-    metaDescription: metaDesc ? metaDesc.getAttribute('content') : undefined,
-    interactiveElements,
-    mainContent: mainContent.slice(0, 200), // Limit main content
-    truncated: mainContent.length > 200
+    u: location.href,
+    t: document.title || '',
+    m: metaDesc ? metaDesc.getAttribute('content')?.slice(0, 150) : undefined,
+    ie,
+    mc,
+    _ms: Math.round(performance.now() - startTime)
   };
   
   return result;
@@ -190,11 +212,64 @@ const DOM_EXTRACTION_SCRIPT = `
 `;
 
 /**
+ * Compact result from the optimized extraction script
+ */
+interface CompactResult {
+  u: string;  // url
+  t: string;  // title
+  m?: string; // meta description
+  ie: {
+    b: Array<{ t: string; d?: string; i?: string; n?: string; x?: string; r?: string }>;  // buttons
+    l: Array<{ t: string; d?: string; i?: string; n?: string; x?: string; h?: string }>;  // links
+    i: Array<{ t: string; d?: string; i?: string; n?: string; x?: string; y?: string; p?: string }>; // inputs
+    s: Array<{ t: string; d?: string; i?: string; n?: string; x?: string }>;  // selects
+  };
+  mc: Array<{ t: string; d?: string; i?: string; x?: string }>;  // main content
+  _ms: number; // extraction time in ms
+}
+
+/**
  * Service for extracting DOM context from the active browser tab
  */
 export class DOMContextService {
-  private static readonly MAX_TOKENS = 8000;
-  private static readonly CHARS_PER_TOKEN = 4; // Rough estimate
+  private static readonly MAX_TOKENS = 2000;  // Reduced target
+  private static readonly CHARS_PER_TOKEN = 4;
+
+  /**
+   * Expand compact element to full DOMElement
+   */
+  private expandElement(compact: { t: string; d?: string; i?: string; n?: string; x?: string; h?: string; y?: string; p?: string; r?: string }): DOMElement {
+    const el: DOMElement = { tag: compact.t };
+    if (compact.d) el.dataTestId = compact.d;
+    if (compact.i) el.id = compact.i;
+    if (compact.n) el.name = compact.n;
+    if (compact.x) el.text = compact.x;
+    if (compact.h) el.href = compact.h;
+    if (compact.y) el.type = compact.y;
+    if (compact.p) el.placeholder = compact.p;
+    if (compact.r) el.role = compact.r;
+    return el;
+  }
+
+  /**
+   * Expand compact result to full DOMContext
+   */
+  private expandResult(compact: CompactResult): DOMContext {
+    return {
+      url: compact.u,
+      title: compact.t,
+      metaDescription: compact.m,
+      interactiveElements: {
+        buttons: compact.ie.b.map(e => this.expandElement(e)),
+        links: compact.ie.l.map(e => this.expandElement(e)),
+        inputs: compact.ie.i.map(e => this.expandElement(e)),
+        selects: compact.ie.s.map(e => this.expandElement(e)),
+      },
+      mainContent: compact.mc.map(e => this.expandElement(e)),
+      tokenEstimate: 0,
+      truncated: false,
+    };
+  }
 
   /**
    * Extract DOM context from the active webview
@@ -209,18 +284,21 @@ export class DOMContextService {
     }
 
     try {
-      const rawResult = await wc.executeJavaScript(DOM_EXTRACTION_SCRIPT);
+      const compactResult = await wc.executeJavaScript(DOM_EXTRACTION_SCRIPT) as CompactResult;
       
-      // Estimate token count
-      const jsonStr = JSON.stringify(rawResult);
-      const tokenEstimate = Math.ceil(jsonStr.length / DOMContextService.CHARS_PER_TOKEN);
+      // Log extraction time for performance monitoring
+      console.log(`[DOMContext] Extracted in ${compactResult._ms}ms`);
       
-      // Truncate if needed
-      let result = rawResult as DOMContext;
-      result.tokenEstimate = tokenEstimate;
+      // Expand to full format
+      const result = this.expandResult(compactResult);
       
-      if (tokenEstimate > DOMContextService.MAX_TOKENS) {
-        result = this.truncateContext(result);
+      // Estimate token count from compact JSON (what we'd send to LLM)
+      const jsonStr = JSON.stringify(compactResult);
+      result.tokenEstimate = Math.ceil(jsonStr.length / DOMContextService.CHARS_PER_TOKEN);
+      
+      // Further truncate if still over limit
+      if (result.tokenEstimate > DOMContextService.MAX_TOKENS) {
+        return this.truncateContext(result);
       }
       
       return result;

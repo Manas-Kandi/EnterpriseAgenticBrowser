@@ -18,10 +18,25 @@ export type TelemetryEvent = {
     | 'approval_request'
     | 'approval_decision'
     | 'policy_evaluation'
+    | 'terminal_execution'
     | 'error';
   name?: string;
   data?: Record<string, unknown>;
 };
+
+export interface TerminalExecutionLog {
+  id: string;
+  timestamp: number;
+  command: string;
+  code: string;
+  success: boolean;
+  result?: unknown;
+  error?: string;
+  duration: number;
+  contextHash?: string;
+  url?: string;
+  retryCount?: number;
+}
 
 export class TelemetryService {
   private baseDir: string | null = null;
@@ -85,6 +100,89 @@ export class TelemetryService {
     
     await fs.writeFile(outputPath, JSON.stringify(trajectories, null, 2));
     return trajectories.length;
+  }
+
+  // Terminal execution telemetry
+  private terminalLogFile(): string {
+    return path.join(this.getBaseDir(), 'terminal-executions.jsonl');
+  }
+
+  async logTerminalExecution(log: TerminalExecutionLog): Promise<void> {
+    await this.ensureDir();
+    await fs.appendFile(this.terminalLogFile(), JSON.stringify(log) + '\n', 'utf8');
+    
+    // Also emit as a telemetry event
+    await this.emit({
+      eventId: log.id,
+      ts: new Date(log.timestamp).toISOString(),
+      type: 'terminal_execution',
+      data: {
+        command: log.command,
+        success: log.success,
+        duration: log.duration,
+        error: log.error,
+        url: log.url,
+      },
+    });
+  }
+
+  async getTerminalLogs(limit: number = 100): Promise<TerminalExecutionLog[]> {
+    await this.ensureDir();
+    try {
+      const content = await fs.readFile(this.terminalLogFile(), 'utf8');
+      const logs = content.trim().split('\n')
+        .map(line => {
+          try { return JSON.parse(line) as TerminalExecutionLog; } catch { return null; }
+        })
+        .filter((e): e is TerminalExecutionLog => e !== null);
+      
+      // Return most recent first
+      return logs.reverse().slice(0, limit);
+    } catch {
+      return [];
+    }
+  }
+
+  async getTerminalStats(): Promise<{
+    total: number;
+    successful: number;
+    failed: number;
+    avgDuration: number;
+    recentErrors: string[];
+  }> {
+    const logs = await this.getTerminalLogs(1000);
+    const successful = logs.filter(l => l.success).length;
+    const failed = logs.filter(l => !l.success).length;
+    const avgDuration = logs.length > 0 
+      ? logs.reduce((sum, l) => sum + l.duration, 0) / logs.length 
+      : 0;
+    const recentErrors = logs
+      .filter(l => !l.success && l.error)
+      .slice(0, 5)
+      .map(l => l.error!);
+
+    return {
+      total: logs.length,
+      successful,
+      failed,
+      avgDuration: Math.round(avgDuration),
+      recentErrors,
+    };
+  }
+
+  async exportTerminalLogs(outputPath: string): Promise<number> {
+    const logs = await this.getTerminalLogs(10000);
+    await fs.writeFile(outputPath, JSON.stringify(logs, null, 2));
+    return logs.length;
+  }
+
+  async clearTerminalLogs(): Promise<void> {
+    await this.ensureDir();
+    try {
+      await fs.unlink(this.terminalLogFile());
+    } catch {
+      // File doesn't exist, that's fine
+    }
   }
 }
 

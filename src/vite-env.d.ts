@@ -140,6 +140,11 @@ interface Window {
     queryDOM: (selector: string) => Promise<{ success: boolean; result?: unknown; error?: string; duration: number }>;
     click: (selector: string) => Promise<{ success: boolean; result?: unknown; error?: string; duration: number }>;
     type: (selector: string, text: string) => Promise<{ success: boolean; result?: unknown; error?: string; duration: number }>;
+    waitForElementToDisappear: (selector: string, timeout?: number) => Promise<{ success: boolean; result?: unknown; error?: string; duration: number }>;
+    waitForURLChange: (pattern?: string, timeout?: number) => Promise<{ success: boolean; result?: unknown; error?: string; duration: number }>;
+    waitForDOMStable: (stabilityMs?: number, timeout?: number) => Promise<{ success: boolean; result?: unknown; error?: string; duration: number }>;
+    waitForCondition: (conditionCode: string, timeout?: number, pollInterval?: number) => Promise<{ success: boolean; result?: unknown; error?: string; duration: number }>;
+    waitForNetworkIdle: (idleMs?: number, timeout?: number) => Promise<{ success: boolean; result?: unknown; error?: string; duration: number }>;
     generateCode: (command: string, options?: { includeExplanation?: boolean }) => Promise<{
       success: boolean;
       code?: string;
@@ -147,6 +152,9 @@ interface Window {
       tokensUsed?: number;
       duration: number;
     }>;
+    generateCodeStream: (command: string) => Promise<{ started: boolean }>;
+    cancelStream: () => Promise<{ cancelled: boolean }>;
+    onStreamToken: (callback: (token: { type: string; content: string; code?: string }) => void) => () => void;
     generateCodeWithRetry: (command: string, previousCode: string, error: string) => Promise<{
       success: boolean;
       code?: string;
@@ -193,5 +201,94 @@ interface Window {
       errorHistory?: string[];
     }>;
     onStep: (callback: (step: { phase: string; status: string; data?: unknown; error?: string }) => void) => () => void;
+  }
+
+  telemetry: {
+    getTerminalLogs: (limit?: number) => Promise<Array<{
+      id: string;
+      timestamp: number;
+      command: string;
+      code: string;
+      success: boolean;
+      result?: unknown;
+      error?: string;
+      duration: number;
+      contextHash?: string;
+      url?: string;
+      retryCount?: number;
+    }>>;
+    getTerminalStats: () => Promise<{
+      total: number;
+      successful: number;
+      failed: number;
+      avgDuration: number;
+      recentErrors: string[];
+    }>;
+    exportTerminalLogs: (outputPath: string) => Promise<number>;
+    clearTerminalLogs: () => Promise<void>;
+  }
+
+  scripts: {
+    save: (config: { name: string; command: string; code: string; urlPattern?: string; tags?: string[]; description?: string }) => Promise<{
+      id: string;
+      name: string;
+      command: string;
+      code: string;
+      urlPattern?: string;
+      tags: string[];
+      createdAt: number;
+      useCount: number;
+    }>;
+    getAll: () => Promise<Array<{
+      id: string;
+      name: string;
+      command: string;
+      code: string;
+      urlPattern?: string;
+      tags: string[];
+      createdAt: number;
+      lastUsedAt?: number;
+      useCount: number;
+      description?: string;
+    }>>;
+    get: (id: string) => Promise<unknown>;
+    update: (id: string, updates: Record<string, unknown>) => Promise<unknown>;
+    delete: (id: string) => Promise<boolean>;
+    recordUsage: (id: string) => Promise<void>;
+    suggestForUrl: (url: string) => Promise<Array<{ id: string; name: string; command: string; code: string; urlPattern?: string }>>;
+    search: (query: string) => Promise<Array<{ id: string; name: string; command: string; code: string }>>;
+    generateName: (command: string) => Promise<string>;
+  }
+
+  monitor: {
+    create: (config: { name: string; url: string; tabId?: string; checkCode: string; description: string; intervalMs?: number }) => Promise<{
+      id: string;
+      name: string;
+      url: string;
+      checkCode: string;
+      description: string;
+      intervalMs: number;
+      createdAt: number;
+      active: boolean;
+      triggered: boolean;
+    }>;
+    getAll: () => Promise<Array<{
+      id: string;
+      name: string;
+      url: string;
+      description: string;
+      intervalMs: number;
+      active: boolean;
+      triggered: boolean;
+      lastCheckedAt?: number;
+      triggeredAt?: number;
+    }>>;
+    get: (id: string) => Promise<unknown>;
+    pause: (id: string) => Promise<boolean>;
+    resume: (id: string) => Promise<boolean>;
+    delete: (id: string) => Promise<boolean>;
+    reset: (id: string) => Promise<boolean>;
+    check: (id: string) => Promise<{ monitorId: string; triggered: boolean; result: unknown; error?: string; checkedAt: number } | null>;
+    onTriggered: (callback: (data: { monitor: unknown; result: unknown }) => void) => () => void;
   }
 }
