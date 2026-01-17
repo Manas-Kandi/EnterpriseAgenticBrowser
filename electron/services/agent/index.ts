@@ -7,6 +7,9 @@
  * - DataPipeline: Data normalization, validation, and transformation
  * - TabOrchestrator: Multi-tab parallel browsing
  * - AgentMemory: Long-term memory and pattern learning
+ * - WorkflowEngine: Structured workflows with loops, conditionals, branching
+ * - ErrorRecovery: Adaptive error handling with fallback strategies
+ * - IntegrationLayer: External system integrations (webhooks, exports, notifications)
  */
 
 export { ParallelExecutor, parallelExecutor } from './ParallelExecutor';
@@ -23,3 +26,12 @@ export type { TabInfo, TabTask, TabAction, TabResult, OrchestratorOptions } from
 
 export { AgentMemory, agentMemory } from './AgentMemory';
 export type { SelectorPattern, ActionSequence, ErrorPattern, SiteLearning, MemoryEntry } from './AgentMemory';
+
+export { WorkflowEngine, workflowEngine, createWorkflow, WorkflowTemplates } from './WorkflowEngine';
+export type { Workflow, WorkflowStep, WorkflowResult, StepAction } from './WorkflowEngine';
+
+export { ErrorRecovery, errorRecovery } from './ErrorRecovery';
+export type { RecoveryContext, RecoveryResult, RecoveryStrategy } from './ErrorRecovery';
+
+export { IntegrationLayer, integrationLayer } from './IntegrationLayer';
+export type { WebhookConfig, ExportConfig, NotificationConfig, IntegrationResult } from './IntegrationLayer';

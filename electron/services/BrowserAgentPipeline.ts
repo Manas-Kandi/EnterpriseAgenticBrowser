@@ -10,6 +10,9 @@ import { stateManager, TaskState } from './agent/StateManager';
 import { agentMemory } from './agent/AgentMemory';
 import { tabOrchestrator, TabTask } from './agent/TabOrchestrator';
 import { DataPipeline } from './agent/DataPipeline';
+import { errorRecovery } from './agent/ErrorRecovery';
+import { integrationLayer } from './agent/IntegrationLayer';
+import { workflowEngine, createWorkflow, WorkflowStep } from './agent/WorkflowEngine';
 
 // Get NVIDIA API key
 function getApiKey(): string | null {
@@ -231,6 +234,73 @@ export class BrowserAgentPipeline {
   }
 
   /**
+   * Run a structured workflow
+   */
+  async runWorkflow(
+    name: string,
+    description: string,
+    steps: WorkflowStep[],
+    variables: Record<string, unknown> = {}
+  ) {
+    const workflow = createWorkflow(name, description, steps, variables);
+    return workflowEngine.execute(workflow);
+  }
+
+  /**
+   * Export extracted data to file
+   */
+  async exportData(data: unknown, format: 'json' | 'csv' | 'txt' = 'json', filename?: string) {
+    return integrationLayer.exportToFile(data, { format, filename, pretty: true });
+  }
+
+  /**
+   * Send data to webhook
+   */
+  async sendToWebhook(data: unknown, webhookUrl: string) {
+    return integrationLayer.sendWebhook(data, { url: webhookUrl, includeTimestamp: true });
+  }
+
+  /**
+   * Show desktop notification
+   */
+  async notify(title: string, body: string) {
+    return integrationLayer.showNotification({ title, body });
+  }
+
+  /**
+   * Attempt error recovery for a failed action
+   */
+  private async attemptRecovery(
+    action: string,
+    selector: string | undefined,
+    code: string | undefined,
+    error: Error,
+    domain: string
+  ) {
+    return errorRecovery.recover({
+      action,
+      selector,
+      code,
+      error,
+      attemptCount: 1,
+      domain,
+    });
+  }
+
+  /**
+   * Get current page domain
+   */
+  private async getCurrentDomain(): Promise<string> {
+    try {
+      const target = browserTargetService.getActiveWebContents();
+      const url = target.getURL();
+      return new URL(url).hostname;
+    } catch {
+      return 'unknown';
+    }
+  }
+
+  /**
    * Main pipeline execution
    */
   async runPipeline(query: string): Promise<string> {
@@ -301,8 +371,16 @@ export class BrowserAgentPipeline {
                 output += `✅ ${step.description}\n`;
                 execResults.push({ success: true, data: result.result });
               } else {
-                output += `❌ ${step.description}: Element not found\n`;
-                execResults.push({ success: false, data: null, error: 'Element not found' });
+                // Attempt error recovery
+                const domain = await this.getCurrentDomain();
+                const recovery = await this.attemptRecovery('click', selector, clickCode, new Error('Element not found'), domain);
+                if (recovery.success) {
+                  output += `✅ ${step.description} (recovered)\n`;
+                  execResults.push({ success: true, data: recovery.data });
+                } else {
+                  output += `❌ ${step.description}: Element not found\n`;
+                  execResults.push({ success: false, data: null, error: 'Element not found' });
+                }
               }
               await new Promise(r => setTimeout(r, 1000)); // Wait after click
               continue;

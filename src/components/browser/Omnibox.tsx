@@ -68,6 +68,7 @@ export function Omnibox({ className }: OmniboxProps) {
       icon: intent.icon,
       title: intent.label,
       subtitle: action.url || action.agentCommand,
+      url: action.url, // Include URL for navigation/search actions
       action: action.action,
     });
 

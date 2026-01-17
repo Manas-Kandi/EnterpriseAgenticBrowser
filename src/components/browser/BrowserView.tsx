@@ -7,9 +7,9 @@ function WebViewInstance({ tab, active }: { tab: BrowserTab; active: boolean }) 
   const webviewRef = useRef<any>(null);
   const registeredRef = useRef(false);
   const domReadyRef = useRef(false);
-  const initialUrlRef = useRef(tab.url); // Track initial URL to prevent reload loops
   const lastNavigatedUrlRef = useRef(tab.url); // Track last URL we navigated to
   const latestTabRef = useRef(tab);
+  const wasNewTabRef = useRef(!tab.url || tab.url === 'about:blank' || tab.url === 'about:newtab');
 
   // Keep a fresh reference to the tab state for event listeners
   useEffect(() => {
@@ -18,6 +18,17 @@ function WebViewInstance({ tab, active }: { tab: BrowserTab; active: boolean }) 
 
   // Check if this is a "New Tab" page
   const isNewTab = !tab.url || tab.url === 'about:blank' || tab.url === 'about:newtab';
+
+  // Reset registration when transitioning from new tab to real URL
+  // This ensures event listeners get attached to the new webview
+  if (wasNewTabRef.current && !isNewTab) {
+    registeredRef.current = false;
+    domReadyRef.current = false;
+    lastNavigatedUrlRef.current = tab.url;
+    wasNewTabRef.current = false;
+  } else if (isNewTab && !wasNewTabRef.current) {
+    wasNewTabRef.current = true;
+  }
 
   // Handle programmatic URL changes (from address bar, etc.)
   useEffect(() => {
@@ -206,7 +217,7 @@ function WebViewInstance({ tab, active }: { tab: BrowserTab; active: boolean }) 
 
   return (
     <webview
-      src={initialUrlRef.current}
+      src={tab.url}
       className={`absolute inset-0 w-full h-full bg-background ${active ? 'flex' : 'hidden'}`}
       // @ts-ignore
       allowpopups="true"

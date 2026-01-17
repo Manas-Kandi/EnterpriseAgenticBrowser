@@ -859,6 +859,52 @@ app.whenReady().then(async () => {
     }
   });
 
+  // Complex multi-URL task execution
+  ipcMain.handle('terminal:complex-task', async (event, { query, urls, extractionCode }: { query: string; urls: string[]; extractionCode: string }) => {
+    const { browserAgentPipeline } = await import('./services/BrowserAgentPipeline');
+    event.sender.send('terminal:step', { phase: 'complex-task', status: 'running', message: `Processing ${urls.length} URLs...` });
+    
+    try {
+      const result = await browserAgentPipeline.runComplexTask(query, urls, extractionCode);
+      event.sender.send('terminal:step', { phase: 'complex-task', status: 'done' });
+      return { success: true, ...result };
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      event.sender.send('terminal:step', { phase: 'complex-task', status: 'error', error: errorMsg });
+      return { success: false, error: errorMsg };
+    }
+  });
+
+  // Export data to file
+  ipcMain.handle('terminal:export', async (_event, { data, format, filename }: { data: unknown; format: 'json' | 'csv' | 'txt'; filename?: string }) => {
+    const { browserAgentPipeline } = await import('./services/BrowserAgentPipeline');
+    return browserAgentPipeline.exportData(data, format, filename);
+  });
+
+  // Send to webhook
+  ipcMain.handle('terminal:webhook', async (_event, { data, url }: { data: unknown; url: string }) => {
+    const { browserAgentPipeline } = await import('./services/BrowserAgentPipeline');
+    return browserAgentPipeline.sendToWebhook(data, url);
+  });
+
+  // Show notification
+  ipcMain.handle('terminal:notify', async (_event, { title, body }: { title: string; body: string }) => {
+    const { browserAgentPipeline } = await import('./services/BrowserAgentPipeline');
+    return browserAgentPipeline.notify(title, body);
+  });
+
+  // Get task progress
+  ipcMain.handle('terminal:task-progress', async (_event, taskId: string) => {
+    const { browserAgentPipeline } = await import('./services/BrowserAgentPipeline');
+    return browserAgentPipeline.getTaskProgress(taskId);
+  });
+
+  // Resume task from checkpoint
+  ipcMain.handle('terminal:resume-task', async (_event, taskId: string) => {
+    const { browserAgentPipeline } = await import('./services/BrowserAgentPipeline');
+    return browserAgentPipeline.resumeTask(taskId);
+  });
+
   // Terminal: Full end-to-end pipeline
   ipcMain.handle('terminal:run', async (event, command: string, options?: { autoRetry?: boolean; maxRetries?: number }) => {
     const startTime = Date.now();
