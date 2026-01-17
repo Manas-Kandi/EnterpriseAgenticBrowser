@@ -175,4 +175,8 @@ contextBridge.exposeInMainWorld('terminal', {
   queryDOM: (selector: string) => ipcRenderer.invoke('terminal:queryDOM', selector),
   click: (selector: string) => ipcRenderer.invoke('terminal:click', selector),
   type: (selector: string, text: string) => ipcRenderer.invoke('terminal:type', selector, text),
+  generateCode: (command: string, options?: { includeExplanation?: boolean }) =>
+    ipcRenderer.invoke('terminal:generateCode', command, options),
+  generateCodeWithRetry: (command: string, previousCode: string, error: string) =>
+    ipcRenderer.invoke('terminal:generateCodeWithRetry', command, previousCode, error),
 })

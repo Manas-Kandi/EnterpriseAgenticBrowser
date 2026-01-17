@@ -140,5 +140,19 @@ interface Window {
     queryDOM: (selector: string) => Promise<{ success: boolean; result?: unknown; error?: string; duration: number }>;
     click: (selector: string) => Promise<{ success: boolean; result?: unknown; error?: string; duration: number }>;
     type: (selector: string, text: string) => Promise<{ success: boolean; result?: unknown; error?: string; duration: number }>;
+    generateCode: (command: string, options?: { includeExplanation?: boolean }) => Promise<{
+      success: boolean;
+      code?: string;
+      error?: string;
+      tokensUsed?: number;
+      duration: number;
+    }>;
+    generateCodeWithRetry: (command: string, previousCode: string, error: string) => Promise<{
+      success: boolean;
+      code?: string;
+      error?: string;
+      tokensUsed?: number;
+      duration: number;
+    }>;
   }
 }

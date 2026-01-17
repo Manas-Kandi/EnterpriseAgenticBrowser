@@ -629,6 +629,16 @@ app.whenReady().then(async () => {
     return codeExecutorService.type(selector, text);
   });
 
+  ipcMain.handle('terminal:generateCode', async (_, command: string, options?: { includeExplanation?: boolean }) => {
+    const { codeGeneratorService } = await import('./services/CodeGeneratorService');
+    return codeGeneratorService.generate(command, undefined, options);
+  });
+
+  ipcMain.handle('terminal:generateCodeWithRetry', async (_, command: string, previousCode: string, error: string) => {
+    const { codeGeneratorService } = await import('./services/CodeGeneratorService');
+    return codeGeneratorService.generateWithRetry(command, previousCode, error);
+  });
+
   // Agent IPC Handlers
   ipcMain.handle('agent:get-saved-plans', async () => {
   return planMemory.getPlans();
