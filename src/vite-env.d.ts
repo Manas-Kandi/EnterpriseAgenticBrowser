@@ -154,13 +154,15 @@ interface Window {
       tokensUsed?: number;
       duration: number;
     }>;
-    run: (command: string, options?: { autoRetry?: boolean }) => Promise<{
+    run: (command: string, options?: { autoRetry?: boolean; maxRetries?: number }) => Promise<{
       success: boolean;
       code?: string;
       result?: unknown;
       error?: string;
       stack?: string;
       duration: number;
+      retryCount?: number;
+      errorHistory?: string[];
     }>;
     onStep: (callback: (step: { phase: string; status: string; data?: unknown; error?: string }) => void) => () => void;
   }

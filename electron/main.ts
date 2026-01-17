@@ -640,8 +640,9 @@ app.whenReady().then(async () => {
   });
 
   // Terminal: Full end-to-end pipeline
-  ipcMain.handle('terminal:run', async (event, command: string, options?: { autoRetry?: boolean }) => {
+  ipcMain.handle('terminal:run', async (event, command: string, options?: { autoRetry?: boolean; maxRetries?: number }) => {
     const startTime = Date.now();
+    const maxRetries = options?.maxRetries ?? 2;
     const { domContextService } = await import('./services/DOMContextService');
     const { codeGeneratorService } = await import('./services/CodeGeneratorService');
     const { codeExecutorService } = await import('./services/CodeExecutorService');
@@ -659,6 +660,7 @@ app.whenReady().then(async () => {
         success: false,
         error: `Failed to get page context: ${errorMsg}`,
         duration: Date.now() - startTime,
+        retryCount: 0,
       };
     }
 
@@ -679,35 +681,66 @@ app.whenReady().then(async () => {
         success: false,
         error: `Failed to generate code: ${errorMsg}`,
         duration: Date.now() - startTime,
+        retryCount: 0,
       };
     }
 
-    // Step 3: Execute code
+    // Step 3: Execute code with retry loop
     event.sender.send('terminal:step', { phase: 'execute', status: 'running' });
     let execResult = await codeExecutorService.execute(generatedCode);
+    let retryCount = 0;
+    const errorHistory: string[] = [];
 
-    // Step 4: Auto-retry on error if enabled
-    if (!execResult.success && options?.autoRetry !== false) {
-      event.sender.send('terminal:step', { phase: 'retry', status: 'running', data: { error: execResult.error } });
+    // Auto-retry loop (up to maxRetries attempts)
+    while (!execResult.success && options?.autoRetry !== false && retryCount < maxRetries) {
+      retryCount++;
+      const currentError = execResult.error || 'Unknown error';
+      errorHistory.push(currentError);
+      
+      event.sender.send('terminal:step', { 
+        phase: 'retry', 
+        status: 'running', 
+        data: { 
+          error: currentError, 
+          attempt: retryCount, 
+          maxRetries,
+          analysis: `Attempt ${retryCount}/${maxRetries}: Analyzing error and generating fix...`
+        } 
+      });
       
       const retryResult = await codeGeneratorService.generateWithRetry(
         command,
         generatedCode,
-        execResult.error || 'Unknown error',
+        currentError,
         context
       );
 
       if (retryResult.success && retryResult.code) {
-        event.sender.send('terminal:step', { phase: 'codegen', status: 'done', data: { code: retryResult.code, isRetry: true } });
-        execResult = await codeExecutorService.execute(retryResult.code);
         generatedCode = retryResult.code;
+        event.sender.send('terminal:step', { 
+          phase: 'codegen', 
+          status: 'done', 
+          data: { code: retryResult.code, isRetry: true, attempt: retryCount } 
+        });
+        
+        event.sender.send('terminal:step', { phase: 'execute', status: 'running' });
+        execResult = await codeExecutorService.execute(retryResult.code);
+      } else {
+        // Code generation failed, stop retrying
+        event.sender.send('terminal:step', { 
+          phase: 'retry', 
+          status: 'error', 
+          data: { attempt: retryCount },
+          error: retryResult.error || 'Failed to generate fix'
+        });
+        break;
       }
     }
 
     event.sender.send('terminal:step', { 
       phase: 'execute', 
       status: execResult.success ? 'done' : 'error',
-      data: execResult.success ? { result: execResult.result } : undefined,
+      data: execResult.success ? { result: execResult.result } : { errorHistory },
       error: execResult.error
     });
 
@@ -718,6 +751,8 @@ app.whenReady().then(async () => {
       error: execResult.error,
       stack: execResult.stack,
       duration: Date.now() - startTime,
+      retryCount,
+      errorHistory: execResult.success ? undefined : errorHistory,
     };
   });
 

@@ -84,9 +84,24 @@ export function TerminalPanel() {
 
   // Listen for step events from the pipeline
   const [currentPhase, setCurrentPhase] = useState<string | null>(null);
+  const [retryInfo, setRetryInfo] = useState<{ attempt: number; maxRetries: number; error: string } | null>(null);
   useEffect(() => {
     const off = window.terminal?.onStep?.((step) => {
       setCurrentPhase(step.status === 'running' ? step.phase : null);
+      
+      // Track retry information
+      if (step.phase === 'retry' && step.status === 'running') {
+        const data = step.data as { attempt?: number; maxRetries?: number; error?: string } | undefined;
+        if (data) {
+          setRetryInfo({
+            attempt: data.attempt ?? 1,
+            maxRetries: data.maxRetries ?? 2,
+            error: data.error ?? 'Unknown error',
+          });
+        }
+      } else if (step.phase === 'execute' && step.status !== 'running') {
+        setRetryInfo(null);
+      }
     });
     return () => off?.();
   }, []);
@@ -482,15 +497,24 @@ export function TerminalPanel() {
         
         {/* Executing indicator */}
         {isExecuting && !pendingCode && (
-          <div className="flex items-center gap-2 text-muted-foreground">
-            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            <span className="text-xs">
-              {currentPhase === 'context' && 'Analyzing page...'}
-              {currentPhase === 'codegen' && 'Generating code...'}
-              {currentPhase === 'execute' && 'Executing...'}
-              {currentPhase === 'retry' && 'Retrying with fix...'}
-              {!currentPhase && 'Processing...'}
-            </span>
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              <span className="text-xs">
+                {currentPhase === 'context' && 'Analyzing page...'}
+                {currentPhase === 'codegen' && 'Generating code...'}
+                {currentPhase === 'execute' && 'Executing...'}
+                {currentPhase === 'retry' && `Retry ${retryInfo?.attempt ?? 1}/${retryInfo?.maxRetries ?? 2}: Analyzing error...`}
+                {!currentPhase && 'Processing...'}
+              </span>
+            </div>
+            {/* Show error being analyzed during retry */}
+            {retryInfo && (
+              <div className="ml-5 text-xs text-red-400/70 bg-red-500/5 rounded px-2 py-1 border-l-2 border-red-500/30">
+                <span className="text-muted-foreground">Error: </span>
+                {retryInfo.error.length > 100 ? retryInfo.error.slice(0, 100) + '...' : retryInfo.error}
+              </div>
+            )}
           </div>
         )}
 
