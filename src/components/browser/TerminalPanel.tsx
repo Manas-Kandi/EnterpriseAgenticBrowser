@@ -65,6 +65,15 @@ export function TerminalPanel() {
     inputRef.current?.focus();
   }, []);
 
+  // Listen for step events from the pipeline
+  const [currentPhase, setCurrentPhase] = useState<string | null>(null);
+  useEffect(() => {
+    const off = window.terminal?.onStep?.((step) => {
+      setCurrentPhase(step.status === 'running' ? step.phase : null);
+    });
+    return () => off?.();
+  }, []);
+
   const addEntry = useCallback((type: OutputType, content: string) => {
     const entry: TerminalEntry = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
@@ -113,34 +122,30 @@ export function TerminalPanel() {
     setInput('');
     setIsExecuting(true);
 
-    // TODO: Wire to actual execution pipeline
-    // For now, mock the execution flow
     try {
-      // Simulate AI thinking
-      await new Promise(r => setTimeout(r, 500));
+      // Call the real pipeline
+      const result = await window.terminal?.run(command);
       
-      // Mock generated code
-      const mockCode = `// AI-generated code for: "${command}"
-const elements = document.querySelectorAll('a');
-const links = Array.from(elements).map(el => ({
-  text: el.textContent?.trim() || '',
-  href: el.href
-}));
-return links.filter(l => l.text && l.href);`;
-      
-      addEntry('code', mockCode);
-      
-      // Simulate execution
-      await new Promise(r => setTimeout(r, 300));
-      
-      // Mock result
-      const mockResult = JSON.stringify([
-        { text: 'Home', href: 'https://example.com/' },
-        { text: 'About', href: 'https://example.com/about' },
-        { text: 'Contact', href: 'https://example.com/contact' },
-      ], null, 2);
-      
-      addEntry('result', mockResult);
+      if (!result) {
+        addEntry('error', 'Terminal API not available');
+        return;
+      }
+
+      // Show generated code
+      if (result.code) {
+        addEntry('code', result.code);
+      }
+
+      // Show result or error
+      if (result.success) {
+        const resultStr = typeof result.result === 'string' 
+          ? result.result 
+          : JSON.stringify(result.result, null, 2);
+        addEntry('result', resultStr || '(no output)');
+      } else {
+        const errorMsg = result.stack || result.error || 'Unknown error';
+        addEntry('error', errorMsg);
+      }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       addEntry('error', `Execution failed: ${errorMessage}`);
@@ -315,7 +320,13 @@ return links.filter(l => l.text && l.href);`;
         {isExecuting && (
           <div className="flex items-center gap-2 text-muted-foreground">
             <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            <span className="text-xs">Analyzing page and generating code...</span>
+            <span className="text-xs">
+              {currentPhase === 'context' && 'Analyzing page...'}
+              {currentPhase === 'codegen' && 'Generating code...'}
+              {currentPhase === 'execute' && 'Executing...'}
+              {currentPhase === 'retry' && 'Retrying with fix...'}
+              {!currentPhase && 'Processing...'}
+            </span>
           </div>
         )}
       </div>

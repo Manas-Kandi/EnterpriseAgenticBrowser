@@ -639,6 +639,88 @@ app.whenReady().then(async () => {
     return codeGeneratorService.generateWithRetry(command, previousCode, error);
   });
 
+  // Terminal: Full end-to-end pipeline
+  ipcMain.handle('terminal:run', async (event, command: string, options?: { autoRetry?: boolean }) => {
+    const startTime = Date.now();
+    const { domContextService } = await import('./services/DOMContextService');
+    const { codeGeneratorService } = await import('./services/CodeGeneratorService');
+    const { codeExecutorService } = await import('./services/CodeExecutorService');
+
+    // Step 1: Get DOM context
+    let context;
+    try {
+      event.sender.send('terminal:step', { phase: 'context', status: 'running' });
+      context = await domContextService.getContext();
+      event.sender.send('terminal:step', { phase: 'context', status: 'done', data: { url: context.url, title: context.title } });
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      event.sender.send('terminal:step', { phase: 'context', status: 'error', error: errorMsg });
+      return {
+        success: false,
+        error: `Failed to get page context: ${errorMsg}`,
+        duration: Date.now() - startTime,
+      };
+    }
+
+    // Step 2: Generate code
+    let generatedCode: string;
+    try {
+      event.sender.send('terminal:step', { phase: 'codegen', status: 'running' });
+      const codeResult = await codeGeneratorService.generate(command, context);
+      if (!codeResult.success || !codeResult.code) {
+        throw new Error(codeResult.error || 'Code generation failed');
+      }
+      generatedCode = codeResult.code;
+      event.sender.send('terminal:step', { phase: 'codegen', status: 'done', data: { code: generatedCode } });
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      event.sender.send('terminal:step', { phase: 'codegen', status: 'error', error: errorMsg });
+      return {
+        success: false,
+        error: `Failed to generate code: ${errorMsg}`,
+        duration: Date.now() - startTime,
+      };
+    }
+
+    // Step 3: Execute code
+    event.sender.send('terminal:step', { phase: 'execute', status: 'running' });
+    let execResult = await codeExecutorService.execute(generatedCode);
+
+    // Step 4: Auto-retry on error if enabled
+    if (!execResult.success && options?.autoRetry !== false) {
+      event.sender.send('terminal:step', { phase: 'retry', status: 'running', data: { error: execResult.error } });
+      
+      const retryResult = await codeGeneratorService.generateWithRetry(
+        command,
+        generatedCode,
+        execResult.error || 'Unknown error',
+        context
+      );
+
+      if (retryResult.success && retryResult.code) {
+        event.sender.send('terminal:step', { phase: 'codegen', status: 'done', data: { code: retryResult.code, isRetry: true } });
+        execResult = await codeExecutorService.execute(retryResult.code);
+        generatedCode = retryResult.code;
+      }
+    }
+
+    event.sender.send('terminal:step', { 
+      phase: 'execute', 
+      status: execResult.success ? 'done' : 'error',
+      data: execResult.success ? { result: execResult.result } : undefined,
+      error: execResult.error
+    });
+
+    return {
+      success: execResult.success,
+      code: generatedCode,
+      result: execResult.result,
+      error: execResult.error,
+      stack: execResult.stack,
+      duration: Date.now() - startTime,
+    };
+  });
+
   // Agent IPC Handlers
   ipcMain.handle('agent:get-saved-plans', async () => {
   return planMemory.getPlans();

@@ -154,5 +154,14 @@ interface Window {
       tokensUsed?: number;
       duration: number;
     }>;
+    run: (command: string, options?: { autoRetry?: boolean }) => Promise<{
+      success: boolean;
+      code?: string;
+      result?: unknown;
+      error?: string;
+      stack?: string;
+      duration: number;
+    }>;
+    onStep: (callback: (step: { phase: string; status: string; data?: unknown; error?: string }) => void) => () => void;
   }
 }

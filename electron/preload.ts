@@ -179,4 +179,11 @@ contextBridge.exposeInMainWorld('terminal', {
     ipcRenderer.invoke('terminal:generateCode', command, options),
   generateCodeWithRetry: (command: string, previousCode: string, error: string) =>
     ipcRenderer.invoke('terminal:generateCodeWithRetry', command, previousCode, error),
+  run: (command: string, options?: { autoRetry?: boolean }) =>
+    ipcRenderer.invoke('terminal:run', command, options),
+  onStep: (callback: (step: { phase: string; status: string; data?: unknown; error?: string }) => void) => {
+    const listener = (_: unknown, step: { phase: string; status: string; data?: unknown; error?: string }) => callback(step);
+    ipcRenderer.on('terminal:step', listener);
+    return () => ipcRenderer.off('terminal:step', listener);
+  },
 })
