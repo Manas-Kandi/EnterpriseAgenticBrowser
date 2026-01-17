@@ -520,6 +520,24 @@ Intent: ${reasoning.intent}
 - Use robust selectors (text content, aria-label, data-* attributes)
 - NEVER tell user to do something manually - YOU do it
 
+## Known Selectors for Common Sites
+
+### GitHub
+- Repositories tab: \`a[data-tab-item="repositories"]\` or \`nav a:contains("Repositories")\`
+- Repository list items: \`#user-repositories-list li\` or \`div[data-filterable-for="your-repos-filter"] li\`
+- Repository names: \`#user-repositories-list h3 a\` or \`a[itemprop="name codeRepository"]\`
+- Stars count: \`a[href$="/stargazers"] span\`
+
+### Google
+- Search input: \`input[name="q"]\` or \`textarea[name="q"]\`
+- Search results: \`div.g\` or \`div[data-sokoban-container]\`
+
+### Amazon
+- Search input: \`#twotabsearchtextbox\`
+- Product items: \`div[data-component-type="s-search-result"]\`
+- Product title: \`h2 a span\`
+- Price: \`span.a-price span.a-offscreen\`
+
 Respond with JSON:
 {
   "explanation": "Brief approach (1 sentence)",
