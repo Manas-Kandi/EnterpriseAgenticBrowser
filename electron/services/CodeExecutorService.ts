@@ -314,6 +314,173 @@ export class CodeExecutorService {
       return this.execute(code, options);
     }
   }
+
+  /**
+   * Wait for navigation to complete
+   */
+  async waitForNavigation(timeout: number = 10000, options: ExecutionOptions = {}): Promise<ExecutionResult> {
+    const wc = options.tabId
+      ? browserTargetService.getWebContents(options.tabId)
+      : browserTargetService.getActiveWebContents();
+
+    if (!wc || wc.isDestroyed()) {
+      return {
+        success: false,
+        error: 'No active webview available',
+        duration: 0,
+      };
+    }
+
+    const startTime = Date.now();
+
+    return new Promise((resolve) => {
+      let resolved = false;
+
+      const cleanup = () => {
+        if (!resolved) {
+          resolved = true;
+          wc.removeListener('did-finish-load', onLoad);
+          wc.removeListener('did-fail-load', onFail);
+        }
+      };
+
+      const onLoad = () => {
+        cleanup();
+        resolve({
+          success: true,
+          result: { navigated: true, url: wc.getURL() },
+          duration: Date.now() - startTime,
+        });
+      };
+
+      const onFail = (_: unknown, errorCode: number, errorDescription: string) => {
+        // Ignore aborted loads (user navigated away)
+        if (errorCode === -3) return;
+        cleanup();
+        resolve({
+          success: false,
+          error: `Navigation failed: ${errorDescription}`,
+          duration: Date.now() - startTime,
+        });
+      };
+
+      wc.once('did-finish-load', onLoad);
+      wc.once('did-fail-load', onFail);
+
+      setTimeout(() => {
+        cleanup();
+        resolve({
+          success: true,
+          result: { navigated: true, timedOut: true },
+          duration: Date.now() - startTime,
+        });
+      }, timeout);
+    });
+  }
+
+  /**
+   * Wait for a delay
+   */
+  async waitForDelay(ms: number): Promise<ExecutionResult> {
+    const startTime = Date.now();
+    await new Promise(resolve => setTimeout(resolve, ms));
+    return {
+      success: true,
+      result: { waited: ms },
+      duration: Date.now() - startTime,
+    };
+  }
+
+  /**
+   * Execute a multi-step plan sequentially
+   */
+  async executeMultiStepPlan(
+    plan: { steps: Array<{ id: string; description: string; code: string; waitFor?: string; waitSelector?: string; waitTimeout?: number; continueOnError?: boolean }>; loopUntil?: string; maxIterations?: number },
+    options: ExecutionOptions = {},
+    onStepComplete?: (stepId: string, result: ExecutionResult, iteration: number) => void
+  ): Promise<{ success: boolean; results: Array<{ stepId: string; result: ExecutionResult; iteration: number }>; collectedData: unknown[]; duration: number; iterations: number }> {
+    const startTime = Date.now();
+    const results: Array<{ stepId: string; result: ExecutionResult; iteration: number }> = [];
+    const collectedData: unknown[] = [];
+    const maxIterations = plan.maxIterations ?? 10;
+    let iteration = 0;
+    let previousResult: unknown = null;
+
+    const executeSteps = async (): Promise<boolean> => {
+      for (const step of plan.steps) {
+        // Inject previous result into the code context
+        const codeWithContext = `
+          const __previousResult = ${JSON.stringify(previousResult)};
+          ${step.code}
+        `;
+
+        const stepResult = await this.execute(codeWithContext, options);
+        results.push({ stepId: step.id, result: stepResult, iteration });
+        onStepComplete?.(step.id, stepResult, iteration);
+
+        if (!stepResult.success && !step.continueOnError) {
+          return false; // Stop on error
+        }
+
+        previousResult = stepResult.result;
+
+        // Collect data from results (arrays get merged)
+        if (Array.isArray(stepResult.result)) {
+          collectedData.push(...stepResult.result);
+        } else if (stepResult.result && typeof stepResult.result === 'object') {
+          collectedData.push(stepResult.result);
+        }
+
+        // Handle wait conditions
+        if (step.waitFor === 'element' && step.waitSelector) {
+          const waitResult = await this.waitForElement(step.waitSelector, step.waitTimeout ?? 5000, options);
+          if (!waitResult.success && !step.continueOnError) {
+            results.push({ stepId: `${step.id}_wait`, result: waitResult, iteration });
+            return false;
+          }
+        } else if (step.waitFor === 'navigation') {
+          const waitResult = await this.waitForNavigation(step.waitTimeout ?? 10000, options);
+          if (!waitResult.success && !step.continueOnError) {
+            results.push({ stepId: `${step.id}_wait`, result: waitResult, iteration });
+            return false;
+          }
+        } else if (step.waitFor === 'delay') {
+          await this.waitForDelay(step.waitTimeout ?? 1000);
+        }
+      }
+      return true;
+    };
+
+    // Execute steps, potentially looping
+    do {
+      iteration++;
+      const success = await executeSteps();
+      
+      if (!success) break;
+
+      // Check loop termination condition
+      if (plan.loopUntil) {
+        try {
+          const shouldStop = eval(`(function() { const __previousResult = ${JSON.stringify(previousResult)}; return ${plan.loopUntil}; })()`);
+          if (shouldStop) break;
+        } catch {
+          // If condition evaluation fails, stop looping
+          break;
+        }
+      } else {
+        // No loop condition means single execution
+        break;
+      }
+    } while (iteration < maxIterations);
+
+    return {
+      success: results.every(r => r.result.success || plan.steps.find(s => s.id === r.stepId)?.continueOnError),
+      results,
+      collectedData,
+      duration: Date.now() - startTime,
+      iterations: iteration,
+    };
+  }
 }
 
 export const codeExecutorService = new CodeExecutorService();

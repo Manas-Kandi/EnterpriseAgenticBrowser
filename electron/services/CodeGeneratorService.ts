@@ -14,6 +14,30 @@ export interface CodeGenerationResult {
   error?: string;
   tokensUsed?: number;
   duration: number;
+  isMultiStep?: boolean;
+  steps?: MultiStepPlan;
+}
+
+/**
+ * A single step in a multi-step plan
+ */
+export interface PlanStep {
+  id: string;
+  description: string;
+  code: string;
+  waitFor?: 'element' | 'navigation' | 'delay';
+  waitSelector?: string;
+  waitTimeout?: number;
+  continueOnError?: boolean;
+}
+
+/**
+ * Multi-step execution plan
+ */
+export interface MultiStepPlan {
+  steps: PlanStep[];
+  loopUntil?: string;  // Condition to check for loop termination
+  maxIterations?: number;
 }
 
 /**
@@ -23,6 +47,7 @@ export interface CodeGenerationOptions {
   includeExplanation?: boolean;  // Include comments explaining the code
   maxTokens?: number;            // Max tokens for response
   temperature?: number;          // LLM temperature (default: 0.1 for deterministic code)
+  allowMultiStep?: boolean;      // Allow generating multi-step plans
 }
 
 /**
@@ -295,6 +320,136 @@ Interactive elements on page:
     code = code.replace(/^(?:Here(?:'s| is) (?:the )?(?:code|JavaScript)[:\s]*\n?)/i, '');
 
     return code;
+  }
+
+  /**
+   * Generate a multi-step execution plan for complex tasks
+   */
+  async generateMultiStepPlan(
+    command: string,
+    context?: DOMContext,
+    options: CodeGenerationOptions = {}
+  ): Promise<CodeGenerationResult> {
+    const startTime = Date.now();
+
+    const multiStepPrompt = `You are a browser automation planner. The user wants to perform a complex task that may require multiple steps.
+
+Analyze the task and create a JSON execution plan with multiple steps. Each step should be a discrete action.
+
+RESPONSE FORMAT (return ONLY valid JSON, no markdown):
+{
+  "steps": [
+    {
+      "id": "step1",
+      "description": "Brief description of what this step does",
+      "code": "// JavaScript code for this step",
+      "waitFor": "element|navigation|delay|none",
+      "waitSelector": "#some-element",
+      "waitTimeout": 5000,
+      "continueOnError": false
+    }
+  ],
+  "loopUntil": "// Optional: JS expression that returns true when loop should stop",
+  "maxIterations": 10
+}
+
+STEP TYPES:
+- waitFor: "element" - Wait for a selector to appear before next step
+- waitFor: "navigation" - Wait for page navigation to complete
+- waitFor: "delay" - Wait a fixed time (use waitTimeout in ms)
+- waitFor: "none" or omit - Continue immediately
+
+IMPORTANT:
+- Each step's code should be self-contained and return a result
+- Use __previousResult to access the result from the previous step
+- For loops (pagination, etc.), set loopUntil to a condition that stops the loop
+- Keep each step focused on one action
+- Handle errors gracefully in each step
+
+EXAMPLE - Paginated data collection:
+{
+  "steps": [
+    {
+      "id": "collect",
+      "description": "Collect data from current page",
+      "code": "const items = document.querySelectorAll('.item'); return Array.from(items).map(i => i.textContent);",
+      "waitFor": "none"
+    },
+    {
+      "id": "clickNext",
+      "description": "Click the next page button",
+      "code": "const next = document.querySelector('.next-page, [aria-label=\\"Next\\"]'); if (!next || next.disabled) return { done: true }; next.click(); return { clicked: true };",
+      "waitFor": "navigation",
+      "waitTimeout": 5000,
+      "continueOnError": true
+    }
+  ],
+  "loopUntil": "__previousResult?.done === true",
+  "maxIterations": 20
+}`;
+
+    try {
+      const domContext = context ?? await domContextService.getContext().catch(() => null);
+      const model = this.getModel({ ...options, maxTokens: 4096 });
+
+      const userPrompt = this.buildUserPrompt(command, domContext, options);
+
+      const response = await model.invoke([
+        new SystemMessage(multiStepPrompt),
+        new HumanMessage(userPrompt),
+      ]);
+
+      let content = typeof response.content === 'string' 
+        ? response.content 
+        : JSON.stringify(response.content);
+
+      // Clean up JSON response
+      content = content.replace(/^```(?:json)?\n?/gm, '');
+      content = content.replace(/\n?```$/gm, '');
+      content = content.trim();
+
+      // Parse the plan
+      const plan = JSON.parse(content) as MultiStepPlan;
+
+      // Validate plan structure
+      if (!plan.steps || !Array.isArray(plan.steps) || plan.steps.length === 0) {
+        throw new Error('Invalid plan: no steps found');
+      }
+
+      return {
+        success: true,
+        isMultiStep: true,
+        steps: plan,
+        tokensUsed: response.usage_metadata?.total_tokens,
+        duration: Date.now() - startTime,
+      };
+    } catch (err) {
+      // If multi-step parsing fails, fall back to single-step generation
+      console.warn('[CodeGenerator] Multi-step plan failed, falling back to single-step:', err);
+      return this.generate(command, context, options);
+    }
+  }
+
+  /**
+   * Detect if a command likely needs multi-step execution
+   */
+  isMultiStepCommand(command: string): boolean {
+    const multiStepPatterns = [
+      /\b(all|every|each)\b.*\b(page|pages)\b/i,
+      /\bpaginat/i,
+      /\bclick.*through\b/i,
+      /\bcollect.*from.*multiple/i,
+      /\brepeat\b/i,
+      /\bloop\b/i,
+      /\buntil\b/i,
+      /\bthen\b/i,
+      /\bafter\b.*\b(click|wait|load)/i,
+      /\bstep\s*\d/i,
+      /\bfirst\b.*\bthen\b/i,
+      /\bnext\b.*\bpage/i,
+    ];
+
+    return multiStepPatterns.some(pattern => pattern.test(command));
   }
 }
 

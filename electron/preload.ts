@@ -179,6 +179,12 @@ contextBridge.exposeInMainWorld('terminal', {
     ipcRenderer.invoke('terminal:generateCode', command, options),
   generateCodeWithRetry: (command: string, previousCode: string, error: string) =>
     ipcRenderer.invoke('terminal:generateCodeWithRetry', command, previousCode, error),
+  generateMultiStepPlan: (command: string) =>
+    ipcRenderer.invoke('terminal:generateMultiStepPlan', command),
+  executeMultiStepPlan: (plan: unknown) =>
+    ipcRenderer.invoke('terminal:executeMultiStepPlan', plan),
+  isMultiStepCommand: (command: string) =>
+    ipcRenderer.invoke('terminal:isMultiStepCommand', command),
   run: (command: string, options?: { autoRetry?: boolean }) =>
     ipcRenderer.invoke('terminal:run', command, options),
   onStep: (callback: (step: { phase: string; status: string; data?: unknown; error?: string }) => void) => {

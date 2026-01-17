@@ -639,6 +639,28 @@ app.whenReady().then(async () => {
     return codeGeneratorService.generateWithRetry(command, previousCode, error);
   });
 
+  ipcMain.handle('terminal:generateMultiStepPlan', async (_, command: string) => {
+    const { codeGeneratorService } = await import('./services/CodeGeneratorService');
+    return codeGeneratorService.generateMultiStepPlan(command);
+  });
+
+  ipcMain.handle('terminal:executeMultiStepPlan', async (event, plan: { steps: Array<{ id: string; description: string; code: string; waitFor?: string; waitSelector?: string; waitTimeout?: number; continueOnError?: boolean }>; loopUntil?: string; maxIterations?: number }) => {
+    const { codeExecutorService } = await import('./services/CodeExecutorService');
+    return codeExecutorService.executeMultiStepPlan(plan, {}, (stepId, result, iteration) => {
+      event.sender.send('terminal:step', {
+        phase: 'multiStep',
+        status: result.success ? 'done' : 'error',
+        data: { stepId, iteration, result: result.result },
+        error: result.error,
+      });
+    });
+  });
+
+  ipcMain.handle('terminal:isMultiStepCommand', async (_, command: string) => {
+    const { codeGeneratorService } = await import('./services/CodeGeneratorService');
+    return codeGeneratorService.isMultiStepCommand(command);
+  });
+
   // Terminal: Full end-to-end pipeline
   ipcMain.handle('terminal:run', async (event, command: string, options?: { autoRetry?: boolean; maxRetries?: number }) => {
     const startTime = Date.now();

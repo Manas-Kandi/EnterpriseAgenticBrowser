@@ -154,6 +154,34 @@ interface Window {
       tokensUsed?: number;
       duration: number;
     }>;
+    generateMultiStepPlan: (command: string) => Promise<{
+      success: boolean;
+      isMultiStep?: boolean;
+      steps?: {
+        steps: Array<{
+          id: string;
+          description: string;
+          code: string;
+          waitFor?: string;
+          waitSelector?: string;
+          waitTimeout?: number;
+          continueOnError?: boolean;
+        }>;
+        loopUntil?: string;
+        maxIterations?: number;
+      };
+      code?: string;
+      error?: string;
+      duration: number;
+    }>;
+    executeMultiStepPlan: (plan: unknown) => Promise<{
+      success: boolean;
+      results: Array<{ stepId: string; result: unknown; iteration: number }>;
+      collectedData: unknown[];
+      duration: number;
+      iterations: number;
+    }>;
+    isMultiStepCommand: (command: string) => Promise<boolean>;
     run: (command: string, options?: { autoRetry?: boolean; maxRetries?: number }) => Promise<{
       success: boolean;
       code?: string;
