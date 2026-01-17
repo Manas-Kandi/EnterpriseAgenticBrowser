@@ -1,12 +1,38 @@
-# Next-Gen Agentic Browser: 10 Tasks to Revolutionary Speed & Intelligence
+# Next-Gen Agentic Browser: Comprehensive Task List
 
-> **Vision**: Build the fastest, most reliable, and most capable browser-based AI agent on Earth. An agent that learns continuously, executes complex multi-step workflows in seconds, and handles enterprise-grade tasks with zero friction.
+> Vision: Build the fastest, most reliable, and most capable browser-based AI agent on Earth. An agent that learns continuously, executes complex multi-step workflows in seconds, and handles enterprise-grade tasks with zero friction.
+
+---
+
+## Current System Snapshot (Repo Anchors)
+
+- Agent loop, tool parsing, verification, and workflow orchestration live in `electron/services/AgentService.ts`.
+- Tool registry, approvals, and policy enforcement are in `electron/services/ToolRegistry.ts` and `electron/services/PolicyService.ts`.
+- Browser tools (navigate/click/observe/execute_plan) are in `electron/integrations/BrowserAutomationService.ts`.
+- Tab + webContents routing: `electron/services/BrowserTargetService.ts` and `electron/services/AgentTabOpenService.ts`.
+- Webview and New Tab rendering: `src/components/browser/BrowserView.tsx` and `src/lib/store.ts`.
+- Selector discovery for mock SaaS: `electron/services/SelectorDiscoveryService.ts`.
+- Skills/embeddings and plan memory: `electron/services/TaskKnowledgeService.ts` and `electron/services/PlanMemory.ts`.
+- UI status + streaming tokens: `src/components/browser/AgentPanel.tsx` and `electron/preload.ts`.
+
+## Task Conventions
+
+- Each task below is scoped to one feature area with explicit repo touchpoints and tests.
+- End each task with a commit, then push to the working branch.
+- Use the existing telemetry + audit services for new instrumentation instead of ad-hoc logs.
+- Prefer minimal, safe changes: extend existing services before adding new ones.
 
 ---
 
 ## Task 1: Implement Speculative Execution Pipeline
 
 **Goal**: Execute tool calls speculatively before LLM confirmation to reduce latency by 40-60%.
+
+### Context & Repo Touchpoints
+
+- `electron/services/SpeculativeExecutor.ts` exists; browser_click/navigate are disabled for safety and must be re-enabled carefully.
+- Speculative orchestration happens in `electron/services/AgentService.ts#doMode()`.
+- Telemetry hooks are in `electron/services/TelemetryService.ts` and `electron/services/AuditService.ts`.
 
 ### Subtasks
 
@@ -31,13 +57,24 @@
    - Add telemetry for speculation hit/miss rates
    - **Test**: Integration test verifying speculation doesn't break existing workflows
 
-**Git Commit**: `feat(agent): implement speculative execution pipeline for 40% latency reduction`
+**Commit & Push**
+- Commit message: `feat(agent): implement speculative execution pipeline for 40% latency reduction`
+- Commands:
+  - `git add -A`
+  - `git commit -m "feat(agent): implement speculative execution pipeline for 40% latency reduction"`
+  - `git push -u origin <branch>`
 
 ---
 
 ## Task 2: Build Adaptive Model Router for Speed vs Quality
 
 **Goal**: Dynamically route requests to fast/small models for simple tasks and powerful models for complex reasoning.
+
+### Context & Repo Touchpoints
+
+- `electron/services/ModelRouter.ts` already classifies tasks; extend heuristics and add richer metrics.
+- `AgentService.doMode()` consumes `routingDecision` and emits model routing telemetry.
+- `electron/services/TelemetryService.ts` is the preferred place to emit model performance metrics.
 
 ### Subtasks
 
@@ -62,13 +99,24 @@
    - Surface recommendations for model selection tuning
    - **Test**: Dashboard correctly displays metrics from 100 test runs
 
-**Git Commit**: `feat(agent): add adaptive model router for optimal speed/quality tradeoff`
+**Commit & Push**
+- Commit message: `feat(agent): add adaptive model router for optimal speed/quality tradeoff`
+- Commands:
+  - `git add -A`
+  - `git commit -m "feat(agent): add adaptive model router for optimal speed/quality tradeoff"`
+  - `git push -u origin <branch>`
 
 ---
 
 ## Task 3: Implement Continuous Learning from Failures
 
 **Goal**: Agent learns from every failure, building institutional memory that prevents repeat mistakes.
+
+### Context & Repo Touchpoints
+
+- Skills and embeddings live in `electron/services/TaskKnowledgeService.ts`.
+- Failure evidence is available via `electron/services/AuditService.ts` and `electron/services/TelemetryService.ts` logs.
+- Plan storage is in `electron/services/PlanMemory.ts` (use it to persist learned corrections).
 
 ### Subtasks
 
@@ -92,13 +140,25 @@
    - Limit to 2 self-heal attempts before escalating to user
    - **Test**: E2E test that agent self-heals from known failure pattern
 
-**Git Commit**: `feat(learning): implement continuous failure learning with self-healing`
+**Commit & Push**
+- Commit message: `feat(learning): implement continuous failure learning with self-healing`
+- Commands:
+  - `git add -A`
+  - `git commit -m "feat(learning): implement continuous failure learning with self-healing"`
+  - `git push -u origin <branch>`
 
 ---
 
 ## Task 4: Build Parallel Multi-Tab Orchestration
 
 **Goal**: Execute independent workflow branches in parallel across tabs, reducing complex task time by 3-5x.
+
+### Context & Repo Touchpoints
+
+- `electron/services/AgentTabOpenService.ts` opens agent tabs and returns tab IDs.
+- `electron/services/BrowserTargetService.ts` tracks active webContents and tab routing.
+- `browser_*` tools in `electron/integrations/BrowserAutomationService.ts` already accept optional `tabId`.
+- Tab order and active tab state live in `src/lib/store.ts`.
 
 ### Subtasks
 
@@ -122,13 +182,24 @@
    - Display dependency graph with completion status
    - **Test**: UI test that visualizer correctly shows 5 parallel tasks
 
-**Git Commit**: `feat(orchestrator): add parallel multi-tab execution for 3-5x speedup`
+**Commit & Push**
+- Commit message: `feat(orchestrator): add parallel multi-tab execution for 3-5x speedup`
+- Commands:
+  - `git add -A`
+  - `git commit -m "feat(orchestrator): add parallel multi-tab execution for 3-5x speedup"`
+  - `git push -u origin <branch>`
 
 ---
 
 ## Task 5: Implement Sub-100ms Selector Discovery Cache
 
 **Goal**: Eliminate selector discovery latency with intelligent caching and prediction.
+
+### Context & Repo Touchpoints
+
+- `electron/services/SelectorDiscoveryService.ts` currently scans mock SaaS and stores selectors in memory.
+- `AgentService.doMode()` loads selectors only for localhost/aerocore contexts.
+- Cache persistence can use SQLite or JSON storage near `electron/services`.
 
 ### Subtasks
 
@@ -152,13 +223,24 @@
    - Update cache with new selector, deprecate old
    - **Test**: E2E test that agent recovers from changed selector automatically
 
-**Git Commit**: `feat(selectors): implement sub-100ms selector cache with auto-healing`
+**Commit & Push**
+- Commit message: `feat(selectors): implement sub-100ms selector cache with auto-healing`
+- Commands:
+  - `git add -A`
+  - `git commit -m "feat(selectors): implement sub-100ms selector cache with auto-healing"`
+  - `git push -u origin <branch>`
 
 ---
 
 ## Task 6: Build Streaming Response with Progressive Action
 
 **Goal**: Start executing actions while LLM is still generating, showing progress in real-time.
+
+### Context & Repo Touchpoints
+
+- `src/components/browser/AgentPanel.tsx` already listens to `agent:onToken` and `agent:onStep`.
+- `AgentService` emits `agent:step` events; extend to support streaming and progressive phases.
+- LLM model invocation is centralized in `AgentService` and `ModelRouter`.
 
 ### Subtasks
 
@@ -182,13 +264,24 @@
    - Rollback UI if prediction was wrong
    - **Test**: UI test that optimistic updates appear 500ms before actual completion
 
-**Git Commit**: `feat(streaming): add progressive action execution with real-time feedback`
+**Commit & Push**
+- Commit message: `feat(streaming): add progressive action execution with real-time feedback`
+- Commands:
+  - `git add -A`
+  - `git commit -m "feat(streaming): add progressive action execution with real-time feedback"`
+  - `git push -u origin <branch>`
 
 ---
 
 ## Task 7: Create Workflow Template Library with One-Click Execution
 
 **Goal**: Pre-built workflows for common enterprise tasks that execute in <5 seconds.
+
+### Context & Repo Touchpoints
+
+- `electron/services/WorkflowOrchestrator.ts` manages multi-step workflows.
+- `browser_execute_plan` exists in `BrowserAutomationService.ts` for batch execution.
+- `TaskKnowledgeService` and `PlanMemory` can store reusable workflow plans.
 
 ### Subtasks
 
@@ -214,13 +307,24 @@
    - Cache authentication for template domains
    - **Test**: Benchmark showing templates execute 3x faster than ad-hoc requests
 
-**Git Commit**: `feat(workflows): add one-click workflow templates for enterprise tasks`
+**Commit & Push**
+- Commit message: `feat(workflows): add one-click workflow templates for enterprise tasks`
+- Commands:
+  - `git add -A`
+  - `git commit -m "feat(workflows): add one-click workflow templates for enterprise tasks"`
+  - `git push -u origin <branch>`
 
 ---
 
 ## Task 8: Implement Intelligent Context Compression
 
 **Goal**: Maintain full context awareness while keeping token usage minimal for speed.
+
+### Context & Repo Touchpoints
+
+- `electron/services/AgentService.ts` assembles context + summary prompts.
+- TOON summary helpers live in `electron/lib/toon.ts` and `electron/lib/validateToonSummary.ts`.
+- Chat history storage is in `electron/preload.ts` (via `chatHistory` IPC).
 
 ### Subtasks
 
@@ -244,13 +348,24 @@
    - Lazy-load relevant history on demand
    - **Test**: Unit test that retrieval finds relevant context in <10ms
 
-**Git Commit**: `feat(context): implement intelligent context compression for faster inference`
+**Commit & Push**
+- Commit message: `feat(context): implement intelligent context compression for faster inference`
+- Commands:
+  - `git add -A`
+  - `git commit -m "feat(context): implement intelligent context compression for faster inference"`
+  - `git push -u origin <branch>`
 
 ---
 
 ## Task 9: Build Comprehensive Agent Reliability Suite
 
 **Goal**: Achieve 99.5% task success rate with automatic recovery from all common failure modes.
+
+### Context & Repo Touchpoints
+
+- Tool execution logs are emitted via `TelemetryService` + `AuditService`.
+- Policy enforcement is in `PolicyService`; do not bypass it for recovery paths.
+- `AgentService` controls verification and loop detection; keep fixes centralized there.
 
 ### Subtasks
 
@@ -276,13 +391,24 @@
    - Alert on reliability degradation
    - **Test**: Dashboard correctly calculates metrics from 500 test runs
 
-**Git Commit**: `feat(reliability): add comprehensive failure recovery for 99.5% success rate`
+**Commit & Push**
+- Commit message: `feat(reliability): add comprehensive failure recovery for 99.5% success rate`
+- Commands:
+  - `git add -A`
+  - `git commit -m "feat(reliability): add comprehensive failure recovery for 99.5% success rate"`
+  - `git push -u origin <branch>`
 
 ---
 
 ## Task 10: Implement Real-Time Collaboration & Handoff
 
 **Goal**: Seamless human-agent collaboration with instant handoff when agent needs help.
+
+### Context & Repo Touchpoints
+
+- Approval flows and permission mode are wired through `electron/preload.ts` and `AgentPanel.tsx`.
+- `AgentService` emits approval events and waits on `ToolRegistry` approvals.
+- UI components live in `src/components/browser` and should keep minimal clutter.
 
 ### Subtasks
 
@@ -306,7 +432,12 @@
    - Real-time sync of plan changes
    - **Test**: Integration test that plan edits sync within 200ms
 
-**Git Commit**: `feat(collab): add real-time human-agent collaboration with smart handoff`
+**Commit & Push**
+- Commit message: `feat(collab): add real-time human-agent collaboration with smart handoff`
+- Commands:
+  - `git add -A`
+  - `git commit -m "feat(collab): add real-time human-agent collaboration with smart handoff"`
+  - `git push -u origin <branch>`
 
 ---
 
