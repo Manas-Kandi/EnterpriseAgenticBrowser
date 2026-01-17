@@ -165,3 +165,9 @@ contextBridge.exposeInMainWorld('session', {
 contextBridge.exposeInMainWorld('benchmark', {
   runSuite: (filter?: string) => ipcRenderer.invoke('benchmark:runSuite', filter),
 })
+
+contextBridge.exposeInMainWorld('terminal', {
+  getContext: () => ipcRenderer.invoke('terminal:getContext'),
+  getMinimalContext: () => ipcRenderer.invoke('terminal:getMinimalContext'),
+  executeCode: (code: string) => ipcRenderer.invoke('terminal:executeCode', code),
+})

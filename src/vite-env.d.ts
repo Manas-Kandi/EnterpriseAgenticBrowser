@@ -111,4 +111,23 @@ interface Window {
     clear: () => Promise<{ success: boolean }>;
     onRestored: (callback: (payload: { lastSessionTime: number; restoredAt: number }) => void) => (() => void);
   }
+
+  terminal?: {
+    getContext: () => Promise<{
+      url: string;
+      title: string;
+      metaDescription?: string;
+      interactiveElements: {
+        buttons: Array<{ tag: string; id?: string; classes?: string[]; text?: string; dataTestId?: string }>;
+        links: Array<{ tag: string; id?: string; classes?: string[]; text?: string; href?: string }>;
+        inputs: Array<{ tag: string; id?: string; classes?: string[]; type?: string; name?: string; placeholder?: string }>;
+        selects: Array<{ tag: string; id?: string; classes?: string[]; name?: string }>;
+      };
+      mainContent?: Array<{ tag: string; id?: string; classes?: string[]; text?: string }>;
+      tokenEstimate: number;
+      truncated: boolean;
+    }>;
+    getMinimalContext: () => Promise<{ url: string; title: string; summary: string }>;
+    executeCode: (code: string) => Promise<{ success: boolean; result?: unknown; error?: string; duration: number }>;
+  }
 }

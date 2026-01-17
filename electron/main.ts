@@ -593,6 +593,41 @@ app.whenReady().then(async () => {
     return { success: true, path: filePath };
   });
 
+  // Terminal IPC Handlers
+  ipcMain.handle('terminal:getContext', async () => {
+    const { domContextService } = await import('./services/DOMContextService');
+    return domContextService.getContext();
+  });
+
+  ipcMain.handle('terminal:getMinimalContext', async () => {
+    const { domContextService } = await import('./services/DOMContextService');
+    return domContextService.getMinimalContext();
+  });
+
+  ipcMain.handle('terminal:executeCode', async (_, code: string) => {
+    const { browserTargetService } = await import('./services/BrowserTargetService');
+    const wc = browserTargetService.getActiveWebContents();
+    if (!wc || wc.isDestroyed()) {
+      return { success: false, error: 'No active webview available' };
+    }
+    const startTime = Date.now();
+    try {
+      const result = await wc.executeJavaScript(code);
+      return {
+        success: true,
+        result,
+        duration: Date.now() - startTime,
+      };
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      return {
+        success: false,
+        error: errorMessage,
+        duration: Date.now() - startTime,
+      };
+    }
+  });
+
   // Agent IPC Handlers
   ipcMain.handle('agent:get-saved-plans', async () => {
   return planMemory.getPlans();
