@@ -9,6 +9,7 @@ import path from 'node:path';
 import { toolRegistry } from './ToolRegistry';
 import { taskKnowledgeService } from './TaskKnowledgeService';
 import { agentRunContext } from './AgentRunContext';
+import { browserAgentPipeline } from './BrowserAgentPipeline';
 import { telemetryService } from './TelemetryService';
 import { auditService } from './AuditService';
 import { classifyIntent, shouldNavigateActiveTab } from './IntentClassifier';
@@ -537,6 +538,30 @@ You can answer questions about what's on the page, explain content, summarize in
     });
 
     try {
+      // FAST PATH: Multi-site comparison queries → route directly to BrowserAgentPipeline
+      // This uses the tabOrchestrator for proper parallel tab execution instead of generating fetch() code
+      const multiSiteMatch = userMessage.match(/compare|across|between|from\s+(?:multiple|different|several)\s+sites?/i);
+      const urlMatches = userMessage.match(/(?:https?:\/\/)?(?:www\.)?([a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,})(?:\/[^\s,]*)?/gi) || [];
+      const uniqueSites = [...new Set(urlMatches.map(u => u.replace(/^(?:https?:\/\/)?(?:www\.)?/, '').split('/')[0]))];
+      
+      console.log('[AgentService] Multi-site check:', { multiSiteMatch: !!multiSiteMatch, urlMatches, uniqueSites, shouldTrigger: (multiSiteMatch || uniqueSites.length >= 2) && uniqueSites.length <= 5 });
+      
+      if ((multiSiteMatch || uniqueSites.length >= 2) && uniqueSites.length <= 5) {
+        console.log('[AgentService] FAST PATH: Routing to BrowserAgentPipeline for multi-site comparison');
+        this.emitStep('thought', `Detected multi-site request (${uniqueSites.length} sites: ${uniqueSites.join(', ')}). Using parallel tab orchestrator.`, { phase: 'multi_site_fast_path' });
+        try {
+          const result = await browserAgentPipeline.runPipeline(userMessage);
+          telemetryService.emit({ eventId: uuidv4(), runId, ts: new Date().toISOString(), type: 'agent_run_end', data: { success: true, via: 'multi_site_fast_path', stepCount: 1, durationMs: Date.now() - runStartedAt } });
+          auditService.log({ actor: 'agent', action: 'agent_run_complete', details: { runId, stepCount: 1, toolsUsed: ['browser_agent_pipeline'] }, status: 'success' });
+          return result;
+        } catch (e: unknown) {
+          const errMsg = e instanceof Error ? e.message : String(e);
+          console.error('[AgentService] Multi-site pipeline error:', errMsg);
+          this.emitStep('observation', `Multi-site pipeline failed: ${errMsg}. Falling back to standard agent loop.`, { phase: 'multi_site_fallback', ok: false });
+          // Fall through to standard agent loop
+        }
+      }
+
       const directNavUrl = this.extractDirectNavigationUrl(userMessage);
       if (directNavUrl && isTrivialOrSimple) {
         const navTool = langChainTools.find(t => t.name === 'browser_navigate');

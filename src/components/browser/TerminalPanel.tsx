@@ -515,26 +515,56 @@ export function TerminalPanel() {
     }
   }, [handleSubmit, clearTerminal, cancelExecution, handleTabComplete, commandHistory, historyIndex, pendingCode, isStreaming, isExecuting]);
 
+  // Parse agent response into sections
+  const parseAgentResponse = (content: string) => {
+    const sections: { type: 'reasoning' | 'plan' | 'execution' | 'response' | 'timing'; content: string }[] = [];
+    
+    // Match sections by headers
+    const reasoningMatch = content.match(/## 🧠 Reasoning\n([\s\S]*?)(?=## 📋|## ⚡|## 💬|$)/);
+    const planMatch = content.match(/## 📋 Plan\n([\s\S]*?)(?=## ⚡|## 💬|$)/);
+    const executionMatch = content.match(/## ⚡ Execution\n([\s\S]*?)(?=## 💬|$)/);
+    const responseMatch = content.match(/## 💬 Response\n([\s\S]*?)(?=Completed in|$)/);
+    const timingMatch = content.match(/(Completed in \d+ms)/);
+    
+    if (reasoningMatch) sections.push({ type: 'reasoning', content: reasoningMatch[1].trim() });
+    if (planMatch) sections.push({ type: 'plan', content: planMatch[1].trim() });
+    if (executionMatch) sections.push({ type: 'execution', content: executionMatch[1].trim() });
+    if (responseMatch) sections.push({ type: 'response', content: responseMatch[1].trim() });
+    if (timingMatch) sections.push({ type: 'timing', content: timingMatch[1] });
+    
+    // If no sections found, treat entire content as response
+    if (sections.length === 0) {
+      sections.push({ type: 'response', content });
+    }
+    
+    return sections;
+  };
+
   const renderEntry = (entry: TerminalEntry) => {
     switch (entry.type) {
       case 'command':
-        // User input - left aligned, bold
+        // User input - clean, with user indicator
         return (
-          <div key={entry.id} className="text-xs font-semibold text-foreground">
-            {entry.content}
+          <div key={entry.id} className="flex items-start gap-2 py-2">
+            <div className="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+              <span className="text-[10px] text-primary font-medium">U</span>
+            </div>
+            <div className="text-sm text-foreground flex-1">
+              {entry.content}
+            </div>
           </div>
         );
 
       case 'code':
-        // Code block - collapsible, minimal
+        // Code block - collapsible, very minimal
         return (
-          <div key={entry.id} className="text-xs mt-1">
+          <div key={entry.id} className="ml-7 -mt-1">
             <details className="group">
-              <summary className="cursor-pointer list-none flex items-center gap-1 select-none text-muted-foreground/50 hover:text-muted-foreground text-[10px]">
-                <ChevronRight className="w-3 h-3 group-open:rotate-90 transition-transform" />
-                <span className="font-mono">code</span>
+              <summary className="cursor-pointer list-none flex items-center gap-1 select-none text-muted-foreground/40 hover:text-muted-foreground text-[10px]">
+                <ChevronRight className="w-2.5 h-2.5 group-open:rotate-90 transition-transform" />
+                <span className="font-mono">view code</span>
               </summary>
-              <pre className="mt-1 text-[10px] overflow-x-auto font-mono text-muted-foreground whitespace-pre-wrap">
+              <pre className="mt-1 text-[10px] overflow-x-auto font-mono text-muted-foreground/70 bg-secondary/30 rounded p-2 whitespace-pre-wrap">
                 {entry.content}
               </pre>
             </details>
@@ -542,38 +572,130 @@ export function TerminalPanel() {
         );
 
       case 'result':
-        // Agent response - left aligned, regular text with markdown
+        // Agent response - parse and render with collapsible sections
+        const sections = parseAgentResponse(entry.content);
+        const hasStructuredResponse = sections.some(s => s.type !== 'response');
+        
         return (
-          <div key={entry.id} className="text-xs mt-1 text-foreground/80 leading-relaxed">
-            <ReactMarkdown
-              components={{
-                p: ({children}) => <p className="mb-1 last:mb-0">{children}</p>,
-                h1: ({children}) => <h1 className="font-semibold mt-2 mb-1 first:mt-0">{children}</h1>,
-                h2: ({children}) => <h2 className="font-semibold mt-2 mb-0.5 text-foreground/70">{children}</h2>,
-                h3: ({children}) => <h3 className="font-medium mt-1 mb-0.5">{children}</h3>,
-                ul: ({children}) => <ul className="list-disc pl-4 mb-1 space-y-0.5">{children}</ul>,
-                ol: ({children}) => <ol className="list-decimal pl-4 mb-1 space-y-0.5">{children}</ol>,
-                code: ({children}) => <code className="font-mono text-[10px]">{children}</code>,
-                pre: ({children}) => <pre className="text-[10px] my-1 font-mono overflow-x-auto whitespace-pre-wrap">{children}</pre>
-              }}
-            >
-              {entry.content}
-            </ReactMarkdown>
+          <div key={entry.id} className="flex items-start gap-2 py-2">
+            <div className="w-5 h-5 rounded-full bg-secondary flex items-center justify-center flex-shrink-0 mt-0.5">
+              <Bot className="w-3 h-3 text-muted-foreground" />
+            </div>
+            <div className="flex-1 min-w-0">
+              {hasStructuredResponse ? (
+                <div className="space-y-2">
+                  {/* Collapsible reasoning */}
+                  {sections.find(s => s.type === 'reasoning') && (
+                    <details className="group">
+                      <summary className="cursor-pointer list-none flex items-center gap-1.5 select-none text-muted-foreground/50 hover:text-muted-foreground text-[10px]">
+                        <ChevronRight className="w-2.5 h-2.5 group-open:rotate-90 transition-transform" />
+                        <span>Reasoning</span>
+                      </summary>
+                      <p className="mt-1 text-xs text-muted-foreground/70 pl-4">
+                        {sections.find(s => s.type === 'reasoning')?.content}
+                      </p>
+                    </details>
+                  )}
+                  
+                  {/* Collapsible plan + execution */}
+                  {(sections.find(s => s.type === 'plan') || sections.find(s => s.type === 'execution')) && (
+                    <details className="group">
+                      <summary className="cursor-pointer list-none flex items-center gap-1.5 select-none text-muted-foreground/50 hover:text-muted-foreground text-[10px]">
+                        <ChevronRight className="w-2.5 h-2.5 group-open:rotate-90 transition-transform" />
+                        <span>Steps</span>
+                        {sections.find(s => s.type === 'execution') && (
+                          <span className="text-green-500/70 ml-1">✓</span>
+                        )}
+                      </summary>
+                      <div className="mt-1 pl-4 space-y-1">
+                        {sections.find(s => s.type === 'plan') && (
+                          <p className="text-xs text-muted-foreground/60">
+                            {sections.find(s => s.type === 'plan')?.content.split('\n')[0]}
+                          </p>
+                        )}
+                        {sections.find(s => s.type === 'execution') && (
+                          <div className="text-[10px] text-muted-foreground/50">
+                            {sections.find(s => s.type === 'execution')?.content.split('\n').map((line, i) => (
+                              <div key={i} className={line.includes('✅') ? 'text-green-500/60' : line.includes('❌') ? 'text-red-400/60' : ''}>
+                                {line}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </details>
+                  )}
+                  
+                  {/* Main response - always visible */}
+                  {sections.find(s => s.type === 'response') && (
+                    <div className="text-sm text-foreground/90 leading-relaxed">
+                      <ReactMarkdown
+                        components={{
+                          p: ({children}) => <p className="mb-2 last:mb-0">{children}</p>,
+                          h1: ({children}) => <h1 className="font-semibold text-base mt-3 mb-1 first:mt-0">{children}</h1>,
+                          h2: ({children}) => <h2 className="font-semibold text-sm mt-2 mb-1">{children}</h2>,
+                          h3: ({children}) => <h3 className="font-medium mt-2 mb-1">{children}</h3>,
+                          ul: ({children}) => <ul className="list-disc pl-4 mb-2 space-y-1">{children}</ul>,
+                          ol: ({children}) => <ol className="list-decimal pl-4 mb-2 space-y-1">{children}</ol>,
+                          li: ({children}) => <li className="text-sm">{children}</li>,
+                          code: ({children, className}) => {
+                            const isBlock = className?.includes('language-');
+                            return isBlock 
+                              ? <code className="block bg-secondary/50 rounded p-2 text-xs font-mono overflow-x-auto my-2">{children}</code>
+                              : <code className="bg-secondary/50 rounded px-1 py-0.5 text-xs font-mono">{children}</code>;
+                          },
+                          pre: ({children}) => <>{children}</>,
+                          table: ({children}) => <table className="w-full text-xs border-collapse my-2">{children}</table>,
+                          th: ({children}) => <th className="border border-border/50 px-2 py-1 bg-secondary/30 text-left font-medium">{children}</th>,
+                          td: ({children}) => <td className="border border-border/50 px-2 py-1">{children}</td>,
+                        }}
+                      >
+                        {sections.find(s => s.type === 'response')?.content || ''}
+                      </ReactMarkdown>
+                    </div>
+                  )}
+                  
+                  {/* Timing - subtle */}
+                  {sections.find(s => s.type === 'timing') && (
+                    <div className="text-[10px] text-muted-foreground/40">
+                      {sections.find(s => s.type === 'timing')?.content}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                // Simple response without structure
+                <div className="text-sm text-foreground/90 leading-relaxed">
+                  <ReactMarkdown
+                    components={{
+                      p: ({children}) => <p className="mb-2 last:mb-0">{children}</p>,
+                      code: ({children}) => <code className="bg-secondary/50 rounded px-1 py-0.5 text-xs font-mono">{children}</code>,
+                    }}
+                  >
+                    {entry.content}
+                  </ReactMarkdown>
+                </div>
+              )}
+            </div>
           </div>
         );
 
       case 'error':
-        // Error - left aligned, red text
+        // Error - with icon
         return (
-          <div key={entry.id} className="text-xs mt-1 text-red-400/80">
-            {entry.content}
+          <div key={entry.id} className="flex items-start gap-2 py-2">
+            <div className="w-5 h-5 rounded-full bg-red-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+              <X className="w-3 h-3 text-red-400" />
+            </div>
+            <div className="text-sm text-red-400/90">
+              {entry.content}
+            </div>
           </div>
         );
 
       case 'info':
-        // Info - left aligned, muted italic
+        // Info - subtle
         return (
-          <div key={entry.id} className="text-xs mt-1 text-muted-foreground/60 italic">
+          <div key={entry.id} className="ml-7 text-xs text-muted-foreground/50 italic py-1">
             {entry.content}
           </div>
         );
