@@ -196,6 +196,10 @@ interface BrowserState {
 
   llmSettings: LLMSettings;
   
+  // Terminal settings
+  terminalConfirmBeforeExecution: boolean;
+  setTerminalConfirmBeforeExecution: (enabled: boolean) => void;
+  
   // Actions
   addTab: (url?: string, options?: AddTabOptions) => string;
   addTabInBackground: (url: string, options?: AddTabOptions) => string;
@@ -255,6 +259,9 @@ export const useBrowserStore = create<BrowserState>()(
         model: 'llama-3.1-70b',
         apiKeyAccount: 'llm:nvidia:apiKey',
       },
+
+      terminalConfirmBeforeExecution: false,
+      setTerminalConfirmBeforeExecution: (enabled) => set({ terminalConfirmBeforeExecution: enabled }),
 
       sessionInfo: {
         lastSavedAt: Date.now(),

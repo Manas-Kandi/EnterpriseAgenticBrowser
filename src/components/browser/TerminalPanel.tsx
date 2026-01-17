@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { cn } from '@/lib/utils';
-import { Terminal, ChevronDown, ChevronRight, Copy, Check, Loader2, Download, Table, FileJson } from 'lucide-react';
+import { Terminal, ChevronDown, ChevronRight, Copy, Check, Loader2, Download, Table, FileJson, Play, X, Edit3, Settings } from 'lucide-react';
 import { formatResult, exportAsCSV, exportAsJSON, FormattedResult } from '@/lib/resultFormatter';
+import { useBrowserStore } from '@/lib/store';
 
 // Terminal output entry types
 type OutputType = 'command' | 'code' | 'result' | 'error' | 'info';
@@ -19,6 +20,14 @@ interface TerminalEntry {
 const HISTORY_KEY = 'terminal-command-history';
 const MAX_HISTORY = 50;
 
+// Pending code confirmation state
+interface PendingCode {
+  command: string;
+  code: string;
+  isEditing: boolean;
+  editedCode: string;
+}
+
 export function TerminalPanel() {
   const [input, setInput] = useState('');
   const [entries, setEntries] = useState<TerminalEntry[]>([]);
@@ -26,9 +35,14 @@ export function TerminalPanel() {
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [isExecuting, setIsExecuting] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [pendingCode, setPendingCode] = useState<PendingCode | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
+  
+  const { terminalConfirmBeforeExecution, setTerminalConfirmBeforeExecution } = useBrowserStore();
   
   const inputRef = useRef<HTMLInputElement>(null);
   const outputRef = useRef<HTMLDivElement>(null);
+  const codeEditorRef = useRef<HTMLTextAreaElement>(null);
 
   // Load command history from localStorage
   useEffect(() => {
@@ -111,9 +125,64 @@ export function TerminalPanel() {
     setEntries([]);
   }, []);
 
-  const handleSubmit = useCallback(async () => {
+  // Execute code (used by both direct execution and confirmation flow)
+  const executeCode = useCallback(async (code: string) => {
+    setIsExecuting(true);
+    addEntry('code', code);
+
+    try {
+      const result = await window.terminal?.executeCode(code);
+      
+      if (!result) {
+        addEntry('error', 'Terminal API not available');
+        return;
+      }
+
+      if (result.success) {
+        const formatted = formatResult(result.result);
+        addEntry('result', formatted.display, result.result);
+      } else {
+        const errorMsg = result.stack || result.error || 'Unknown error';
+        addEntry('error', errorMsg);
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      addEntry('error', `Execution failed: ${errorMessage}`);
+    } finally {
+      setIsExecuting(false);
+      setPendingCode(null);
+      inputRef.current?.focus();
+    }
+  }, [addEntry]);
+
+  // Handle confirmation: Run the pending code
+  const handleConfirmRun = useCallback(() => {
+    if (!pendingCode) return;
+    const codeToRun = pendingCode.isEditing ? pendingCode.editedCode : pendingCode.code;
+    executeCode(codeToRun);
+  }, [pendingCode, executeCode]);
+
+  // Handle confirmation: Cancel
+  const handleConfirmCancel = useCallback(() => {
+    setPendingCode(null);
+    addEntry('info', 'Execution cancelled');
+    inputRef.current?.focus();
+  }, [addEntry]);
+
+  // Handle confirmation: Toggle edit mode
+  const handleToggleEdit = useCallback(() => {
+    if (!pendingCode) return;
+    setPendingCode(prev => prev ? {
+      ...prev,
+      isEditing: !prev.isEditing,
+      editedCode: prev.isEditing ? prev.editedCode : prev.code,
+    } : null);
+    setTimeout(() => codeEditorRef.current?.focus(), 0);
+  }, [pendingCode]);
+
+  const handleSubmit = useCallback(async (bypassConfirm = false) => {
     const command = input.trim();
-    if (!command || isExecuting) return;
+    if (!command || isExecuting || pendingCode) return;
 
     // Add to history (avoid duplicates at the top)
     setCommandHistory(prev => {
@@ -125,10 +194,36 @@ export function TerminalPanel() {
     // Display the command
     addEntry('command', command);
     setInput('');
-    setIsExecuting(true);
 
+    // If confirmation mode is enabled and not bypassed, generate code first
+    if (terminalConfirmBeforeExecution && !bypassConfirm) {
+      setIsExecuting(true);
+      try {
+        const genResult = await window.terminal?.generateCode(command);
+        if (!genResult?.success || !genResult.code) {
+          addEntry('error', genResult?.error || 'Code generation failed');
+          setIsExecuting(false);
+          return;
+        }
+        // Show pending code for confirmation
+        setPendingCode({
+          command,
+          code: genResult.code,
+          isEditing: false,
+          editedCode: genResult.code,
+        });
+        setIsExecuting(false);
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        addEntry('error', `Code generation failed: ${errorMessage}`);
+        setIsExecuting(false);
+      }
+      return;
+    }
+
+    // Direct execution (no confirmation)
+    setIsExecuting(true);
     try {
-      // Call the real pipeline
       const result = await window.terminal?.run(command);
       
       if (!result) {
@@ -136,12 +231,10 @@ export function TerminalPanel() {
         return;
       }
 
-      // Show generated code
       if (result.code) {
         addEntry('code', result.code);
       }
 
-      // Show result or error
       if (result.success) {
         const formatted = formatResult(result.result);
         addEntry('result', formatted.display, result.result);
@@ -156,10 +249,17 @@ export function TerminalPanel() {
       setIsExecuting(false);
       inputRef.current?.focus();
     }
-  }, [input, isExecuting, addEntry]);
+  }, [input, isExecuting, pendingCode, terminalConfirmBeforeExecution, addEntry]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
-    // Enter: Submit command
+    // Ctrl+Enter: Submit and bypass confirmation
+    if (e.key === 'Enter' && e.ctrlKey) {
+      e.preventDefault();
+      handleSubmit(true);
+      return;
+    }
+
+    // Enter: Submit command (with confirmation if enabled)
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSubmit();
@@ -330,10 +430,36 @@ export function TerminalPanel() {
         <Terminal className="w-4 h-4 text-muted-foreground" />
         <span className="text-sm font-medium">Terminal</span>
         <div className="flex-1" />
-        <span className="text-xs text-muted-foreground">
-          Ctrl+L to clear
+        <span className="text-xs text-muted-foreground mr-2">
+          {terminalConfirmBeforeExecution ? 'Ctrl+Enter to run directly' : 'Ctrl+L to clear'}
         </span>
+        <button
+          onClick={() => setShowSettings(!showSettings)}
+          className={cn(
+            "p-1 rounded hover:bg-secondary transition-colors",
+            showSettings && "bg-secondary"
+          )}
+          title="Settings"
+        >
+          <Settings className="w-3.5 h-3.5 text-muted-foreground" />
+        </button>
       </div>
+
+      {/* Settings Panel */}
+      {showSettings && (
+        <div className="px-3 py-2 border-b border-border/30 bg-secondary/10">
+          <label className="flex items-center gap-2 text-xs cursor-pointer">
+            <input
+              type="checkbox"
+              checked={terminalConfirmBeforeExecution}
+              onChange={(e) => setTerminalConfirmBeforeExecution(e.target.checked)}
+              className="rounded border-border"
+            />
+            <span>Confirm before execution</span>
+            <span className="text-muted-foreground">(review code before running)</span>
+          </label>
+        </div>
+      )}
 
       {/* Output Area */}
       <div
@@ -355,7 +481,7 @@ export function TerminalPanel() {
         {entries.map(renderEntry)}
         
         {/* Executing indicator */}
-        {isExecuting && (
+        {isExecuting && !pendingCode && (
           <div className="flex items-center gap-2 text-muted-foreground">
             <Loader2 className="w-3.5 h-3.5 animate-spin" />
             <span className="text-xs">
@@ -365,6 +491,58 @@ export function TerminalPanel() {
               {currentPhase === 'retry' && 'Retrying with fix...'}
               {!currentPhase && 'Processing...'}
             </span>
+          </div>
+        )}
+
+        {/* Pending Code Confirmation */}
+        {pendingCode && (
+          <div className="mt-2 mb-2 rounded border border-amber-500/30 bg-amber-500/5">
+            <div className="flex items-center gap-2 px-3 py-2 border-b border-amber-500/20">
+              <span className="text-xs text-amber-400 font-medium">Review Generated Code</span>
+              <div className="flex-1" />
+              <button
+                onClick={handleToggleEdit}
+                className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
+              >
+                <Edit3 className="w-3 h-3" />
+                {pendingCode.isEditing ? 'Preview' : 'Edit'}
+              </button>
+            </div>
+            {pendingCode.isEditing ? (
+              <textarea
+                ref={codeEditorRef}
+                value={pendingCode.editedCode}
+                onChange={(e) => setPendingCode(prev => prev ? { ...prev, editedCode: e.target.value } : null)}
+                className="w-full p-3 text-xs font-mono bg-transparent text-amber-300/90 resize-none outline-none"
+                rows={Math.min(15, pendingCode.editedCode.split('\n').length + 2)}
+                spellCheck={false}
+              />
+            ) : (
+              <pre className="p-3 text-xs overflow-x-auto">
+                <code className="text-amber-300/90">{pendingCode.code}</code>
+              </pre>
+            )}
+            <div className="flex items-center gap-2 px-3 py-2 border-t border-amber-500/20">
+              <button
+                onClick={handleConfirmRun}
+                disabled={isExecuting}
+                className="px-3 py-1 text-xs rounded bg-green-600 hover:bg-green-500 text-white flex items-center gap-1 transition-colors disabled:opacity-50"
+              >
+                <Play className="w-3 h-3" />
+                Run
+              </button>
+              <button
+                onClick={handleConfirmCancel}
+                disabled={isExecuting}
+                className="px-3 py-1 text-xs rounded bg-secondary hover:bg-secondary/80 text-foreground flex items-center gap-1 transition-colors disabled:opacity-50"
+              >
+                <X className="w-3 h-3" />
+                Cancel
+              </button>
+              {pendingCode.isEditing && pendingCode.editedCode !== pendingCode.code && (
+                <span className="text-xs text-amber-400 ml-2">(modified)</span>
+              )}
+            </div>
           </div>
         )}
       </div>
@@ -379,12 +557,12 @@ export function TerminalPanel() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Type a command..."
-            disabled={isExecuting}
+            placeholder={pendingCode ? "Waiting for confirmation..." : "Type a command..."}
+            disabled={isExecuting || !!pendingCode}
             className={cn(
               'flex-1 bg-transparent border-none outline-none text-sm font-mono',
               'placeholder:text-muted-foreground/50',
-              isExecuting && 'opacity-50 cursor-not-allowed'
+              (isExecuting || pendingCode) && 'opacity-50 cursor-not-allowed'
             )}
             autoComplete="off"
             spellCheck={false}
