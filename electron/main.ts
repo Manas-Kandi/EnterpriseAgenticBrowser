@@ -24,6 +24,7 @@ import './integrations/mock/MockTrelloConnector'; // Initialize Mock Trello
 import './integrations/BrowserAutomationService'; // Initialize Playwright Automation
 import './services/WebAPIService'; // Initialize Web API tools (GitHub, HN, Wikipedia APIs)
 import './services/CodeExecutionService'; // Initialize dynamic code execution for agent
+import './services/TerminalIntegrationTool'; // Initialize AI Terminal integration for agent
 
 const { app, BrowserWindow, ipcMain, webContents } = electron;
 

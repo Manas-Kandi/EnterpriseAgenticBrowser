@@ -20,15 +20,18 @@ function findUp(startDir: string, filename: string, maxHops: number = 8): string
 }
 
 function ensureEnvLoaded(): void {
-  if (process.env.NVIDIA_API_KEY || process.env.OPENAI_API_KEY) return;
+  if (process.env.NVIDIA_API_KEY) return;
 
   const moduleDir = path.dirname(fileURLToPath(import.meta.url));
   const appPath = (() => {
     try { return app.getAppPath(); } catch { return null; }
   })();
 
+  // In bundled app, moduleDir is dist-electron/, so also check parent directories
+  const projectRoot = path.resolve(moduleDir, '..');
   const roots = [
     moduleDir,
+    projectRoot,  // Parent of dist-electron (project root)
     process.cwd(),
     appPath ?? undefined,
   ].filter((v): v is string => Boolean(v));
@@ -48,16 +51,11 @@ function ensureEnvLoaded(): void {
   console.warn('[CodeGeneratorService] Failed to locate .env. Roots tried:', roots);
 }
 
-// Helper to get API key - ensures env loaded, then reads from process.env
-function getApiKey(): { key: string; isNvidia: boolean } | null {
+// Helper to get NVIDIA API key - ensures env loaded, then reads from process.env
+function getApiKey(): { key: string } | null {
   ensureEnvLoaded();
-  // Debug: report what we see (do NOT log key value)
-  console.log('[CodeGeneratorService] Env key presence:', {
-    NVIDIA_API_KEY: Boolean(process.env.NVIDIA_API_KEY),
-    OPENAI_API_KEY: Boolean(process.env.OPENAI_API_KEY),
-  });
-  if (process.env.NVIDIA_API_KEY) return { key: process.env.NVIDIA_API_KEY, isNvidia: true };
-  if (process.env.OPENAI_API_KEY) return { key: process.env.OPENAI_API_KEY, isNvidia: false };
+  console.log('[CodeGeneratorService] NVIDIA_API_KEY present:', Boolean(process.env.NVIDIA_API_KEY));
+  if (process.env.NVIDIA_API_KEY) return { key: process.env.NVIDIA_API_KEY };
   return null;
 }
 
@@ -179,24 +177,18 @@ export class CodeGeneratorService {
     const apiKeyInfo = getApiKey();
     
     if (!apiKeyInfo) {
-      throw new Error('No API key found. Set NVIDIA_API_KEY or OPENAI_API_KEY in .env file.');
+      throw new Error('No API key found. Set NVIDIA_API_KEY in .env file.');
     }
 
-    // Use NVIDIA API by default, fall back to OpenAI
-    const baseUrl = apiKeyInfo.isNvidia 
-      ? 'https://integrate.api.nvidia.com/v1'
-      : undefined;
-
-    const modelName = apiKeyInfo.isNvidia
-      ? 'meta/llama-3.3-70b-instruct'  // Fast, good at code
-      : 'gpt-4o-mini';  // OpenAI fallback
-
+    // Always use NVIDIA API with Kimi K2 thinking model
     return new ChatOpenAI({
-      openAIApiKey: apiKeyInfo.key,
-      modelName,
-      temperature: options.temperature ?? 0.1,  // Low temp for deterministic code
+      apiKey: apiKeyInfo.key,
+      model: 'moonshotai/kimi-k2-instruct',  // Kimi K2 thinking model
+      temperature: options.temperature ?? 0.1,
       maxTokens: options.maxTokens ?? 2048,
-      configuration: baseUrl ? { baseURL: baseUrl } : undefined,
+      configuration: {
+        baseURL: 'https://integrate.api.nvidia.com/v1',
+      },
     });
   }
 
