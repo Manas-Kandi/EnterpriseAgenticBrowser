@@ -498,8 +498,6 @@ export class SpeculativeExecutor {
     // Only allow read-only or easily reversible tools
     const safeTool = [
       'browser_observe',
-      'browser_navigate',
-      'browser_click',
       'api_web_search',
     ];
     return safeTool.includes(toolName);

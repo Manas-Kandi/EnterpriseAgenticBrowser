@@ -31,6 +31,7 @@ export class WorkflowOrchestrator {
   private context: Record<string, unknown> = {};
   private model: Runnable;
   private availableTabs: string[] = []; // Track agent-created background tabs
+  private browserToolQueue: Promise<void> = Promise.resolve();
 
   constructor(model: Runnable) {
     this.model = model;
@@ -94,6 +95,7 @@ Rules:
     tasks.forEach(t => this.tasks.set(t.id, t));
     this.context = {};
     this.availableTabs = [];
+    this.browserToolQueue = Promise.resolve();
 
     let hasFailure = false;
 
@@ -122,7 +124,7 @@ Rules:
             throw new Error(`Tool not found: ${task.tool}`);
           }
 
-          const result = await tool.invoke(resolvedArgs);
+          const result = await this.invokeWithBrowserLock(task.tool, () => tool.invoke(resolvedArgs));
           task.result = String(result);
 
           // FAST-PATH VERIFICATION: Run assertions if present
@@ -136,7 +138,7 @@ Rules:
                   tabId: resolvedArgs.tabId,
                   timeoutMs: assertion.timeoutMs || 5000
                 };
-                const verificationResult = await assertionTool.invoke(assertionArgs);
+                const verificationResult = await this.invokeWithBrowserLock(assertionTool.name, () => assertionTool.invoke(assertionArgs));
                 if (verificationResult.includes('Timeout') || verificationResult.includes('Did not find')) {
                   throw new Error(`Assertion failed: ${assertion.type} "${assertion.value}" - ${verificationResult}`);
                 }
@@ -199,6 +201,28 @@ Rules:
                      'browser_wait_for_url';
     const langChainTools = toolRegistry.toLangChainTools();
     return langChainTools.find(t => t.name === toolName);
+  }
+
+  private async invokeWithBrowserLock<T>(toolName: string, fn: () => Promise<T>): Promise<T> {
+    if (!this.isBrowserTool(toolName)) {
+      return fn();
+    }
+    const previous = this.browserToolQueue;
+    let release: () => void = () => undefined;
+    const next = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    this.browserToolQueue = previous.then(() => next);
+    await previous;
+    try {
+      return await fn();
+    } finally {
+      release();
+    }
+  }
+
+  private isBrowserTool(toolName: string): boolean {
+    return toolName.startsWith('browser_');
   }
 
   private resolveArgs(args: Record<string, unknown>): Record<string, unknown> {

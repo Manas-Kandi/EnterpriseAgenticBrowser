@@ -472,6 +472,7 @@ You can answer questions about what's on the page, explain content, summarize in
     let parseFailures = 0;
     let loopAlertCount = 0;
     let pendingErrorForReflection: string | null = null;
+    let verificationFailures = 0;
     let stepCount = 0;
     const toolsUsed: string[] = [];
     let lastTool: string | null = null;
@@ -608,12 +609,17 @@ Available tools:\n${langChainTools.map((t) => `- ${t.name}: ${t.description}`).j
 
         if (action.thought) this.emitStep('thought', action.thought);
         if (action.tool === 'final_response') {
-          const finalMessage = (action.args as { message?: string }).message || content;
+          let finalMessage = (action.args as { message?: string }).message || content;
           if (usedBrowserTools) {
             const verification = await this.verifyTaskSuccess(userMessage, String(messages[messages.length-1].content));
             if (!verification.success) {
-              messages.push(new SystemMessage(`Verification failed: ${verification.reason}. Please double check.`));
-              continue;
+              verificationFailures += 1;
+              if (verificationFailures <= 1) {
+                messages.push(new SystemMessage(`Verification failed: ${verification.reason}. Please double check.`));
+                continue;
+              }
+              this.emitStep('observation', `Verification failed twice (${verification.reason}). Returning best-effort response.`, { ok: false, phase: 'verification_soft_fail' });
+              finalMessage = `${finalMessage}\n\n(Verification warning: ${verification.reason})`;
             }
           }
           this.conversationHistory.push(new AIMessage(JSON.stringify(action)));
