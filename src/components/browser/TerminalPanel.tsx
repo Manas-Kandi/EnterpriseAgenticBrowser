@@ -363,8 +363,12 @@ export function TerminalPanel() {
     }
 
     // Check for agentic mode (prefix with /agent or @agent)
-    const isAgentMode = command.startsWith('/agent ') || command.startsWith('@agent ');
-    const actualCommand = isAgentMode ? command.replace(/^[@/]agent\s+/, '') : command;
+    // Also auto-detect navigation/complex requests that need the agent pipeline
+    const explicitAgentMode = command.startsWith('/agent ') || command.startsWith('@agent ');
+    const navigationPattern = /^(open|go to|navigate to|visit|take me to)\s+/i;
+    const complexPattern = /^(find|search|summarize|explain|analyze|what|how|why|tell me|show me)\s+/i;
+    const isAgentMode = explicitAgentMode || navigationPattern.test(command) || complexPattern.test(command);
+    const actualCommand = explicitAgentMode ? command.replace(/^[@/]agent\s+/, '') : command;
 
     // Direct execution (no confirmation)
     setIsExecuting(true);

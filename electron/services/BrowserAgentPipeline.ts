@@ -4,6 +4,8 @@ import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { AgentTool, toolRegistry } from './ToolRegistry';
 import { domContextService } from './DOMContextService';
 import { codeExecutorService } from './CodeExecutorService';
+import { agentTabOpenService } from './AgentTabOpenService';
+import { browserTargetService } from './BrowserTargetService';
 
 // Get NVIDIA API key
 function getApiKey(): string | null {
@@ -36,6 +38,7 @@ interface PlanResult {
     action: string;
     description: string;
     code?: string;
+    url?: string;  // For navigation actions
   }>;
   explanation: string;
 }
@@ -56,6 +59,12 @@ const CAPABILITIES_PROMPT = `You are an AI agent embedded in a web browser. You 
 
 ## Your Capabilities
 
+### Navigation (Opening URLs)
+You can navigate to any URL. For navigation requests:
+- Use action: "navigate" with a "url" field
+- NEVER use window.open() or window.location.href in code - these break out of the browser
+- The browser handles navigation internally in tabs
+
 ### Code Execution in Browser Context
 You can execute JavaScript code directly in the browser's page context. This gives you access to:
 - **DOM Access**: Query, read, and manipulate any element on the page
@@ -63,7 +72,6 @@ You can execute JavaScript code directly in the browser's page context. This giv
 - **Element Interaction**: Click buttons, fill forms, scroll, select options
 - **Data Extraction**: Scrape structured data like tables, lists, prices, links
 - **Page Analysis**: Analyze page structure, find patterns, count elements
-- **Navigation**: Detect URLs, check page state, wait for elements
 
 ### Available DOM APIs
 - document.querySelector / querySelectorAll
@@ -72,13 +80,11 @@ You can execute JavaScript code directly in the browser's page context. This giv
 - element.value (for inputs)
 - window.scrollTo / element.scrollIntoView
 - getComputedStyle for visual properties
-- MutationObserver for dynamic content
 
-### What You Cannot Do
-- Access other tabs or windows
-- Make cross-origin requests (CORS restrictions)
-- Access browser storage from other domains
-- Execute code outside the current page context
+### What You MUST NOT Do in Code
+- NEVER use window.open() - use navigate action instead
+- NEVER use window.location.href = ... - use navigate action instead
+- These will open external windows outside the browser
 
 ## Response Format
 Always respond with valid JSON matching the requested schema.`;
@@ -143,11 +149,38 @@ export class BrowserAgentPipeline {
 
       // Step 3: EXECUTE (if needed)
       let executionData: unknown = null;
-      if (reasoning.requiresExecution && plan.steps.some(s => s.code)) {
+      if (reasoning.requiresExecution && plan.steps.some(s => s.code || s.url)) {
         output += '## ⚡ Execution\n';
         const execResults: ExecutionResult[] = [];
         
         for (const step of plan.steps) {
+          // Handle navigation actions - use internal tab system
+          if (step.action === 'navigate' && step.url) {
+            try {
+              // Navigate in the active tab using the internal browser system
+              const target = browserTargetService.getActiveWebContents();
+              await target.loadURL(step.url);
+              output += `✅ ${step.description}: Navigated to ${step.url}\n`;
+              execResults.push({ success: true, data: `Navigated to ${step.url}` });
+            } catch (navError: any) {
+              // If no active webview, open in a new tab
+              try {
+                const tabId = await agentTabOpenService.openAgentTab({
+                  url: step.url,
+                  background: false,
+                  agentCreated: true,
+                });
+                output += `✅ ${step.description}: Opened ${step.url} in new tab\n`;
+                execResults.push({ success: true, data: `Opened ${step.url} in tab ${tabId}` });
+              } catch (tabError: any) {
+                output += `❌ Navigation failed: ${tabError.message}\n`;
+                execResults.push({ success: false, data: null, error: tabError.message });
+              }
+            }
+            continue;
+          }
+          
+          // Handle code execution
           if (step.code) {
             const result = await codeExecutorService.execute(step.code);
             execResults.push({
@@ -188,7 +221,7 @@ export class BrowserAgentPipeline {
   }
 
   /**
-   * Get current page context for the LLM
+   * Get current page context for the LLM (gracefully handles no active webview)
    */
   private async getPageContext(): Promise<string> {
     try {
@@ -200,7 +233,8 @@ export class BrowserAgentPipeline {
 - Links: ${context.interactiveElements?.links?.length || 0}
 - Inputs: ${context.interactiveElements?.inputs?.length || 0}`;
     } catch {
-      return 'Page context unavailable';
+      // No active webview - this is fine for navigation-only requests
+      return 'No page currently open. You can navigate to a URL.';
     }
   }
 
@@ -266,7 +300,12 @@ Understanding: ${reasoning.understanding}
 Intent: ${reasoning.intent}
 Requires Code Execution: ${reasoning.requiresExecution}
 
-If code execution is needed, write JavaScript that:
+IMPORTANT: For navigation requests (open, go to, visit a URL/website):
+- Use action: "navigate" with a "url" field
+- Do NOT use window.open() or window.location - these open external windows
+- The browser will handle navigation internally
+
+For code execution:
 - Runs in browser context (has access to document, window)
 - Returns the data needed (use return statement)
 - Is concise and robust
@@ -276,9 +315,10 @@ Respond with JSON:
   "explanation": "Brief explanation of the approach",
   "steps": [
     {
-      "action": "extract|click|scroll|analyze|summarize",
+      "action": "navigate|extract|click|scroll|analyze|summarize",
       "description": "What this step does",
-      "code": "// JavaScript code if needed (optional)"
+      "url": "https://example.com (only for navigate action)",
+      "code": "// JavaScript code if needed (optional, not for navigate)"
     }
   ]
 }`;
