@@ -6,6 +6,10 @@ import { domContextService } from './DOMContextService';
 import { codeExecutorService } from './CodeExecutorService';
 import { agentTabOpenService } from './AgentTabOpenService';
 import { browserTargetService } from './BrowserTargetService';
+import { stateManager, TaskState } from './agent/StateManager';
+import { agentMemory } from './agent/AgentMemory';
+import { tabOrchestrator, TabTask } from './agent/TabOrchestrator';
+import { DataPipeline } from './agent/DataPipeline';
 
 // Get NVIDIA API key
 function getApiKey(): string | null {
@@ -55,36 +59,50 @@ interface PresentationResult {
 }
 
 // System prompt that teaches the agent its capabilities
-const CAPABILITIES_PROMPT = `You are an AI agent embedded in a web browser. You help users interact with and understand web pages.
+const CAPABILITIES_PROMPT = `You are an AUTONOMOUS AI agent embedded in a web browser. You COMPLETE tasks independently without asking the user to do things.
 
-## Your Capabilities
+## Core Principle
+DO NOT tell the user to click things or navigate manually. YOU do it. If a task requires multiple steps (navigate, click, wait, extract), YOU execute ALL of them.
 
-### Navigation (Opening URLs)
-You can navigate to any URL. For navigation requests:
-- Use action: "navigate" with a "url" field
-- NEVER use window.open() or window.location.href in code - these break out of the browser
-- The browser handles navigation internally in tabs
+## Your Actions
 
-### Code Execution in Browser Context
-You can execute JavaScript code directly in the browser's page context. This gives you access to:
-- **DOM Access**: Query, read, and manipulate any element on the page
-- **Text Extraction**: Get text content from any element or the entire page
-- **Element Interaction**: Click buttons, fill forms, scroll, select options
-- **Data Extraction**: Scrape structured data like tables, lists, prices, links
-- **Page Analysis**: Analyze page structure, find patterns, count elements
+### navigate
+Open a URL in the browser tab.
+- Use action: "navigate" with "url" field
+- Example: { "action": "navigate", "url": "https://github.com/user", "description": "Open user profile" }
 
-### Available DOM APIs
-- document.querySelector / querySelectorAll
-- element.textContent / innerText / innerHTML
-- element.click() / element.focus()
-- element.value (for inputs)
-- window.scrollTo / element.scrollIntoView
-- getComputedStyle for visual properties
+### click  
+Click an element on the page.
+- Use action: "click" with "selector" field (CSS selector)
+- Example: { "action": "click", "selector": "[data-tab='repositories']", "description": "Click Repositories tab" }
 
-### What You MUST NOT Do in Code
-- NEVER use window.open() - use navigate action instead
-- NEVER use window.location.href = ... - use navigate action instead
-- These will open external windows outside the browser
+### type
+Type text into an input field.
+- Use action: "type" with "selector" and "text" fields
+- Example: { "action": "type", "selector": "input[name='q']", "text": "browser", "description": "Search for browser" }
+
+### extract
+Run JavaScript to extract data from the page.
+- Use action: "extract" with "code" field
+- The code should return the data you need
+- Example: { "action": "extract", "code": "return [...document.querySelectorAll('a')].map(a => a.href)", "description": "Get all links" }
+
+### scroll
+Scroll the page.
+- Use action: "scroll" with optional "selector" field
+- Example: { "action": "scroll", "description": "Scroll down to load more content" }
+
+### wait
+Wait for page to update after an action.
+- Use action: "wait" with optional "ms" field (default 1000ms)
+- Example: { "action": "wait", "ms": 2000, "description": "Wait for content to load" }
+
+## Important Rules
+1. NEVER tell the user to do something - YOU do it
+2. Chain multiple actions to complete complex tasks
+3. After clicking/navigating, add a "wait" action before extracting
+4. Use robust selectors (data attributes, aria labels, text content)
+5. If you need to find something, navigate there first, then extract
 
 ## Response Format
 Always respond with valid JSON matching the requested schema.`;
@@ -123,6 +141,96 @@ export class BrowserAgentPipeline {
   }
 
   /**
+   * Run a complex multi-URL task with parallel execution
+   * Uses the new infrastructure for state management, parallel tabs, and memory
+   */
+  async runComplexTask(
+    query: string,
+    urls: string[],
+    extractionCode: string
+  ): Promise<{ taskId: string; results: unknown[]; stats: { success: number; failed: number; duration: number } }> {
+    const taskId = `task-${Date.now()}`;
+    const startTime = Date.now();
+
+    // Create task state
+    const plan = {
+      explanation: `Extract data from ${urls.length} URLs`,
+      steps: urls.map((url, i) => ({
+        id: `step-${i}`,
+        action: 'extract',
+        description: `Extract from ${new URL(url).hostname}`,
+        status: 'pending' as const,
+        data: { url },
+      })),
+    };
+
+    await stateManager.createTask(taskId, query, plan);
+
+    // Build parallel tasks
+    const tasks: TabTask[] = urls.map(url => ({
+      url,
+      extractionCode,
+      timeout: 30000,
+    }));
+
+    // Execute in parallel
+    const results = await tabOrchestrator.executeParallel(tasks);
+
+    // Record results and learn from them
+    for (const result of results) {
+      const domain = new URL(result.url).hostname;
+      
+      if (result.success) {
+        await agentMemory.recordVisit(domain, true);
+        // Learn successful extraction pattern
+        await agentMemory.learnSelector(domain, 'extraction', extractionCode, true);
+      } else {
+        await agentMemory.recordVisit(domain, false);
+        await agentMemory.recordError(domain, 'extraction_failed', result.error || 'Unknown error');
+      }
+    }
+
+    // Process through data pipeline
+    const pipeline = new DataPipeline({
+      deduplication: {
+        fields: ['url'],
+        strategy: 'last',
+      },
+    });
+
+    const { data: processedData } = await pipeline.process(
+      results.filter(r => r.success).map(r => r.data as Record<string, unknown>)
+    );
+
+    // Update task state
+    await stateManager.updateTaskStatus(taskId, 'completed');
+
+    return {
+      taskId,
+      results: processedData,
+      stats: {
+        success: results.filter(r => r.success).length,
+        failed: results.filter(r => !r.success).length,
+        duration: Date.now() - startTime,
+      },
+    };
+  }
+
+  /**
+   * Resume a previously started task from checkpoint
+   */
+  async resumeTask(taskId: string): Promise<TaskState | null> {
+    return stateManager.resumeFromCheckpoint(taskId);
+  }
+
+  /**
+   * Get task progress
+   */
+  getTaskProgress(taskId: string) {
+    return stateManager.getProgress(taskId);
+  }
+
+  /**
    * Main pipeline execution
    */
   async runPipeline(query: string): Promise<string> {
@@ -149,51 +257,134 @@ export class BrowserAgentPipeline {
 
       // Step 3: EXECUTE (if needed)
       let executionData: unknown = null;
-      if (reasoning.requiresExecution && plan.steps.some(s => s.code || s.url)) {
+      const hasExecutableSteps = plan.steps.some(s => 
+        s.code || s.url || s.action === 'click' || s.action === 'type' || 
+        s.action === 'scroll' || s.action === 'wait' || s.action === 'extract'
+      );
+      
+      if (reasoning.requiresExecution && hasExecutableSteps) {
         output += '## ⚡ Execution\n';
         const execResults: ExecutionResult[] = [];
         
         for (const step of plan.steps) {
-          // Handle navigation actions - use internal tab system
-          if (step.action === 'navigate' && step.url) {
-            try {
-              // Navigate in the active tab using the internal browser system
-              const target = browserTargetService.getActiveWebContents();
-              await target.loadURL(step.url);
-              output += `✅ ${step.description}: Navigated to ${step.url}\n`;
-              execResults.push({ success: true, data: `Navigated to ${step.url}` });
-            } catch (navError: any) {
-              // If no active webview, open in a new tab
+          try {
+            // Handle navigation
+            if (step.action === 'navigate' && step.url) {
               try {
+                const target = browserTargetService.getActiveWebContents();
+                await target.loadURL(step.url);
+                output += `✅ ${step.description}\n`;
+                execResults.push({ success: true, data: `Navigated to ${step.url}` });
+              } catch {
                 const tabId = await agentTabOpenService.openAgentTab({
                   url: step.url,
                   background: false,
                   agentCreated: true,
                 });
-                output += `✅ ${step.description}: Opened ${step.url} in new tab\n`;
+                output += `✅ ${step.description}\n`;
                 execResults.push({ success: true, data: `Opened ${step.url} in tab ${tabId}` });
-              } catch (tabError: any) {
-                output += `❌ Navigation failed: ${tabError.message}\n`;
-                execResults.push({ success: false, data: null, error: tabError.message });
               }
+              await new Promise(r => setTimeout(r, 1500)); // Wait for page load
+              continue;
             }
-            continue;
-          }
-          
-          // Handle code execution
-          if (step.code) {
-            const result = await codeExecutorService.execute(step.code);
-            execResults.push({
-              success: result.success,
-              data: result.result,
-              error: result.error,
-            });
             
-            if (!result.success) {
-              output += `❌ Step failed: ${result.error}\n`;
-            } else {
-              output += `✅ ${step.description}: Done\n`;
+            // Handle click
+            if (step.action === 'click' && (step as any).selector) {
+              const selector = (step as any).selector;
+              const clickCode = `
+                const el = document.querySelector(${JSON.stringify(selector)});
+                if (el) { el.click(); return { clicked: true, selector: ${JSON.stringify(selector)} }; }
+                else { return { clicked: false, error: 'Element not found: ' + ${JSON.stringify(selector)} }; }
+              `;
+              const result = await codeExecutorService.execute(clickCode, { timeout: 5000 });
+              if (result.success && (result.result as any)?.clicked) {
+                output += `✅ ${step.description}\n`;
+                execResults.push({ success: true, data: result.result });
+              } else {
+                output += `❌ ${step.description}: Element not found\n`;
+                execResults.push({ success: false, data: null, error: 'Element not found' });
+              }
+              await new Promise(r => setTimeout(r, 1000)); // Wait after click
+              continue;
             }
+            
+            // Handle type
+            if (step.action === 'type' && (step as any).selector && (step as any).text) {
+              const selector = (step as any).selector;
+              const text = (step as any).text;
+              const typeCode = `
+                const el = document.querySelector(${JSON.stringify(selector)});
+                if (el) { 
+                  el.focus(); 
+                  el.value = ${JSON.stringify(text)}; 
+                  el.dispatchEvent(new Event('input', { bubbles: true }));
+                  return { typed: true }; 
+                }
+                return { typed: false, error: 'Input not found' };
+              `;
+              const result = await codeExecutorService.execute(typeCode, { timeout: 5000 });
+              if (result.success && (result.result as any)?.typed) {
+                output += `✅ ${step.description}\n`;
+                execResults.push({ success: true, data: result.result });
+              } else {
+                output += `❌ ${step.description}: Input not found\n`;
+                execResults.push({ success: false, data: null, error: 'Input not found' });
+              }
+              continue;
+            }
+            
+            // Handle scroll
+            if (step.action === 'scroll') {
+              const selector = (step as any).selector;
+              const scrollCode = selector 
+                ? `document.querySelector(${JSON.stringify(selector)})?.scrollIntoView({ behavior: 'smooth' }); return { scrolled: true };`
+                : `window.scrollBy(0, window.innerHeight); return { scrolled: true };`;
+              await codeExecutorService.execute(scrollCode, { timeout: 3000 });
+              output += `✅ ${step.description}\n`;
+              execResults.push({ success: true, data: { scrolled: true } });
+              await new Promise(r => setTimeout(r, 500));
+              continue;
+            }
+            
+            // Handle wait
+            if (step.action === 'wait') {
+              const ms = (step as any).ms || 1000;
+              await new Promise(r => setTimeout(r, ms));
+              output += `✅ ${step.description}\n`;
+              execResults.push({ success: true, data: { waited: ms } });
+              continue;
+            }
+            
+            // Handle extract (code execution)
+            if (step.action === 'extract' || step.code) {
+              const code = step.code || (step as any).code;
+              if (code) {
+                await new Promise(r => setTimeout(r, 500));
+                
+                let sanitizedCode = code
+                  .replace(/window\.open\s*\([^)]*\)\s*;?/g, '/* removed */')
+                  .replace(/window\.location\s*=\s*[^;]+;?/g, '/* removed */')
+                  .replace(/window\.location\.href\s*=\s*[^;]+;?/g, '/* removed */');
+                
+                const result = await codeExecutorService.execute(sanitizedCode, { timeout: 15000 });
+                execResults.push({
+                  success: result.success,
+                  data: result.result,
+                  error: result.error,
+                });
+                
+                if (!result.success) {
+                  output += `❌ ${step.description}: ${result.error}\n`;
+                } else {
+                  output += `✅ ${step.description}\n`;
+                }
+              }
+              continue;
+            }
+            
+          } catch (stepError: any) {
+            output += `❌ ${step.description}: ${stepError.message}\n`;
+            execResults.push({ success: false, data: null, error: stepError.message });
           }
         }
         
@@ -242,7 +433,7 @@ export class BrowserAgentPipeline {
    * Step 1: REASON - Understand the user's request
    */
   private async reason(query: string, pageContext: string): Promise<ReasoningResult> {
-    const prompt = `Analyze this user request about a web page.
+    const prompt = `Analyze this user request.
 
 ${pageContext}
 
@@ -251,9 +442,11 @@ User Request: "${query}"
 Respond with JSON:
 {
   "understanding": "Brief explanation of what the user wants (1-2 sentences)",
-  "intent": "categorize as: extract_data | summarize | find_info | interact | analyze | question",
-  "requiresExecution": true/false (does this need to run code on the page?)
-}`;
+  "intent": "categorize as: navigate | extract_data | summarize | find_info | interact | analyze | question",
+  "requiresExecution": true/false (true if this needs navigation OR code execution)
+}
+
+IMPORTANT: If the user wants to open/go to/visit a URL or website, set intent to "navigate" and requiresExecution to TRUE.`;
 
     try {
       const response = await this.llm.invoke([
@@ -271,17 +464,19 @@ Respond with JSON:
         return JSON.parse(jsonMatch[0]);
       }
       
-      // Fallback
+      // Fallback - check for navigation keywords
+      const isNavigation = /\b(open|go to|navigate|visit|take me to)\b/i.test(query);
       return {
         understanding: `User wants to: ${query}`,
-        intent: 'extract_data',
+        intent: isNavigation ? 'navigate' : 'extract_data',
         requiresExecution: true,
       };
     } catch (error) {
       console.error('[Reason] Error:', error);
+      const isNavigation = /\b(open|go to|navigate|visit|take me to)\b/i.test(query);
       return {
         understanding: `Processing request: ${query}`,
-        intent: 'extract_data',
+        intent: isNavigation ? 'navigate' : 'extract_data',
         requiresExecution: true,
       };
     }
@@ -291,35 +486,45 @@ Respond with JSON:
    * Step 2: PLAN - Decide how to approach the task
    */
   private async plan(query: string, reasoning: ReasoningResult, pageContext: string): Promise<PlanResult> {
-    const prompt = `Create an execution plan for this browser task.
+    const prompt = `Create an execution plan for this browser task. YOU will execute ALL steps - do NOT tell the user to do anything.
 
 ${pageContext}
 
 User Request: "${query}"
 Understanding: ${reasoning.understanding}
 Intent: ${reasoning.intent}
-Requires Code Execution: ${reasoning.requiresExecution}
 
-IMPORTANT: For navigation requests (open, go to, visit a URL/website):
-- Use action: "navigate" with a "url" field
-- Do NOT use window.open() or window.location - these open external windows
-- The browser will handle navigation internally
+## Available Actions
 
-For code execution:
-- Runs in browser context (has access to document, window)
-- Returns the data needed (use return statement)
-- Is concise and robust
+1. **navigate** - Open a URL
+   { "action": "navigate", "url": "https://...", "description": "..." }
+
+2. **click** - Click an element  
+   { "action": "click", "selector": "CSS selector", "description": "..." }
+
+3. **type** - Type into an input
+   { "action": "type", "selector": "CSS selector", "text": "text to type", "description": "..." }
+
+4. **scroll** - Scroll the page
+   { "action": "scroll", "description": "..." }
+
+5. **wait** - Wait for page to update
+   { "action": "wait", "ms": 1500, "description": "..." }
+
+6. **extract** - Run JS to get data
+   { "action": "extract", "code": "return document.title;", "description": "..." }
+
+## Rules
+- Chain multiple actions to complete complex tasks
+- After navigate/click, add a wait before extract
+- Use robust selectors (text content, aria-label, data-* attributes)
+- NEVER tell user to do something manually - YOU do it
 
 Respond with JSON:
 {
-  "explanation": "Brief explanation of the approach",
+  "explanation": "Brief approach (1 sentence)",
   "steps": [
-    {
-      "action": "navigate|extract|click|scroll|analyze|summarize",
-      "description": "What this step does",
-      "url": "https://example.com (only for navigate action)",
-      "code": "// JavaScript code if needed (optional, not for navigate)"
-    }
+    { "action": "...", "description": "...", ... }
   ]
 }`;
 
@@ -339,7 +544,17 @@ Respond with JSON:
         return parsed;
       }
       
-      // Fallback: generate simple extraction code
+      // Fallback: check if navigation intent
+      if (reasoning.intent === 'navigate') {
+        const url = this.extractUrlFromQuery(query);
+        if (url) {
+          return {
+            explanation: `Navigate to ${url}`,
+            steps: [{ action: 'navigate', description: `Open ${url}`, url }],
+          };
+        }
+      }
+      
       return {
         explanation: 'Will extract content from the page',
         steps: [{
@@ -350,6 +565,16 @@ Respond with JSON:
       };
     } catch (error) {
       console.error('[Plan] Error:', error);
+      // Fallback: check if navigation intent
+      if (reasoning.intent === 'navigate') {
+        const url = this.extractUrlFromQuery(query);
+        if (url) {
+          return {
+            explanation: `Navigate to ${url}`,
+            steps: [{ action: 'navigate', description: `Open ${url}`, url }],
+          };
+        }
+      }
       return {
         explanation: 'Fallback: extracting page text',
         steps: [{
@@ -359,6 +584,43 @@ Respond with JSON:
         }],
       };
     }
+  }
+
+  /**
+   * Extract URL from a navigation query
+   */
+  private extractUrlFromQuery(query: string): string | null {
+    // Common site mappings
+    const sites: Record<string, string> = {
+      youtube: 'https://www.youtube.com',
+      google: 'https://www.google.com',
+      github: 'https://www.github.com',
+      twitter: 'https://www.twitter.com',
+      x: 'https://www.x.com',
+      facebook: 'https://www.facebook.com',
+      reddit: 'https://www.reddit.com',
+      linkedin: 'https://www.linkedin.com',
+      amazon: 'https://www.amazon.com',
+      netflix: 'https://www.netflix.com',
+      wikipedia: 'https://www.wikipedia.org',
+    };
+    
+    const lowerQuery = query.toLowerCase();
+    for (const [name, url] of Object.entries(sites)) {
+      if (lowerQuery.includes(name)) {
+        return url;
+      }
+    }
+    
+    // Check for explicit URL
+    const urlMatch = query.match(/https?:\/\/[^\s]+/i);
+    if (urlMatch) return urlMatch[0];
+    
+    // Check for domain-like pattern
+    const domainMatch = query.match(/\b([a-z0-9-]+\.(com|org|net|io|co|dev|app))\b/i);
+    if (domainMatch) return `https://${domainMatch[1]}`;
+    
+    return null;
   }
 
   /**

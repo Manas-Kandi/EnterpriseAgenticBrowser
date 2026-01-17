@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import ReactMarkdown from 'react-markdown';
 import { cn } from '@/lib/utils';
-import { Terminal, ChevronDown, ChevronRight, Copy, Check, Loader2, Download, Table, FileJson, Play, X, Edit3, Settings, Bell, Trash2, RefreshCw, Pause } from 'lucide-react';
-import { formatResult, exportAsCSV, exportAsJSON, FormattedResult } from '@/lib/resultFormatter';
+import { Bot, ChevronRight, Loader2, FileJson, Play, X, Edit3, Settings, Bell, Trash2, RefreshCw, Pause, Send, RotateCcw } from 'lucide-react';
+import { formatResult, FormattedResult } from '@/lib/resultFormatter';
 import { useBrowserStore } from '@/lib/store';
 
 // Monitor type
@@ -60,7 +61,6 @@ export function TerminalPanel() {
   const [commandHistory, setCommandHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [isExecuting, setIsExecuting] = useState(false);
-  const [copiedId, setCopiedId] = useState<string | null>(null);
   const [pendingCode, setPendingCode] = useState<PendingCode | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showMonitors, setShowMonitors] = useState(false);
@@ -246,21 +246,7 @@ export function TerminalPanel() {
     }
   }, [addEntry, loadScripts]);
 
-  const toggleCollapse = useCallback((id: string) => {
-    setEntries(prev => prev.map(e => 
-      e.id === id ? { ...e, collapsed: !e.collapsed } : e
-    ));
-  }, []);
 
-  const copyToClipboard = useCallback(async (content: string, id: string) => {
-    try {
-      await navigator.clipboard.writeText(content);
-      setCopiedId(id);
-      setTimeout(() => setCopiedId(null), 2000);
-    } catch {
-      // Ignore clipboard errors
-    }
-  }, []);
 
   const clearTerminal = useCallback(() => {
     setEntries([]);
@@ -532,111 +518,62 @@ export function TerminalPanel() {
   const renderEntry = (entry: TerminalEntry) => {
     switch (entry.type) {
       case 'command':
+        // User input - left aligned, bold
         return (
-          <div key={entry.id} className="flex items-start gap-2 text-blue-400">
-            <span className="text-muted-foreground select-none">&gt;</span>
-            <span className="font-medium">{entry.content}</span>
+          <div key={entry.id} className="text-xs font-semibold text-foreground">
+            {entry.content}
           </div>
         );
 
       case 'code':
+        // Code block - collapsible, minimal
         return (
-          <div key={entry.id} className="mt-1 mb-1">
-            <button
-              onClick={() => toggleCollapse(entry.id)}
-              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-            >
-              {entry.collapsed ? <ChevronRight className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-              <span>Generated Code</span>
-            </button>
-            {!entry.collapsed && (
-              <div className="relative mt-1 rounded bg-secondary/50 border border-border/30">
-                <button
-                  onClick={() => copyToClipboard(entry.content, entry.id)}
-                  className="absolute top-2 right-2 p-1 rounded hover:bg-secondary transition-colors"
-                  title="Copy code"
-                >
-                  {copiedId === entry.id ? (
-                    <Check className="w-3.5 h-3.5 text-green-400" />
-                  ) : (
-                    <Copy className="w-3.5 h-3.5 text-muted-foreground" />
-                  )}
-                </button>
-                <pre className="p-3 pr-10 text-xs overflow-x-auto">
-                  <code className="text-amber-300/90">{entry.content}</code>
-                </pre>
-              </div>
-            )}
+          <div key={entry.id} className="text-xs mt-1">
+            <details className="group">
+              <summary className="cursor-pointer list-none flex items-center gap-1 select-none text-muted-foreground/50 hover:text-muted-foreground text-[10px]">
+                <ChevronRight className="w-3 h-3 group-open:rotate-90 transition-transform" />
+                <span className="font-mono">code</span>
+              </summary>
+              <pre className="mt-1 text-[10px] overflow-x-auto font-mono text-muted-foreground whitespace-pre-wrap">
+                {entry.content}
+              </pre>
+            </details>
           </div>
         );
 
       case 'result':
-        const isTable = entry.formatted?.type === 'table';
-        const canExportCSV = isTable || (entry.formatted?.type === 'json' && Array.isArray(entry.rawResult));
+        // Agent response - left aligned, regular text with markdown
         return (
-          <div key={entry.id} className="mt-1 mb-2">
-            {/* Result type indicator and export buttons */}
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-xs text-muted-foreground flex items-center gap-1">
-                {isTable && <Table className="w-3 h-3" />}
-                {entry.formatted?.type === 'json' && <FileJson className="w-3 h-3" />}
-                {entry.formatted?.type || 'result'}
-                {isTable && entry.formatted?.rows && ` (${entry.formatted.rows.length} rows)`}
-              </span>
-              <div className="flex-1" />
-              {canExportCSV && (
-                <button
-                  onClick={() => entry.formatted && exportAsCSV(entry.formatted, `export-${Date.now()}.csv`)}
-                  className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
-                  title="Export as CSV"
-                >
-                  <Download className="w-3 h-3" />
-                  CSV
-                </button>
-              )}
-              <button
-                onClick={() => entry.formatted && exportAsJSON(entry.formatted, `export-${Date.now()}.json`)}
-                className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
-                title="Export as JSON"
-              >
-                <Download className="w-3 h-3" />
-                JSON
-              </button>
-            </div>
-            <div className="relative rounded bg-secondary/30 border border-border/20">
-              <button
-                onClick={() => copyToClipboard(entry.content, entry.id)}
-                className="absolute top-2 right-2 p-1 rounded hover:bg-secondary transition-colors"
-                title="Copy result"
-              >
-                {copiedId === entry.id ? (
-                  <Check className="w-3.5 h-3.5 text-green-400" />
-                ) : (
-                  <Copy className="w-3.5 h-3.5 text-muted-foreground" />
-                )}
-              </button>
-              <pre className={cn(
-                "p-3 pr-10 text-xs overflow-x-auto",
-                isTable ? "font-mono" : ""
-              )}>
-                <code className={cn(
-                  isTable ? "text-cyan-400/90" : "text-green-400/90"
-                )}>{entry.content}</code>
-              </pre>
-            </div>
+          <div key={entry.id} className="text-xs mt-1 text-foreground/80 leading-relaxed">
+            <ReactMarkdown
+              components={{
+                p: ({children}) => <p className="mb-1 last:mb-0">{children}</p>,
+                h1: ({children}) => <h1 className="font-semibold mt-2 mb-1 first:mt-0">{children}</h1>,
+                h2: ({children}) => <h2 className="font-semibold mt-2 mb-0.5 text-foreground/70">{children}</h2>,
+                h3: ({children}) => <h3 className="font-medium mt-1 mb-0.5">{children}</h3>,
+                ul: ({children}) => <ul className="list-disc pl-4 mb-1 space-y-0.5">{children}</ul>,
+                ol: ({children}) => <ol className="list-decimal pl-4 mb-1 space-y-0.5">{children}</ol>,
+                code: ({children}) => <code className="font-mono text-[10px]">{children}</code>,
+                pre: ({children}) => <pre className="text-[10px] my-1 font-mono overflow-x-auto whitespace-pre-wrap">{children}</pre>
+              }}
+            >
+              {entry.content}
+            </ReactMarkdown>
           </div>
         );
 
       case 'error':
+        // Error - left aligned, red text
         return (
-          <div key={entry.id} className="mt-1 mb-2 p-3 rounded bg-red-500/10 border border-red-500/20">
-            <pre className="text-xs text-red-400 whitespace-pre-wrap">{entry.content}</pre>
+          <div key={entry.id} className="text-xs mt-1 text-red-400/80">
+            {entry.content}
           </div>
         );
 
       case 'info':
+        // Info - left aligned, muted italic
         return (
-          <div key={entry.id} className="text-xs text-muted-foreground italic">
+          <div key={entry.id} className="text-xs mt-1 text-muted-foreground/60 italic">
             {entry.content}
           </div>
         );
@@ -648,44 +585,41 @@ export function TerminalPanel() {
 
   return (
     <div className="flex flex-col h-full bg-background">
-      {/* Header */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-border/30 bg-secondary/20">
-        <Terminal className="w-4 h-4 text-muted-foreground" />
-        <span className="text-sm font-medium">Terminal</span>
-        <div className="flex-1" />
-        <span className="text-xs text-muted-foreground mr-2">
-          {terminalConfirmBeforeExecution ? 'Ctrl+Enter to run directly' : 'Ctrl+L to clear'}
-        </span>
-        <button
-          onClick={() => { setShowScripts(!showScripts); setShowMonitors(false); setShowSettings(false); }}
-          className={cn(
-            "p-1 rounded hover:bg-secondary transition-colors",
-            showScripts && "bg-secondary"
-          )}
-          title="Scripts Library"
-        >
-          <FileJson className={cn("w-3.5 h-3.5", scripts.length > 0 ? "text-blue-400" : "text-muted-foreground")} />
-        </button>
-        <button
-          onClick={() => { setShowMonitors(!showMonitors); setShowScripts(false); setShowSettings(false); }}
-          className={cn(
-            "p-1 rounded hover:bg-secondary transition-colors",
-            showMonitors && "bg-secondary"
-          )}
-          title="Monitors"
-        >
-          <Bell className={cn("w-3.5 h-3.5", monitors.some(m => m.triggered) ? "text-amber-400" : "text-muted-foreground")} />
-        </button>
-        <button
-          onClick={() => { setShowSettings(!showSettings); setShowScripts(false); setShowMonitors(false); }}
-          className={cn(
-            "p-1 rounded hover:bg-secondary transition-colors",
-            showSettings && "bg-secondary"
-          )}
-          title="Settings"
-        >
-          <Settings className="w-3.5 h-3.5 text-muted-foreground" />
-        </button>
+      {/* Header - Minimal like Sidebar */}
+      <div className="h-12 border-b border-border/50 flex items-center justify-between px-3">
+        <span className="font-medium text-xs uppercase tracking-wider text-muted-foreground">Browser Agent</span>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => { setShowScripts(!showScripts); setShowMonitors(false); setShowSettings(false); }}
+            className={cn(
+              "p-1.5 rounded-md hover:bg-secondary/80 transition-colors",
+              showScripts && "bg-secondary"
+            )}
+            title="Scripts Library"
+          >
+            <FileJson className={cn("w-3.5 h-3.5", scripts.length > 0 ? "text-primary" : "text-muted-foreground")} />
+          </button>
+          <button
+            onClick={() => { setShowMonitors(!showMonitors); setShowScripts(false); setShowSettings(false); }}
+            className={cn(
+              "p-1.5 rounded-md hover:bg-secondary/80 transition-colors",
+              showMonitors && "bg-secondary"
+            )}
+            title="Monitors"
+          >
+            <Bell className={cn("w-3.5 h-3.5", monitors.some(m => m.triggered) ? "text-amber-400" : "text-muted-foreground")} />
+          </button>
+          <button
+            onClick={() => { setShowSettings(!showSettings); setShowScripts(false); setShowMonitors(false); }}
+            className={cn(
+              "p-1.5 rounded-md hover:bg-secondary/80 transition-colors",
+              showSettings && "bg-secondary"
+            )}
+            title="Settings"
+          >
+            <Settings className="w-3.5 h-3.5 text-muted-foreground" />
+          </button>
+        </div>
       </div>
 
       {/* Settings Panel */}
@@ -826,20 +760,18 @@ export function TerminalPanel() {
         </div>
       )}
 
-      {/* Output Area */}
+      {/* Output Area - Chat style */}
       <div
         ref={outputRef}
-        className="flex-1 overflow-y-auto p-3 font-mono text-sm space-y-1"
+        className="flex-1 overflow-y-auto p-3 space-y-3"
         onClick={() => inputRef.current?.focus()}
       >
         {entries.length === 0 && (
-          <div className="text-muted-foreground text-sm">
-            <p className="mb-2">Welcome to the AI Terminal.</p>
-            <p className="text-xs">
-              Type a natural language command to manipulate the current webpage.
-            </p>
-            <p className="text-xs mt-1 text-muted-foreground/70">
-              Examples: "Extract all links" • "Get the page title" • "Find all images"
+          <div className="flex flex-col items-center justify-center h-full text-muted-foreground/50 pb-10">
+            <Bot className="mb-2 opacity-20" size={32} />
+            <p className="text-xs">Ask me anything about this page</p>
+            <p className="text-[10px] mt-1 text-muted-foreground/30">
+              "summarize this" • "find all links" • "open youtube"
             </p>
           </div>
         )}
@@ -970,26 +902,39 @@ export function TerminalPanel() {
         )}
       </div>
 
-      {/* Input Area */}
-      <div className="border-t border-border/30 p-2 bg-secondary/10">
-        <div className="flex items-center gap-2">
-          <span className="text-muted-foreground select-none font-mono">&gt;</span>
-          <input
+      {/* Input Area - Chat style like Sidebar */}
+      <div className="p-3 border-t border-border/50 bg-background/50">
+        <form onSubmit={(e) => { e.preventDefault(); handleSubmit(); }} className="relative">
+          <input 
             ref={inputRef}
-            type="text"
+            className="w-full bg-secondary/50 border border-transparent rounded-md pl-3 pr-10 py-2.5 text-xs focus:outline-none focus:border-primary/30 focus:bg-secondary transition-all placeholder:text-muted-foreground/50"
+            placeholder={pendingCode ? "Waiting for confirmation..." : "Type a message..."}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={pendingCode ? "Waiting for confirmation..." : "Type a command..."}
             disabled={isExecuting || !!pendingCode}
-            className={cn(
-              'flex-1 bg-transparent border-none outline-none text-sm font-mono',
-              'placeholder:text-muted-foreground/50',
-              (isExecuting || pendingCode) && 'opacity-50 cursor-not-allowed'
-            )}
-            autoComplete="off"
-            spellCheck={false}
           />
+          <button 
+            type="submit" 
+            disabled={isExecuting || !input.trim() || !!pendingCode} 
+            className="absolute right-1 top-1 p-1.5 text-muted-foreground hover:text-primary disabled:opacity-30 transition-colors"
+          >
+            <Send size={14} />
+          </button>
+        </form>
+        
+        {/* Footer controls */}
+        <div className="flex items-center justify-between text-[10px] text-muted-foreground mt-2">
+          <span>{terminalConfirmBeforeExecution ? 'Review mode' : 'Direct mode'}</span>
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={clearTerminal}
+              className="p-1 hover:text-foreground hover:bg-secondary/50 rounded transition-colors"
+              title="Clear conversation"
+            >
+              <RotateCcw size={12} />
+            </button>
+          </div>
         </div>
       </div>
     </div>
