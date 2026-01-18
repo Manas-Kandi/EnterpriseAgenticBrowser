@@ -89,10 +89,8 @@ The user types commands (natural language or structured). The Agent translates t
 
 ## 5. Functional Requirements (The "How")
 
-### 5.1. Terminal UI
-- **FR-01**: A dedicated, always-available terminal pane.
-- **FR-02**: Support for rich output rendering (tables, code blocks, JSON).
-- **FR-03**: Input history and command auto-completion.
+### 5.1. UI
+- **FR-01**:Simple and human friendly UI
 
 ### 5.2. Execution Engine
 - **FR-04**: **CodeExecutorService**: Robust, atomic browser interaction primitives.

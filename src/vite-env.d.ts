@@ -92,6 +92,7 @@ interface Window {
     registerWebview: (tabId: string, webContentsId: number) => Promise<void>;
     setActiveTab: (tabId: string | null) => Promise<void>;
     activateTab: (tabId: string) => void;
+    navigate: (url: string) => Promise<{ success: boolean; url?: string; error?: string }>;
     onNavigateTo: (callback: (url: string) => void) => (() => void);
     onActivateTab: (callback: (payload: { tabId: string }) => void) => (() => void);
     onOpenAgentTab: (callback: (payload: { url: string; background: boolean; agentCreated: boolean; requestId?: string }) => void) => (() => void);
@@ -165,6 +166,7 @@ interface Window {
       errorHistory?: string[];
     }>;
     agent: (query: string) => Promise<{ success: boolean; result?: string; error?: string }>;
+    cancelAgent: () => Promise<{ success: boolean }>;
     onStep: (callback: (step: any) => void) => () => void;
   }
 

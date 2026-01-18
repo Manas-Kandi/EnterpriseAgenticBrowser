@@ -99,6 +99,7 @@ electron.contextBridge.exposeInMainWorld("browser", {
   registerWebview: (tabId, webContentsId) => electron.ipcRenderer.invoke("browser:webview-register", { tabId, webContentsId }),
   setActiveTab: (tabId) => electron.ipcRenderer.invoke("browser:active-tab", { tabId }),
   activateTab: (tabId) => electron.ipcRenderer.send("browser:activate-tab", { tabId }),
+  navigate: (url) => electron.ipcRenderer.invoke("browser:navigate-tab", url),
   onNavigateTo: (callback) => {
     const listener = (_, url) => callback(url);
     electron.ipcRenderer.on("browser:navigate-to", listener);
@@ -161,6 +162,7 @@ electron.contextBridge.exposeInMainWorld("terminal", {
   },
   run: (command) => electron.ipcRenderer.invoke("terminal:run", command),
   agent: (query) => electron.ipcRenderer.invoke("terminal:agent", query),
+  cancelAgent: () => electron.ipcRenderer.invoke("agent:cancel"),
   onStep: (callback) => {
     const listener = (_, step) => callback(step);
     electron.ipcRenderer.on("terminal:step", listener);

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { cn } from '@/lib/utils';
-import { Bot, ChevronRight, Loader2, FileJson, Play, X, Edit3, Settings, Bell, Trash2, RefreshCw, Pause, Send, RotateCcw } from 'lucide-react';
+import { Bot, ChevronRight, Loader2, FileJson, Play, X, Edit3, Settings, Bell, Trash2, RefreshCw, Pause, Send, RotateCcw, Download, FileText } from 'lucide-react';
 import { formatResult, FormattedResult } from '@/lib/resultFormatter';
 import { useBrowserStore } from '@/lib/store';
 
@@ -47,6 +47,53 @@ interface TerminalEntry {
 const HISTORY_KEY = 'terminal-command-history';
 const MAX_HISTORY = 50;
 
+// Common site URL mappings for fast-path navigation
+const COMMON_SITES: Record<string, string> = {
+  'github': 'https://github.com',
+  'youtube': 'https://youtube.com',
+  'google': 'https://google.com',
+  'twitter': 'https://twitter.com',
+  'x': 'https://x.com',
+  'linkedin': 'https://linkedin.com',
+  'facebook': 'https://facebook.com',
+  'reddit': 'https://reddit.com',
+  'stackoverflow': 'https://stackoverflow.com',
+  'stack overflow': 'https://stackoverflow.com',
+  'npm': 'https://npmjs.com',
+  'docs': 'https://developer.mozilla.org',
+  'mdn': 'https://developer.mozilla.org',
+  'wikipedia': 'https://wikipedia.org',
+  'wiki': 'https://wikipedia.org',
+  'amazon': 'https://amazon.com',
+  'netflix': 'https://netflix.com',
+  'gmail': 'https://mail.google.com',
+  'drive': 'https://drive.google.com',
+  'maps': 'https://maps.google.com',
+  'calendar': 'https://calendar.google.com',
+  'slack': 'https://slack.com',
+  'discord': 'https://discord.com',
+  'notion': 'https://notion.so',
+  'figma': 'https://figma.com',
+  'vercel': 'https://vercel.com',
+  'netlify': 'https://netlify.com',
+  'heroku': 'https://heroku.com',
+};
+
+// Common command patterns for auto-completion
+const COMMAND_PATTERNS = [
+  { pattern: 'extract', suggestions: ['extract all links', 'extract all prices', 'extract all emails', 'extract all images', 'extract table data'] },
+  { pattern: 'find', suggestions: ['find all buttons', 'find all forms', 'find text "', 'find links containing "'] },
+  { pattern: 'open', suggestions: ['open youtube', 'open github', 'open google', 'open linkedin', 'open twitter'] },
+  { pattern: 'navigate', suggestions: ['navigate to ', 'navigate back', 'navigate forward'] },
+  { pattern: 'click', suggestions: ['click button "', 'click link "', 'click on "'] },
+  { pattern: 'type', suggestions: ['type "" into ', 'type in search box'] },
+  { pattern: 'scroll', suggestions: ['scroll to bottom', 'scroll to top', 'scroll to element "'] },
+  { pattern: 'wait', suggestions: ['wait for element "', 'wait 3 seconds', 'wait for page load'] },
+  { pattern: 'summarize', suggestions: ['summarize this page', 'summarize article', 'summarize main content'] },
+  { pattern: 'monitor', suggestions: ['monitor this page for changes', 'monitor price on this page'] },
+  { pattern: 'search', suggestions: ['search for "', 'search google for "', 'search on this page for "'] },
+];
+
 // Pending code confirmation state
 interface PendingCode {
   command: string;
@@ -71,6 +118,8 @@ export function TerminalPanel() {
   const [showSavePrompt, setShowSavePrompt] = useState(false);
   const [streamingCode, setStreamingCode] = useState<string>('');
   const [isStreaming, setIsStreaming] = useState(false);
+  const [autocompleteSuggestions, setAutocompleteSuggestions] = useState<string[]>([]);
+  const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(-1);
   
   const { terminalConfirmBeforeExecution, setTerminalConfirmBeforeExecution } = useBrowserStore();
   
@@ -369,12 +418,59 @@ export function TerminalPanel() {
       return;
     }
 
+    // FAST-PATH: Simple navigation commands ("open github", "go to youtube")
+    const simpleNavMatch = command.match(/^(open|go to|navigate to|visit|goto)\s+(.+?)$/i);
+    if (simpleNavMatch) {
+      const target = simpleNavMatch[2].trim().toLowerCase();
+      
+      // Check if it's a common site
+      const commonUrl = COMMON_SITES[target];
+      if (commonUrl) {
+        setIsExecuting(true);
+        try {
+          addEntry('info', `🚀 Opening ${target}...`);
+          const navResult = await window.browser?.navigate(commonUrl);
+          if (navResult?.success) {
+            addEntry('result', `Navigated to ${commonUrl}`);
+          } else {
+            addEntry('error', navResult?.error || 'Navigation failed');
+          }
+          return;
+        } catch (err) {
+          addEntry('error', err instanceof Error ? err.message : String(err));
+          return;
+        } finally {
+          setIsExecuting(false);
+        }
+      }
+      
+      // Check if it looks like a URL
+      if (target.includes('.') || target.startsWith('http://') || target.startsWith('https://')) {
+        setIsExecuting(true);
+        try {
+          const url = target.startsWith('http') ? target : `https://${target}`;
+          addEntry('info', `🚀 Opening ${url}...`);
+          const navResult = await window.browser?.navigate(url);
+          if (navResult?.success) {
+            addEntry('result', `Navigated to ${url}`);
+          } else {
+            addEntry('error', navResult?.error || 'Navigation failed');
+          }
+          return;
+        } catch (err) {
+          addEntry('error', err instanceof Error ? err.message : String(err));
+          return;
+        } finally {
+          setIsExecuting(false);
+        }
+      }
+    }
+
     // Check for agentic mode (prefix with /agent or @agent)
-    // Also auto-detect navigation/complex requests that need the agent pipeline
+    // Also auto-detect complex requests that need the agent pipeline
     const explicitAgentMode = command.startsWith('/agent ') || command.startsWith('@agent ');
-    const navigationPattern = /^(open|go to|navigate to|visit|take me to)\s+/i;
     const complexPattern = /^(find|search|summarize|explain|analyze|what|how|why|tell me|show me)\s+/i;
-    const isAgentMode = explicitAgentMode || navigationPattern.test(command) || complexPattern.test(command);
+    const isAgentMode = explicitAgentMode || complexPattern.test(command);
     const actualCommand = explicitAgentMode ? command.replace(/^[@/]agent\s+/, '') : command;
 
     // Direct execution (no confirmation)
@@ -432,6 +528,8 @@ export function TerminalPanel() {
       addEntry('info', 'Generation cancelled');
     }
     if (isExecuting) {
+      // Cancel agent execution if running
+      await window.terminal?.cancelAgent();
       setIsExecuting(false);
       addEntry('info', 'Execution cancelled');
     }
@@ -441,27 +539,65 @@ export function TerminalPanel() {
     }
   }, [isStreaming, isExecuting, pendingCode, addEntry]);
 
-  // Tab autocomplete from script library
-  const handleTabComplete = useCallback(async () => {
-    if (!input.trim()) return false;
-    
-    const matches = scripts.filter(s => 
-      s.name.toLowerCase().startsWith(input.toLowerCase()) ||
-      s.command.toLowerCase().startsWith(input.toLowerCase())
-    );
-    
-    if (matches.length === 1) {
-      // Single match - run it
-      runScript(matches[0]);
-      setInput('');
-      return true;
-    } else if (matches.length > 1) {
-      // Multiple matches - show them
-      addEntry('info', `Matching scripts: ${matches.map(s => s.name).join(', ')}`);
-      return true;
+  // Generate autocomplete suggestions based on input
+  const updateAutocompleteSuggestions = useCallback((value: string) => {
+    if (!value.trim()) {
+      setAutocompleteSuggestions([]);
+      setSelectedSuggestionIndex(-1);
+      return;
     }
-    return false;
-  }, [input, scripts, runScript, addEntry]);
+
+    const lowerInput = value.toLowerCase();
+    const suggestions: string[] = [];
+
+    // Check command patterns
+    for (const { pattern, suggestions: patternSuggestions } of COMMAND_PATTERNS) {
+      if (lowerInput.startsWith(pattern)) {
+        suggestions.push(...patternSuggestions.filter(s => s.toLowerCase().startsWith(lowerInput)));
+      } else if (pattern.startsWith(lowerInput)) {
+        suggestions.push(...patternSuggestions);
+      }
+    }
+
+    // Check script library
+    const scriptMatches = scripts.filter(s => 
+      s.name.toLowerCase().includes(lowerInput) ||
+      s.command.toLowerCase().includes(lowerInput)
+    ).map(s => s.command);
+    suggestions.push(...scriptMatches);
+
+    // Check command history
+    const historyMatches = commandHistory.filter(cmd => 
+      cmd.toLowerCase().includes(lowerInput)
+    );
+    suggestions.push(...historyMatches);
+
+    // Remove duplicates and limit
+    const uniqueSuggestions = Array.from(new Set(suggestions)).slice(0, 8);
+    setAutocompleteSuggestions(uniqueSuggestions);
+    setSelectedSuggestionIndex(-1);
+  }, [scripts, commandHistory]);
+
+  // Handle input change with autocomplete
+  const handleInputChange = useCallback((value: string) => {
+    setInput(value);
+    updateAutocompleteSuggestions(value);
+  }, [updateAutocompleteSuggestions]);
+
+  // Tab autocomplete - cycle through suggestions or complete
+  const handleTabComplete = useCallback(() => {
+    if (autocompleteSuggestions.length === 0) return;
+    
+    if (autocompleteSuggestions.length === 1) {
+      setInput(autocompleteSuggestions[0]);
+      setAutocompleteSuggestions([]);
+      setSelectedSuggestionIndex(-1);
+    } else {
+      const nextIndex = (selectedSuggestionIndex + 1) % autocompleteSuggestions.length;
+      setSelectedSuggestionIndex(nextIndex);
+      setInput(autocompleteSuggestions[nextIndex]);
+    }
+  }, [autocompleteSuggestions, selectedSuggestionIndex]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
     // Ctrl+Enter: Submit and bypass confirmation
@@ -492,15 +628,37 @@ export function TerminalPanel() {
       return;
     }
 
-    // Tab: Autocomplete from script library
+    // Tab: Autocomplete
     if (e.key === 'Tab') {
       e.preventDefault();
       handleTabComplete();
       return;
     }
 
-    // Up arrow: Previous command in history
-    if (e.key === 'ArrowUp') {
+    // Arrow keys for autocomplete navigation
+    if (autocompleteSuggestions.length > 0) {
+      if (e.key === 'ArrowDown' && !e.ctrlKey) {
+        e.preventDefault();
+        const nextIndex = selectedSuggestionIndex < autocompleteSuggestions.length - 1 
+          ? selectedSuggestionIndex + 1 
+          : 0;
+        setSelectedSuggestionIndex(nextIndex);
+        setInput(autocompleteSuggestions[nextIndex]);
+        return;
+      }
+      if (e.key === 'ArrowUp' && !e.ctrlKey) {
+        e.preventDefault();
+        const prevIndex = selectedSuggestionIndex > 0 
+          ? selectedSuggestionIndex - 1 
+          : autocompleteSuggestions.length - 1;
+        setSelectedSuggestionIndex(prevIndex);
+        setInput(autocompleteSuggestions[prevIndex]);
+        return;
+      }
+    }
+
+    // Up arrow: Previous command in history (only if no autocomplete)
+    if (e.key === 'ArrowUp' && autocompleteSuggestions.length === 0) {
       e.preventDefault();
       if (commandHistory.length === 0) return;
       const newIndex = historyIndex < commandHistory.length - 1 ? historyIndex + 1 : historyIndex;
@@ -509,8 +667,8 @@ export function TerminalPanel() {
       return;
     }
 
-    // Down arrow: Next command in history
-    if (e.key === 'ArrowDown') {
+    // Down arrow: Next command in history (only if no autocomplete)
+    if (e.key === 'ArrowDown' && autocompleteSuggestions.length === 0) {
       e.preventDefault();
       if (historyIndex <= 0) {
         setHistoryIndex(-1);
@@ -534,7 +692,77 @@ export function TerminalPanel() {
       }
       return;
     }
-  }, [handleSubmit, clearTerminal, cancelExecution, handleTabComplete, commandHistory, historyIndex, pendingCode, isStreaming, isExecuting]);
+  }, [handleSubmit, clearTerminal, cancelExecution, handleTabComplete, commandHistory, historyIndex, pendingCode, isStreaming, isExecuting, autocompleteSuggestions, selectedSuggestionIndex]);
+
+  // Export utilities
+  const exportToJSON = useCallback((data: unknown, filename: string = 'export.json') => {
+    try {
+      const json = JSON.stringify(data, null, 2);
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+      addEntry('info', `📥 Exported to ${filename}`);
+    } catch (err) {
+      addEntry('error', `Export failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }, [addEntry]);
+
+  const exportToCSV = useCallback((data: unknown, filename: string = 'export.csv') => {
+    try {
+      let rows: any[] = [];
+      
+      // Handle different data structures
+      if (Array.isArray(data)) {
+        rows = data;
+      } else if (typeof data === 'object' && data !== null) {
+        rows = [data];
+      } else {
+        throw new Error('Data must be an array or object');
+      }
+
+      if (rows.length === 0) {
+        throw new Error('No data to export');
+      }
+
+      // Extract headers from first row
+      const headers = Object.keys(rows[0]);
+      const csvRows = [headers.join(',')];
+
+      // Convert rows to CSV
+      for (const row of rows) {
+        const values = headers.map(header => {
+          const val = row[header];
+          const str = val === null || val === undefined ? '' : String(val);
+          // Escape quotes and wrap in quotes if contains comma or quote
+          return str.includes(',') || str.includes('"') || str.includes('\n')
+            ? `"${str.replace(/"/g, '""')}"`
+            : str;
+        });
+        csvRows.push(values.join(','));
+      }
+
+      const csv = csvRows.join('\n');
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+      addEntry('info', `📥 Exported to ${filename}`);
+    } catch (err) {
+      addEntry('error', `CSV export failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }, [addEntry]);
+
+  // Check if data is exportable (array or object)
+  const isExportable = (data: unknown): boolean => {
+    return Array.isArray(data) || (typeof data === 'object' && data !== null && !('__type' in (data as any)));
+  };
 
   // Parse agent response into sections
   const parseAgentResponse = (content: string) => {
@@ -596,6 +824,7 @@ export function TerminalPanel() {
         // Agent response - parse and render with collapsible sections
         const sections = parseAgentResponse(entry.content);
         const hasStructuredResponse = sections.some(s => s.type !== 'response');
+        const canExport = entry.rawResult !== undefined && isExportable(entry.rawResult);
         
         return (
           <div key={entry.id} className="flex items-start gap-2 py-2">
@@ -603,6 +832,27 @@ export function TerminalPanel() {
               <Bot className="w-3 h-3 text-muted-foreground" />
             </div>
             <div className="flex-1 min-w-0">
+              {/* Export buttons */}
+              {canExport && (
+                <div className="flex items-center gap-1 mb-2">
+                  <button
+                    onClick={() => exportToJSON(entry.rawResult, `export-${entry.id}.json`)}
+                    className="px-2 py-1 text-[10px] rounded bg-secondary/50 hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
+                    title="Export as JSON"
+                  >
+                    <FileJson className="w-3 h-3" />
+                    JSON
+                  </button>
+                  <button
+                    onClick={() => exportToCSV(entry.rawResult, `export-${entry.id}.csv`)}
+                    className="px-2 py-1 text-[10px] rounded bg-secondary/50 hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
+                    title="Export as CSV"
+                  >
+                    <FileText className="w-3 h-3" />
+                    CSV
+                  </button>
+                </div>
+              )}
               {hasStructuredResponse ? (
                 <div className="space-y-2">
                   {/* Collapsible reasoning */}
@@ -1048,12 +1298,36 @@ export function TerminalPanel() {
       {/* Input Area - Chat style like Sidebar */}
       <div className="p-3 border-t border-border/50 bg-background/50">
         <form onSubmit={(e) => { e.preventDefault(); handleSubmit(); }} className="relative">
+          {/* Autocomplete dropdown */}
+          {autocompleteSuggestions.length > 0 && (
+            <div className="absolute bottom-full left-0 right-0 mb-1 bg-popover border border-border rounded-md shadow-lg max-h-48 overflow-y-auto z-50">
+              {autocompleteSuggestions.map((suggestion, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => {
+                    setInput(suggestion);
+                    setAutocompleteSuggestions([]);
+                    setSelectedSuggestionIndex(-1);
+                    inputRef.current?.focus();
+                  }}
+                  className={cn(
+                    "w-full text-left px-3 py-2 text-xs hover:bg-secondary transition-colors",
+                    idx === selectedSuggestionIndex && "bg-secondary"
+                  )}
+                >
+                  {suggestion}
+                </button>
+              ))}
+            </div>
+          )}
+          
           <input 
             ref={inputRef}
             className="w-full bg-secondary/50 border border-transparent rounded-md pl-3 pr-10 py-2.5 text-xs focus:outline-none focus:border-primary/30 focus:bg-secondary transition-all placeholder:text-muted-foreground/50"
             placeholder={pendingCode ? "Waiting for confirmation..." : "Type a message..."}
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => handleInputChange(e.target.value)}
             onKeyDown={handleKeyDown}
             disabled={isExecuting || !!pendingCode}
           />
@@ -1068,7 +1342,12 @@ export function TerminalPanel() {
         
         {/* Footer controls */}
         <div className="flex items-center justify-between text-[10px] text-muted-foreground mt-2">
-          <span>{terminalConfirmBeforeExecution ? 'Review mode' : 'Direct mode'}</span>
+          <span>
+            {terminalConfirmBeforeExecution ? 'Review mode' : 'Direct mode'}
+            {autocompleteSuggestions.length > 0 && (
+              <span className="ml-2 text-primary">• Tab to complete</span>
+            )}
+          </span>
           <div className="flex items-center gap-2">
             <button 
               onClick={clearTerminal}

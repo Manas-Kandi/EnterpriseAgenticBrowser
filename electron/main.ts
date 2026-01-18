@@ -740,9 +740,9 @@ app.whenReady().then(async () => {
     return scriptLibraryService.generateName(command);
   });
 
-  ipcMain.handle('terminal:generateCode', async (_, command: string, options?: { includeExplanation?: boolean }) => {
+  ipcMain.handle('terminal:generateCode', async (_, command: string, _options?: { includeExplanation?: boolean }) => {
     const { codeGeneratorService } = await import('./services/CodeGeneratorService');
-    return codeGeneratorService.generate(command, undefined, options);
+    return codeGeneratorService.generate(command, undefined);
   });
 
   ipcMain.handle('terminal:execute', async (_, input: string) => {
@@ -790,25 +790,51 @@ app.whenReady().then(async () => {
     return { cancelled: false };
   });
 
-  // Terminal: Full end-to-end pipeline (Simplified)
+  // Terminal: Full end-to-end pipeline with Fast Path + Interleaved Agent
   ipcMain.handle('terminal:run', async (event, command: string) => {
-    const { agentService } = await import('./services/AgentService');
-    const { domContextService } = await import('./services/DOMContextService');
+    const { fastPathExecutor } = await import('./services/FastPathExecutor');
     
-    let browserContext = '';
-    try {
-      const context = await domContextService.getMinimalContext();
-      browserContext = `URL="${context.url}", Title="${context.title}"`;
-    } catch { /* ignore */ }
+    // Try fast path first (instant execution, no LLM)
+    const fastResult = await fastPathExecutor.execute(command);
+    if (fastResult.handled) {
+      if (fastResult.success) {
+        event.sender.send('terminal:step', { 
+          type: 'observation', 
+          content: fastResult.result || 'Done',
+          metadata: { fastPath: true, ts: new Date().toISOString() }
+        });
+        return { success: true, result: fastResult.result };
+      } else {
+        return { success: false, error: fastResult.error };
+      }
+    }
 
-    agentService.setStepHandler((step) => event.sender.send('terminal:step', step));
+    // Use Interleaved Agent for complex commands (Reason → Execute → Evaluate loop)
+    const { interleavedAgent } = await import('./services/InterleavedAgent');
+    
+    interleavedAgent.setStepCallback((step) => {
+      // Map interleaved agent steps to terminal:step format
+      const stepType = step.type === 'reasoning' ? 'thought' 
+        : step.type === 'action' ? 'action'
+        : step.type === 'result' ? 'observation'
+        : 'observation';
+      
+      event.sender.send('terminal:step', {
+        type: stepType,
+        content: step.content,
+        metadata: { ...step.data, ts: new Date().toISOString() }
+      });
+    });
+
     try {
-      const result = await agentService.chat(command, browserContext);
-      return { success: true, result };
+      const result = await interleavedAgent.execute(command);
+      return { 
+        success: result.success, 
+        result: result.success ? (result.result || 'Task completed') : 'Task failed',
+        steps: result.steps.length
+      };
     } catch (err: any) {
       return { success: false, error: err.message };
-    } finally {
-      agentService.clearStepHandler();
     }
   });
 
@@ -817,6 +843,13 @@ app.whenReady().then(async () => {
     const { agentService } = await import('./services/AgentService');
     const result = await agentService.chat(query);
     return { success: true, result };
+  });
+
+  // Cancel agent execution
+  ipcMain.handle('agent:cancel', async () => {
+    const { agentService } = await import('./services/AgentService');
+    agentService.cancelExecution();
+    return { success: true };
   });
 
   // Agent IPC Handlers (Simplified)

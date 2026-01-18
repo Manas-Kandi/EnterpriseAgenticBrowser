@@ -47,6 +47,7 @@ export class AgentService {
   private currentModelId = 'deepseek-v3.1';
   private conversationHistory: BaseMessage[] = [];
   private onStep?: (step: AgentStep) => void;
+  private cancelRequested = false;
 
   private agentMode: 'chat' | 'read' | 'do' = 'do';
   private permissionMode: 'yolo' | 'permissions' | 'manual' = 'permissions';
@@ -106,8 +107,17 @@ export class AgentService {
     if (this.onStep) this.onStep({ type, content, metadata: { ...metadata, ts: new Date().toISOString() } });
   }
 
+  cancelExecution() {
+    this.cancelRequested = true;
+  }
+
   async chat(userMessage: string, browserContext?: string): Promise<string> {
     const runId = uuidv4();
+    const runStartTime = Date.now();
+    const GLOBAL_TIMEOUT_MS = 60000; // 60 seconds total execution timeout
+    const LLM_CALL_TIMEOUT_MS = 30000; // 30 seconds per LLM call
+    
+    this.cancelRequested = false;
     const tools = toolRegistry.toLangChainTools();
     
     this.emitStep('thought', `Starting session with ${this.currentModelId}`, { runId });
@@ -133,11 +143,47 @@ export class AgentService {
     this.conversationHistory.push(new HumanMessage(`Browser State: ${browserContext || 'No context'}\nUser Request: ${userMessage}`));
 
     for (let i = 0; i < 15; i++) {
-      const response = await this.model.invoke([systemPrompt, ...this.conversationHistory]) as AIMessage;
+      // Check global timeout
+      if (Date.now() - runStartTime > GLOBAL_TIMEOUT_MS) {
+        this.emitStep('observation', '⏱️ Execution timeout (60s) - stopping', { phase: 'timeout' });
+        return `Execution timed out after ${Math.round((Date.now() - runStartTime) / 1000)}s. The task may be too complex or the LLM is stuck. Try breaking it into smaller steps.`;
+      }
+
+      // Check cancellation
+      if (this.cancelRequested) {
+        this.emitStep('observation', '🛑 Execution cancelled by user', { phase: 'cancelled' });
+        this.cancelRequested = false;
+        return 'Execution cancelled by user.';
+      }
+
+      this.emitStep('thought', `Agent loop iteration ${i + 1}/15`, { iteration: i + 1, phase: 'reasoning' });
+
+      let response: AIMessage;
+      try {
+        // Add timeout to LLM call
+        const llmPromise = this.model.invoke([systemPrompt, ...this.conversationHistory]) as Promise<AIMessage>;
+        const timeoutPromise = new Promise<never>((_, reject) => 
+          setTimeout(() => reject(new Error('LLM call timeout')), LLM_CALL_TIMEOUT_MS)
+        );
+        response = await Promise.race([llmPromise, timeoutPromise]);
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        if (errorMsg.includes('timeout')) {
+          this.emitStep('observation', '⏱️ LLM call timed out (30s) - retrying...', { phase: 'llm_timeout' });
+          continue;
+        }
+        this.emitStep('observation', `❌ LLM error: ${errorMsg}`, { phase: 'llm_error' });
+        return `LLM error: ${errorMsg}`;
+      }
+
       const action = this.parseToolCall(String(response.content));
 
       if (!action) {
-        this.emitStep('thought', 'LLM output parse error, retrying...');
+        this.emitStep('thought', `⚠️ Parse error (attempt ${i + 1}/15) - LLM output was not valid JSON`, { phase: 'parse_error' });
+        if (i >= 2) {
+          // After 3 parse failures, give up
+          return `Failed to parse LLM response after ${i + 1} attempts. The model may not be responding correctly. Try rephrasing your request.`;
+        }
         continue;
       }
 
@@ -146,18 +192,48 @@ export class AgentService {
 
       const tool = tools.find(t => t.name === action.tool);
       if (tool) {
-        this.emitStep('action', `Executing ${tool.name}`, { tool: tool.name, args: action.args });
-        const res = String(await tool.invoke(action.args));
-        this.emitStep('observation', res, { tool: tool.name });
-        this.conversationHistory.push(new AIMessage(JSON.stringify(action)));
-        this.conversationHistory.push(new SystemMessage(`Result: ${res}`));
+        this.emitStep('action', `🔧 Executing ${tool.name}`, { tool: tool.name, args: action.args, phase: 'tool_execution' });
+        
+        try {
+          // Add timeout to tool execution
+          const toolPromise = tool.invoke(action.args);
+          const toolTimeoutPromise = new Promise<never>((_, reject) => 
+            setTimeout(() => reject(new Error('Tool execution timeout')), 20000) // 20s per tool
+          );
+          const res = String(await Promise.race([toolPromise, toolTimeoutPromise]));
+          
+          this.emitStep('observation', res.length > 500 ? res.slice(0, 500) + '...' : res, { 
+            tool: tool.name, 
+            resultLength: res.length,
+            phase: 'tool_result' 
+          });
+          
+          this.conversationHistory.push(new AIMessage(JSON.stringify(action)));
+          this.conversationHistory.push(new SystemMessage(`Result: ${res}`));
+        } catch (err) {
+          const errorMsg = err instanceof Error ? err.message : String(err);
+          this.emitStep('observation', `❌ Tool error: ${errorMsg}`, { tool: tool.name, phase: 'tool_error' });
+          this.conversationHistory.push(new AIMessage(JSON.stringify(action)));
+          this.conversationHistory.push(new SystemMessage(`Error: ${errorMsg}`));
+        }
+      } else {
+        this.emitStep('observation', `⚠️ Unknown tool: ${action.tool}`, { phase: 'unknown_tool' });
       }
     }
-    return "Task timed out.";
+    
+    this.emitStep('observation', '⏱️ Maximum iterations (15) reached', { phase: 'max_iterations' });
+    return `Task did not complete within 15 agent iterations. The task may be too complex. Try breaking it into smaller steps or being more specific.`;
   }
 
-  resetConversation() { this.conversationHistory = []; }
-  setModel(id: string) { this.currentModelId = id; this.model = this.createModel(id); }
+  resetConversation() { 
+    this.conversationHistory = []; 
+    this.cancelRequested = false;
+  }
+  
+  setModel(id: string) { 
+    this.currentModelId = id; 
+    this.model = this.createModel(id); 
+  }
 }
 
 export const agentService = new AgentService();

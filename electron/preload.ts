@@ -114,6 +114,7 @@ contextBridge.exposeInMainWorld('browser', {
     ipcRenderer.invoke('browser:webview-register', { tabId, webContentsId }),
   setActiveTab: (tabId: string | null) => ipcRenderer.invoke('browser:active-tab', { tabId }),
   activateTab: (tabId: string) => ipcRenderer.send('browser:activate-tab', { tabId }),
+  navigate: (url: string) => ipcRenderer.invoke('browser:navigate-tab', url),
   onNavigateTo: (callback: (url: string) => void) => {
     const listener = (_: unknown, url: string) => callback(url);
     ipcRenderer.on('browser:navigate-to', listener);
@@ -194,6 +195,8 @@ contextBridge.exposeInMainWorld('terminal', {
     ipcRenderer.invoke('terminal:run', command),
   agent: (query: string) =>
     ipcRenderer.invoke('terminal:agent', query),
+  cancelAgent: () =>
+    ipcRenderer.invoke('agent:cancel'),
   onStep: (callback: (step: any) => void) => {
     const listener = (_: unknown, step: any) => callback(step);
     ipcRenderer.on('terminal:step', listener);
