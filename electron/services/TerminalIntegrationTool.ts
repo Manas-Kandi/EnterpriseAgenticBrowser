@@ -4,7 +4,7 @@ import { domContextService } from './DOMContextService';
 import { codeGeneratorService } from './CodeGeneratorService';
 import { codeExecutorService } from './CodeExecutorService';
 
-// Helper function for Node.js safe result formatting
+// Helper function for Node.js safe result formatting - converts to human-readable markdown
 function formatResultForAgent(result: unknown): string {
   if (result === null || result === undefined) {
     return '(no output)';
@@ -14,17 +14,97 @@ function formatResultForAgent(result: unknown): string {
   }
   if (typeof result === 'object') {
     try {
-      const jsonString = JSON.stringify(result, null, 2);
-      // Simple heuristic for large objects to hint truncation
-      if (jsonString.length > 2000) {
-        return `(Large object, showing first 2000 chars)\n${jsonString.substring(0, 2000)}...`;
-      }
-      return jsonString;
+      // Format as human-readable markdown instead of raw JSON
+      return formatObjectAsMarkdown(result as Record<string, unknown>);
     } catch (e) {
       return `[Unserializable Object: ${String(result)}]`;
     }
   }
   return String(result);
+}
+
+// Format extracted data as clean markdown
+function formatObjectAsMarkdown(obj: Record<string, unknown>): string {
+  const lines: string[] = [];
+
+  // Handle page title
+  if (obj.pageTitle) {
+    lines.push(`# ${obj.pageTitle}\n`);
+  }
+
+  // Handle arrays of items (common patterns)
+  const arrayKeys = Object.keys(obj).filter(k => Array.isArray(obj[k]) && (obj[k] as unknown[]).length > 0);
+  
+  for (const key of arrayKeys) {
+    const items = obj[key] as Record<string, unknown>[];
+    const prettyKey = key.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase()).trim();
+    lines.push(`## ${prettyKey} (${items.length})\n`);
+
+    items.forEach((item, i) => {
+      // Try to find a name/title field
+      const name = item.name || item.title || item.label || `Item ${i + 1}`;
+      const desc = item.description || item.text || item.summary || '';
+      const extra: string[] = [];
+
+      // Collect other notable fields
+      if (item.stars) extra.push(`⭐ ${item.stars}`);
+      if (item.forks) extra.push(`🍴 ${item.forks}`);
+      if (item.language) extra.push(`📝 ${item.language}`);
+      if (item.price) extra.push(`💰 ${item.price}`);
+      if (item.rating) extra.push(`⭐ ${item.rating}`);
+      if (item.author) extra.push(`👤 ${item.author}`);
+      if (item.date) extra.push(`📅 ${item.date}`);
+
+      lines.push(`${i + 1}. **${name}**${extra.length ? ' - ' + extra.join(' | ') : ''}`);
+      if (desc) lines.push(`   ${desc}`);
+      if (item.url) lines.push(`   🔗 ${item.url}`);
+      lines.push('');
+    });
+  }
+
+  // Handle nested objects (like filters)
+  const objectKeys = Object.keys(obj).filter(k => 
+    typeof obj[k] === 'object' && 
+    obj[k] !== null && 
+    !Array.isArray(obj[k])
+  );
+
+  for (const key of objectKeys) {
+    const nested = obj[key] as Record<string, unknown>;
+    const prettyKey = key.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase()).trim();
+    lines.push(`### ${prettyKey}`);
+    for (const [k, v] of Object.entries(nested)) {
+      const prettyK = k.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase()).trim();
+      lines.push(`- **${prettyK}:** ${v}`);
+    }
+    lines.push('');
+  }
+
+  // Handle scalar summary fields
+  const scalarKeys = Object.keys(obj).filter(k => 
+    !Array.isArray(obj[k]) && 
+    k !== 'pageTitle' && 
+    typeof obj[k] !== 'object'
+  );
+
+  if (scalarKeys.length > 0 && lines.length > 0) {
+    lines.push('---');
+    for (const key of scalarKeys) {
+      const prettyKey = key.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase()).trim();
+      lines.push(`**${prettyKey}:** ${obj[key]}`);
+    }
+  }
+
+  // If we couldn't format anything meaningful, fall back to JSON
+  if (lines.length === 0) {
+    const jsonString = JSON.stringify(obj, null, 2);
+    if (jsonString.length > 2000) {
+      return `(Large object, showing first 2000 chars)\n${jsonString.substring(0, 2000)}...`;
+    }
+    return jsonString;
+  }
+
+  return lines.join('\n');
 }
 
 /**
