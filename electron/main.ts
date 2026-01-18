@@ -790,25 +790,42 @@ app.whenReady().then(async () => {
     return { cancelled: false };
   });
 
-  // Terminal: Full end-to-end pipeline (Simplified)
+  // Terminal: Interleaved Execution Loop (Reason → Execute → Evaluate)
   ipcMain.handle('terminal:run', async (event, command: string) => {
-    const { agentService } = await import('./services/AgentService');
-    const { domContextService } = await import('./services/DOMContextService');
+    const { interleavedExecutor } = await import('./services/InterleavedExecutor');
     
-    let browserContext = '';
-    try {
-      const context = await domContextService.getMinimalContext();
-      browserContext = `URL="${context.url}", Title="${context.title}"`;
-    } catch { /* ignore */ }
+    // Set up event callback to stream steps to the terminal
+    interleavedExecutor.setEventCallback((evt) => {
+      // Map executor events to terminal step format
+      const stepType = 
+        evt.type === 'reasoning' ? 'thought' :
+        evt.type === 'parsing' ? 'thought' :
+        evt.type === 'planning' ? 'thought' :
+        evt.type === 'action' ? 'action' :
+        evt.type === 'result' ? 'observation' :
+        evt.type === 'evaluation' ? 'observation' :
+        evt.type === 'complete' ? 'observation' :
+        evt.type === 'error' ? 'observation' :
+        'observation';
+      
+      event.sender.send('terminal:step', {
+        type: stepType,
+        content: evt.content,
+        metadata: { ...evt.data, executorType: evt.type, ts: new Date().toISOString() }
+      });
+    });
 
-    agentService.setStepHandler((step) => event.sender.send('terminal:step', step));
     try {
-      const result = await agentService.chat(command, browserContext);
-      return { success: true, result };
+      const result = await interleavedExecutor.execute(command);
+      return { 
+        success: result.success, 
+        result: result.results || (result.success ? 'Task completed' : 'Task failed'),
+        steps: result.steps.length,
+        assessment: result.assessment
+      };
     } catch (err: any) {
+      console.error('[terminal:run] Error:', err);
       return { success: false, error: err.message };
-    } finally {
-      agentService.clearStepHandler();
     }
   });
 
