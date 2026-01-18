@@ -322,7 +322,28 @@ export function TerminalPanel() {
     addEntry('command', command);
     setInput('');
 
-    // If confirmation mode is enabled and not bypassed, generate code first
+    // 1. Try Structured Execution via BrowserKernel
+    const parsed = await window.terminal?.parse(command);
+    if (parsed && parsed.type === 'structured') {
+      setIsExecuting(true);
+      try {
+        const result = await window.terminal?.execute(command);
+        if (result?.success) {
+          const formatted = formatResult(result.result);
+          addEntry('result', formatted.display, result.result);
+        } else {
+          addEntry('error', result?.error || 'Execution failed');
+        }
+        return;
+      } catch (err) {
+        addEntry('error', err instanceof Error ? err.message : String(err));
+        return;
+      } finally {
+        setIsExecuting(false);
+      }
+    }
+
+    // 2. If confirmation mode is enabled and not bypassed, generate code first
     if (terminalConfirmBeforeExecution && !bypassConfirm) {
       setIsExecuting(true);
       try {

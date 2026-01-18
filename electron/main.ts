@@ -27,6 +27,9 @@ import './services/CodeExecutionService'; // Initialize dynamic code execution f
 import './services/TerminalIntegrationTool'; // Initialize AI Terminal integration for agent
 import './services/BrowserAgentPipeline'; // Initialize 4-step agentic reasoning pipeline
 
+import { browserKernel } from './services/BrowserKernel';
+import { terminalParser } from './services/TerminalParser';
+
 const { app, BrowserWindow, ipcMain, webContents } = electron;
 
 const planMemory = new PlanMemory();
@@ -157,7 +160,9 @@ async function decryptChatHistory(payload: string): Promise<string> {
   return decrypted.toString();
 }
 
-async function createWindow(sessionState?: SessionMetadata | null) {
+let activeStreamAbort: AbortController | null = null;
+
+function createWindow(sessionState?: SessionMetadata | null) {
   const defaultWidth = 1200;
   const defaultHeight = 800;
 
@@ -771,12 +776,22 @@ app.whenReady().then(async () => {
     return codeGeneratorService.generate(command, undefined, options);
   });
 
-  // Streaming code generation - sends tokens via IPC events
-  let activeStreamAbort: AbortController | null = null;
-  
+  ipcMain.handle('terminal:execute', async (_, input: string) => {
+    return browserKernel.executeTerminalCommand(input);
+  });
+
+  ipcMain.handle('terminal:get-tabs', async () => {
+    return browserKernel.getAllTabs();
+  });
+
+  ipcMain.handle('terminal:parse', async (_, input: string) => {
+    return terminalParser.parse(input);
+  });
+
   ipcMain.handle('terminal:generateCodeStream', async (event, command: string) => {
     const { codeGeneratorService } = await import('./services/CodeGeneratorService');
     
+    // ... existing code ...
     // Create abort controller for cancellation
     activeStreamAbort = new AbortController();
     
@@ -842,26 +857,16 @@ app.whenReady().then(async () => {
   });
 
   // Agentic Pipeline: 4-step reasoning (Reason -> Plan -> Execute -> Present)
-  ipcMain.handle('terminal:agent', async (event, query: string) => {
+  ipcMain.handle('terminal:agent', async (_, query: string) => {
     const { browserAgentPipeline } = await import('./services/BrowserAgentPipeline');
-    
-    // Send progress updates
-    event.sender.send('terminal:step', { phase: 'agent', status: 'running', message: 'Starting agentic pipeline...' });
-    
-    try {
-      const result = await browserAgentPipeline.runPipeline(query);
-      event.sender.send('terminal:step', { phase: 'agent', status: 'done' });
-      return { success: true, result };
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      event.sender.send('terminal:step', { phase: 'agent', status: 'error', error: errorMsg });
-      return { success: false, error: errorMsg };
-    }
+    const result = await browserAgentPipeline.runPipeline(query);
+    return { success: true, result };
   });
 
   // Complex multi-URL task execution
   ipcMain.handle('terminal:complex-task', async (event, { query, urls, extractionCode }: { query: string; urls: string[]; extractionCode: string }) => {
     const { browserAgentPipeline } = await import('./services/BrowserAgentPipeline');
+    // ... rest of the code remains the same ...
     event.sender.send('terminal:step', { phase: 'complex-task', status: 'running', message: `Processing ${urls.length} URLs...` });
     
     try {

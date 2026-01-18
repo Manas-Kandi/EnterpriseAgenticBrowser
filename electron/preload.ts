@@ -185,6 +185,9 @@ contextBridge.exposeInMainWorld('terminal', {
     ipcRenderer.invoke('terminal:waitForCondition', conditionCode, timeout, pollInterval),
   waitForNetworkIdle: (idleMs?: number, timeout?: number) =>
     ipcRenderer.invoke('terminal:waitForNetworkIdle', idleMs, timeout),
+  execute: (input: string) => ipcRenderer.invoke('terminal:execute', input),
+  getTabs: () => ipcRenderer.invoke('terminal:get-tabs'),
+  parse: (input: string) => ipcRenderer.invoke('terminal:parse', input),
   generateCode: (command: string, options?: { includeExplanation?: boolean }) =>
     ipcRenderer.invoke('terminal:generateCode', command, options),
   generateCodeStream: (command: string) =>

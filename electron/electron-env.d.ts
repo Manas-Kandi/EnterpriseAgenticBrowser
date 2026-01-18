@@ -61,6 +61,9 @@ interface Window {
     waitForDOMStable: (stabilityMs?: number, timeout?: number) => Promise<unknown>
     waitForCondition: (conditionCode: string, timeout?: number, pollInterval?: number) => Promise<unknown>
     waitForNetworkIdle: (idleMs?: number, timeout?: number) => Promise<unknown>
+    execute: (input: string) => Promise<{ success: boolean; result?: unknown; error?: string }>
+    getTabs: () => Promise<Array<{ tabId: string; url: string; title: string; index: number; isActive: boolean }>>
+    parse: (input: string) => Promise<{ type: 'structured' | 'natural'; target: { type: string; value?: any }; action: string; args: string[] }>
     generateCode: (command: string, options?: { includeExplanation?: boolean }) => Promise<{ success: boolean; code?: string; error?: string }>
     generateCodeStream: (command: string) => Promise<unknown>
     cancelStream: () => Promise<unknown>
