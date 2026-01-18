@@ -1,6 +1,6 @@
 # Next-Gen Agentic Browser: Simplified System Snapshot
 
-> Vision: The fastest, most reliable, and most capable browser-based AI agent. An "invisible terminal" execution layer that translates natural language into robust, single-loop actions.
+> Vision: The fastest, most reliable, and most capable browser-based AI agent. A **visible, interactive terminal** interface that translates natural language into robust, parallel web actions.
 
 ---
 
@@ -30,4 +30,4 @@
 
 ### 4. Human-Agent Collaboration
 - **Confidence Handoffs**: Pause execution and ask for user guidance if confidence drops below threshold.
-- **Transparent Reasoning**: Keep the "Invisible Terminal" philosophy but provide clear markdown observations to the user.
+- **Transparent Reasoning**: Uphold the "Visible Terminal" philosophy by providing clear, real-time "Thought" and "Action" logs to the user.

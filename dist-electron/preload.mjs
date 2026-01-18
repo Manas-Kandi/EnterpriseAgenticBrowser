@@ -147,11 +147,7 @@ electron.contextBridge.exposeInMainWorld("terminal", {
   queryDOM: (selector) => electron.ipcRenderer.invoke("terminal:queryDOM", selector),
   click: (selector) => electron.ipcRenderer.invoke("terminal:click", selector),
   type: (selector, text) => electron.ipcRenderer.invoke("terminal:type", selector, text),
-  waitForElementToDisappear: (selector, timeout) => electron.ipcRenderer.invoke("terminal:waitForElementToDisappear", selector, timeout),
-  waitForURLChange: (pattern, timeout) => electron.ipcRenderer.invoke("terminal:waitForURLChange", pattern, timeout),
-  waitForDOMStable: (stabilityMs, timeout) => electron.ipcRenderer.invoke("terminal:waitForDOMStable", stabilityMs, timeout),
-  waitForCondition: (conditionCode, timeout, pollInterval) => electron.ipcRenderer.invoke("terminal:waitForCondition", conditionCode, timeout, pollInterval),
-  waitForNetworkIdle: (idleMs, timeout) => electron.ipcRenderer.invoke("terminal:waitForNetworkIdle", idleMs, timeout),
+  waitForElement: (selector, timeout) => electron.ipcRenderer.invoke("terminal:waitForElement", selector, timeout),
   execute: (input) => electron.ipcRenderer.invoke("terminal:execute", input),
   getTabs: () => electron.ipcRenderer.invoke("terminal:get-tabs"),
   parse: (input) => electron.ipcRenderer.invoke("terminal:parse", input),
@@ -163,11 +159,7 @@ electron.contextBridge.exposeInMainWorld("terminal", {
     electron.ipcRenderer.on("terminal:streamToken", listener);
     return () => electron.ipcRenderer.off("terminal:streamToken", listener);
   },
-  generateCodeWithRetry: (command, previousCode, error) => electron.ipcRenderer.invoke("terminal:generateCodeWithRetry", command, previousCode, error),
-  generateMultiStepPlan: (command) => electron.ipcRenderer.invoke("terminal:generateMultiStepPlan", command),
-  executeMultiStepPlan: (plan) => electron.ipcRenderer.invoke("terminal:executeMultiStepPlan", plan),
-  isMultiStepCommand: (command) => electron.ipcRenderer.invoke("terminal:isMultiStepCommand", command),
-  run: (command, options) => electron.ipcRenderer.invoke("terminal:run", command, options),
+  run: (command) => electron.ipcRenderer.invoke("terminal:run", command),
   agent: (query) => electron.ipcRenderer.invoke("terminal:agent", query),
   onStep: (callback) => {
     const listener = (_, step) => callback(step);
