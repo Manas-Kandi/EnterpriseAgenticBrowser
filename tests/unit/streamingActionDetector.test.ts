@@ -396,7 +396,7 @@ describe('StreamingActionDetector', () => {
 
   describe('Error Handling', () => {
     test('handles error state', () => {
-      let errorReceived: Error | null = null;
+      let errorReceived: Error | undefined = undefined;
       
       detector.startSession({
         onError: (err) => { errorReceived = err; },
@@ -404,7 +404,7 @@ describe('StreamingActionDetector', () => {
 
       detector.error(new Error('Test error'));
       
-      expect(errorReceived?.message).toBe('Test error');
+      expect(errorReceived!.message).toBe('Test error');
       expect(detector.getProgress().state).toBe('error');
     });
 

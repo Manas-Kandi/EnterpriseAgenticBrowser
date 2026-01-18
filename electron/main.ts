@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, webContents } from 'electron'
+import * as electron from 'electron'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import crypto from 'node:crypto'
@@ -24,6 +24,12 @@ import './integrations/mock/MockTrelloConnector'; // Initialize Mock Trello
 import './integrations/BrowserAutomationService'; // Initialize Playwright Automation
 import './services/WebAPIService'; // Initialize Web API tools (GitHub, HN, Wikipedia APIs)
 import './services/CodeExecutionService'; // Initialize dynamic code execution for agent
+import './services/TerminalIntegrationTool'; // Initialize AI Terminal integration for agent
+
+import { browserKernel } from './services/BrowserKernel';
+import { terminalParser } from './services/TerminalParser';
+
+const { app, BrowserWindow, ipcMain, webContents } = electron;
 
 const planMemory = new PlanMemory();
 
@@ -47,7 +53,7 @@ export const RENDERER_DIST = path.join(process.env.APP_ROOT, 'dist')
 
 process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path.join(process.env.APP_ROOT, 'public') : RENDERER_DIST
 
-let win: BrowserWindow | null
+let win: electron.BrowserWindow | null
 
 const newTabDashboardService = new NewTabDashboardService(new DummyAeroCoreDataSource());
 let newTabDashboardTimer: NodeJS.Timeout | null = null;
@@ -153,7 +159,9 @@ async function decryptChatHistory(payload: string): Promise<string> {
   return decrypted.toString();
 }
 
-async function createWindow(sessionState?: SessionMetadata | null) {
+let activeStreamAbort: AbortController | null = null;
+
+function createWindow(sessionState?: SessionMetadata | null) {
   const defaultWidth = 1200;
   const defaultHeight = 800;
 
@@ -221,7 +229,7 @@ async function createWindow(sessionState?: SessionMetadata | null) {
   });
 
   if (VITE_DEV_SERVER_URL) {
-    win.loadURL(VITE_DEV_SERVER_URL).catch((e) => {
+    win.loadURL(VITE_DEV_SERVER_URL).catch((e: unknown) => {
       console.error('Failed to load dev server URL:', e);
     });
     // Open DevTools in development mode to see any errors
@@ -591,6 +599,404 @@ app.whenReady().then(async () => {
   ipcMain.handle('benchmark:exportTrajectories', async (_, results: BenchmarkResult[]) => {
     const filePath = await benchmarkService.exportTrajectories(results);
     return { success: true, path: filePath };
+  });
+
+  // Terminal IPC Handlers
+  ipcMain.handle('terminal:getContext', async () => {
+    const { domContextService } = await import('./services/DOMContextService');
+    return domContextService.getContext();
+  });
+
+  ipcMain.handle('terminal:getMinimalContext', async () => {
+    const { domContextService } = await import('./services/DOMContextService');
+    return domContextService.getMinimalContext();
+  });
+
+  ipcMain.handle('terminal:executeCode', async (_, code: string, options?: { timeout?: number }) => {
+    const { codeExecutorService } = await import('./services/CodeExecutorService');
+    return codeExecutorService.execute(code, options);
+  });
+
+  ipcMain.handle('terminal:evaluate', async (_, expression: string) => {
+    const { codeExecutorService } = await import('./services/CodeExecutorService');
+    return codeExecutorService.evaluate(expression);
+  });
+
+  ipcMain.handle('terminal:queryDOM', async (_, selector: string) => {
+    const { codeExecutorService } = await import('./services/CodeExecutorService');
+    return codeExecutorService.queryDOM(selector);
+  });
+
+  ipcMain.handle('terminal:click', async (_, selector: string) => {
+    const { codeExecutorService } = await import('./services/CodeExecutorService');
+    return codeExecutorService.click(selector);
+  });
+
+  ipcMain.handle('terminal:type', async (_, selector: string, text: string) => {
+    const { codeExecutorService } = await import('./services/CodeExecutorService');
+    return codeExecutorService.type(selector, text);
+  });
+
+  ipcMain.handle('terminal:waitForElementToDisappear', async (_, selector: string, timeout?: number) => {
+    const { codeExecutorService } = await import('./services/CodeExecutorService');
+    return codeExecutorService.waitForElementToDisappear(selector, timeout);
+  });
+
+  ipcMain.handle('terminal:waitForURLChange', async (_, pattern?: string, timeout?: number) => {
+    const { codeExecutorService } = await import('./services/CodeExecutorService');
+    return codeExecutorService.waitForURLChange(pattern, timeout);
+  });
+
+  ipcMain.handle('terminal:waitForDOMStable', async (_, stabilityMs?: number, timeout?: number) => {
+    const { codeExecutorService } = await import('./services/CodeExecutorService');
+    return codeExecutorService.waitForDOMStable(stabilityMs, timeout);
+  });
+
+  ipcMain.handle('terminal:waitForCondition', async (_, conditionCode: string, timeout?: number, pollInterval?: number) => {
+    const { codeExecutorService } = await import('./services/CodeExecutorService');
+    return codeExecutorService.waitForCondition(conditionCode, timeout, pollInterval);
+  });
+
+  ipcMain.handle('terminal:waitForNetworkIdle', async (_, idleMs?: number, timeout?: number) => {
+    const { codeExecutorService } = await import('./services/CodeExecutorService');
+    return codeExecutorService.waitForNetworkIdle(idleMs, timeout);
+  });
+
+  // Page Monitor IPC Handlers
+  ipcMain.handle('monitor:create', async (_, config: { name: string; url: string; tabId?: string; checkCode: string; description: string; intervalMs?: number }) => {
+    const { pageMonitorService } = await import('./services/PageMonitorService');
+    return pageMonitorService.createMonitor(config);
+  });
+
+  ipcMain.handle('monitor:getAll', async () => {
+    const { pageMonitorService } = await import('./services/PageMonitorService');
+    return pageMonitorService.getMonitors();
+  });
+
+  ipcMain.handle('monitor:get', async (_, id: string) => {
+    const { pageMonitorService } = await import('./services/PageMonitorService');
+    return pageMonitorService.getMonitor(id);
+  });
+
+  ipcMain.handle('monitor:pause', async (_, id: string) => {
+    const { pageMonitorService } = await import('./services/PageMonitorService');
+    return pageMonitorService.pauseMonitor(id);
+  });
+
+  ipcMain.handle('monitor:resume', async (_, id: string) => {
+    const { pageMonitorService } = await import('./services/PageMonitorService');
+    return pageMonitorService.resumeMonitor(id);
+  });
+
+  ipcMain.handle('monitor:delete', async (_, id: string) => {
+    const { pageMonitorService } = await import('./services/PageMonitorService');
+    return pageMonitorService.deleteMonitor(id);
+  });
+
+  ipcMain.handle('monitor:reset', async (_, id: string) => {
+    const { pageMonitorService } = await import('./services/PageMonitorService');
+    return pageMonitorService.resetMonitor(id);
+  });
+
+  ipcMain.handle('monitor:check', async (_, id: string) => {
+    const { pageMonitorService } = await import('./services/PageMonitorService');
+    return pageMonitorService.checkMonitor(id);
+  });
+
+  // Telemetry IPC Handlers
+  ipcMain.handle('telemetry:getTerminalLogs', async (_, limit?: number) => {
+    const { telemetryService } = await import('./services/TelemetryService');
+    return telemetryService.getTerminalLogs(limit);
+  });
+
+  ipcMain.handle('telemetry:getTerminalStats', async () => {
+    const { telemetryService } = await import('./services/TelemetryService');
+    return telemetryService.getTerminalStats();
+  });
+
+  ipcMain.handle('telemetry:exportTerminalLogs', async (_, outputPath: string) => {
+    const { telemetryService } = await import('./services/TelemetryService');
+    return telemetryService.exportTerminalLogs(outputPath);
+  });
+
+  ipcMain.handle('telemetry:clearTerminalLogs', async () => {
+    const { telemetryService } = await import('./services/TelemetryService');
+    return telemetryService.clearTerminalLogs();
+  });
+
+  // Script Library IPC Handlers
+  ipcMain.handle('scripts:save', async (_, config: { name: string; command: string; code: string; urlPattern?: string; tags?: string[]; description?: string }) => {
+    const { scriptLibraryService } = await import('./services/ScriptLibraryService');
+    return scriptLibraryService.saveScript(config);
+  });
+
+  ipcMain.handle('scripts:getAll', async () => {
+    const { scriptLibraryService } = await import('./services/ScriptLibraryService');
+    return scriptLibraryService.getScripts();
+  });
+
+  ipcMain.handle('scripts:get', async (_, id: string) => {
+    const { scriptLibraryService } = await import('./services/ScriptLibraryService');
+    return scriptLibraryService.getScript(id);
+  });
+
+  ipcMain.handle('scripts:update', async (_, id: string, updates: Record<string, unknown>) => {
+    const { scriptLibraryService } = await import('./services/ScriptLibraryService');
+    return scriptLibraryService.updateScript(id, updates);
+  });
+
+  ipcMain.handle('scripts:delete', async (_, id: string) => {
+    const { scriptLibraryService } = await import('./services/ScriptLibraryService');
+    return scriptLibraryService.deleteScript(id);
+  });
+
+  ipcMain.handle('scripts:recordUsage', async (_, id: string) => {
+    const { scriptLibraryService } = await import('./services/ScriptLibraryService');
+    return scriptLibraryService.recordUsage(id);
+  });
+
+  ipcMain.handle('scripts:suggestForUrl', async (_, url: string) => {
+    const { scriptLibraryService } = await import('./services/ScriptLibraryService');
+    return scriptLibraryService.suggestForUrl(url);
+  });
+
+  ipcMain.handle('scripts:search', async (_, query: string) => {
+    const { scriptLibraryService } = await import('./services/ScriptLibraryService');
+    return scriptLibraryService.search(query);
+  });
+
+  ipcMain.handle('scripts:generateName', async (_, command: string) => {
+    const { scriptLibraryService } = await import('./services/ScriptLibraryService');
+    return scriptLibraryService.generateName(command);
+  });
+
+  ipcMain.handle('terminal:generateCode', async (_, command: string, options?: { includeExplanation?: boolean }) => {
+    const { codeGeneratorService } = await import('./services/CodeGeneratorService');
+    return codeGeneratorService.generate(command, undefined, options);
+  });
+
+  ipcMain.handle('terminal:execute', async (_, input: string) => {
+    return browserKernel.executeTerminalCommand(input);
+  });
+
+  ipcMain.handle('terminal:get-tabs', async () => {
+    return browserKernel.getAllTabs();
+  });
+
+  ipcMain.handle('terminal:parse', async (_, input: string) => {
+    return terminalParser.parse(input);
+  });
+
+  ipcMain.handle('terminal:generateCodeStream', async (event, command: string) => {
+    const { codeGeneratorService } = await import('./services/CodeGeneratorService');
+    
+    // ... existing code ...
+    // Create abort controller for cancellation
+    activeStreamAbort = new AbortController();
+    
+    try {
+      const generator = codeGeneratorService.generateStream(command);
+      
+      for await (const chunk of generator) {
+        if (activeStreamAbort?.signal.aborted) {
+          event.sender.send('terminal:streamToken', { type: 'cancelled', content: '' });
+          break;
+        }
+        event.sender.send('terminal:streamToken', chunk);
+        
+        if (chunk.type === 'done' || chunk.type === 'error') {
+          break;
+        }
+      }
+    } catch (err) {
+      event.sender.send('terminal:streamToken', { 
+        type: 'error', 
+        content: err instanceof Error ? err.message : String(err) 
+      });
+    } finally {
+      activeStreamAbort = null;
+    }
+    
+    return { started: true };
+  });
+
+  ipcMain.handle('terminal:cancelStream', async () => {
+    if (activeStreamAbort) {
+      activeStreamAbort.abort();
+      return { cancelled: true };
+    }
+    return { cancelled: false };
+  });
+
+  ipcMain.handle('terminal:generateCodeWithRetry', async (_, command: string, previousCode: string, error: string) => {
+    const { codeGeneratorService } = await import('./services/CodeGeneratorService');
+    return codeGeneratorService.generateWithRetry(command, previousCode, error);
+  });
+
+  ipcMain.handle('terminal:generateMultiStepPlan', async (_, command: string) => {
+    const { codeGeneratorService } = await import('./services/CodeGeneratorService');
+    return codeGeneratorService.generateMultiStepPlan(command);
+  });
+
+  ipcMain.handle('terminal:executeMultiStepPlan', async (event, plan: { steps: Array<{ id: string; description: string; code: string; waitFor?: string; waitSelector?: string; waitTimeout?: number; continueOnError?: boolean }>; loopUntil?: string; maxIterations?: number }) => {
+    const { codeExecutorService } = await import('./services/CodeExecutorService');
+    return codeExecutorService.executeMultiStepPlan(plan, {}, (stepId, result, iteration) => {
+      event.sender.send('terminal:step', {
+        phase: 'multiStep',
+        status: result.success ? 'done' : 'error',
+        data: { stepId, iteration, result: result.result },
+        error: result.error,
+      });
+    });
+  });
+
+  ipcMain.handle('terminal:isMultiStepCommand', async (_, command: string) => {
+    const { codeGeneratorService } = await import('./services/CodeGeneratorService');
+    return codeGeneratorService.isMultiStepCommand(command);
+  });
+
+  // Agentic Pipeline: Routes to AgentService for full agent loop
+  ipcMain.handle('terminal:agent', async (_, query: string) => {
+    const { agentService } = await import('./services/AgentService');
+    const result = await agentService.chat(query);
+    return { success: true, result };
+  });
+
+  // Terminal: Full end-to-end pipeline
+  ipcMain.handle('terminal:run', async (event, command: string, options?: { autoRetry?: boolean; maxRetries?: number }) => {
+    const startTime = Date.now();
+    const maxRetries = options?.maxRetries ?? 2;
+    const { domContextService } = await import('./services/DOMContextService');
+    const { codeGeneratorService } = await import('./services/CodeGeneratorService');
+    const { codeExecutorService } = await import('./services/CodeExecutorService');
+
+    // Step 1: Get DOM context
+    let context;
+    try {
+      event.sender.send('terminal:step', { phase: 'context', status: 'running' });
+      context = await domContextService.getContext();
+      event.sender.send('terminal:step', { phase: 'context', status: 'done', data: { url: context.url, title: context.title } });
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      event.sender.send('terminal:step', { phase: 'context', status: 'error', error: errorMsg });
+      return {
+        success: false,
+        error: `Failed to get page context: ${errorMsg}`,
+        duration: Date.now() - startTime,
+        retryCount: 0,
+      };
+    }
+
+    // Step 2: Generate code
+    let generatedCode: string;
+    try {
+      event.sender.send('terminal:step', { phase: 'codegen', status: 'running' });
+      const codeResult = await codeGeneratorService.generate(command, context);
+      if (!codeResult.success || !codeResult.code) {
+        throw new Error(codeResult.error || 'Code generation failed');
+      }
+      generatedCode = codeResult.code;
+      event.sender.send('terminal:step', { phase: 'codegen', status: 'done', data: { code: generatedCode } });
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      event.sender.send('terminal:step', { phase: 'codegen', status: 'error', error: errorMsg });
+      return {
+        success: false,
+        error: `Failed to generate code: ${errorMsg}`,
+        duration: Date.now() - startTime,
+        retryCount: 0,
+      };
+    }
+
+    // Step 3: Execute code with retry loop
+    event.sender.send('terminal:step', { phase: 'execute', status: 'running' });
+    let execResult = await codeExecutorService.execute(generatedCode);
+    let retryCount = 0;
+    const errorHistory: string[] = [];
+
+    // Auto-retry loop (up to maxRetries attempts)
+    while (!execResult.success && options?.autoRetry !== false && retryCount < maxRetries) {
+      retryCount++;
+      const currentError = execResult.error || 'Unknown error';
+      errorHistory.push(currentError);
+      
+      event.sender.send('terminal:step', { 
+        phase: 'retry', 
+        status: 'running', 
+        data: { 
+          error: currentError, 
+          attempt: retryCount, 
+          maxRetries,
+          analysis: `Attempt ${retryCount}/${maxRetries}: Analyzing error and generating fix...`
+        } 
+      });
+      
+      const retryResult = await codeGeneratorService.generateWithRetry(
+        command,
+        generatedCode,
+        currentError,
+        context
+      );
+
+      if (retryResult.success && retryResult.code) {
+        generatedCode = retryResult.code;
+        event.sender.send('terminal:step', { 
+          phase: 'codegen', 
+          status: 'done', 
+          data: { code: retryResult.code, isRetry: true, attempt: retryCount } 
+        });
+        
+        event.sender.send('terminal:step', { phase: 'execute', status: 'running' });
+        execResult = await codeExecutorService.execute(retryResult.code);
+      } else {
+        // Code generation failed, stop retrying
+        event.sender.send('terminal:step', { 
+          phase: 'retry', 
+          status: 'error', 
+          data: { attempt: retryCount },
+          error: retryResult.error || 'Failed to generate fix'
+        });
+        break;
+      }
+    }
+
+    event.sender.send('terminal:step', { 
+      phase: 'execute', 
+      status: execResult.success ? 'done' : 'error',
+      data: execResult.success ? { result: execResult.result } : { errorHistory },
+      error: execResult.error
+    });
+
+    // Log execution telemetry
+    const { telemetryService } = await import('./services/TelemetryService');
+    const contextHash = context ? 
+      Buffer.from(JSON.stringify({ url: context.url, title: context.title })).toString('base64').slice(0, 16) : 
+      undefined;
+    
+    await telemetryService.logTerminalExecution({
+      id: `exec-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      timestamp: Date.now(),
+      command,
+      code: generatedCode,
+      success: execResult.success,
+      result: execResult.success ? execResult.result : undefined,
+      error: execResult.error,
+      duration: Date.now() - startTime,
+      contextHash,
+      url: context?.url,
+      retryCount,
+    }).catch(err => console.error('[Telemetry] Failed to log execution:', err));
+
+    return {
+      success: execResult.success,
+      code: generatedCode,
+      result: execResult.result,
+      error: execResult.error,
+      stack: execResult.stack,
+      duration: Date.now() - startTime,
+      retryCount,
+      errorHistory: execResult.success ? undefined : errorHistory,
+    };
   });
 
   // Agent IPC Handlers

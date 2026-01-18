@@ -1,6 +1,6 @@
 import { useBrowserStore } from '@/lib/store';
 import { X } from 'lucide-react';
-import { AgentPanel } from './AgentPanel';
+import { TerminalPanel } from './TerminalPanel';
 import { useMemo, useState } from 'react';
 import { cn } from '@/lib/utils';
 
@@ -40,25 +40,20 @@ export function WorkspacePanel() {
         <div
             className={cn(
                 'w-[400px] bg-background flex flex-col z-10',
-                // Make the agent panel feel like part of the dock surface (less boxy)
-                activeSidebarPanel === 'agent'
-                    ? 'shadow-none'
-                    : 'border-r border-border/50 shadow-xl'
+                'border-r border-border/50 shadow-xl'
             )}
         >
-            {activeSidebarPanel !== 'agent' && (
-                <div className="h-10 flex items-center justify-between px-3 border-b border-border/50 bg-secondary/20">
-                    <span className="text-sm font-medium capitalize flex items-center gap-2">
-                        {activeSidebarPanel}
-                    </span>
-                    <button onClick={() => setSidebarPanel(null)} className="p-1 hover:bg-secondary rounded transition-colors">
-                        <X size={14} />
-                    </button>
-                </div>
-            )}
+            <div className="h-10 flex items-center justify-between px-3 border-b border-border/50 bg-secondary/20">
+                <span className="text-sm font-medium capitalize flex items-center gap-2">
+                    {activeSidebarPanel}
+                </span>
+                <button onClick={() => setSidebarPanel(null)} className="p-1 hover:bg-secondary rounded transition-colors">
+                    <X size={14} />
+                </button>
+            </div>
             <div className="flex-1 overflow-hidden relative flex flex-col">
-                {activeSidebarPanel === 'agent' ? (
-                    <AgentPanel />
+                {activeSidebarPanel === 'terminal' ? (
+                    <TerminalPanel />
                 ) : activeSidebarPanel === 'tabs' ? (
                     <div className="flex-1 overflow-auto browser-minimal-scrollbar">
                         <div className="p-3 border-b border-border/50">
@@ -247,7 +242,7 @@ export function WorkspacePanel() {
                                 <div className="mt-2 flex flex-col gap-1">
                                     {dockConfig.coreOrder.map((id) => {
                                         const hidden = dockConfig.coreHidden.includes(id);
-                                        const label = id === 'agent' ? 'Agent' : id === 'tabs' ? 'Tabs' : 'Workflows';
+                                        const label = id === 'tabs' ? 'Tabs' : 'Workflows';
                                         return (
                                             <div key={id} className="flex items-center gap-2 rounded-md px-2 py-2 bg-secondary/10">
                                                 <div className="flex-1 text-sm text-foreground/90">{label}</div>

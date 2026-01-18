@@ -277,8 +277,8 @@ describe('Session Persistence', () => {
 
   describe('Sidebar Panel State', () => {
     it('should persist sidebar panel state', () => {
-      useBrowserStore.getState().setSidebarPanel('agent');
-      expect(useBrowserStore.getState().activeSidebarPanel).toBe('agent');
+      useBrowserStore.getState().setSidebarPanel('terminal');
+      expect(useBrowserStore.getState().activeSidebarPanel).toBe('terminal');
       
       useBrowserStore.getState().setSidebarPanel('tabs');
       expect(useBrowserStore.getState().activeSidebarPanel).toBe('tabs');
@@ -353,7 +353,7 @@ describe('Session Persistence', () => {
 
     it('should reset dock config', () => {
       useBrowserStore.getState().toggleDockItem('core', 'tabs');
-      useBrowserStore.getState().toggleDockItem('core', 'agent');
+      useBrowserStore.getState().toggleDockItem('core', 'workflows');
       
       useBrowserStore.getState().resetDockConfig();
       

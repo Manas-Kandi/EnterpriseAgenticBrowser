@@ -48,4 +48,32 @@ interface Window {
     registerWebview: (tabId: string, webContentsId: number) => Promise<void>
     setActiveTab: (tabId: string | null) => Promise<void>
   }
+  terminal?: {
+    getContext: () => Promise<unknown>
+    getMinimalContext: () => Promise<unknown>
+    executeCode: (code: string, options?: { timeout?: number }) => Promise<unknown>
+    evaluate: (expression: string) => Promise<unknown>
+    queryDOM: (selector: string) => Promise<unknown>
+    click: (selector: string) => Promise<unknown>
+    type: (selector: string, text: string) => Promise<unknown>
+    waitForElementToDisappear: (selector: string, timeout?: number) => Promise<unknown>
+    waitForURLChange: (pattern?: string, timeout?: number) => Promise<unknown>
+    waitForDOMStable: (stabilityMs?: number, timeout?: number) => Promise<unknown>
+    waitForCondition: (conditionCode: string, timeout?: number, pollInterval?: number) => Promise<unknown>
+    waitForNetworkIdle: (idleMs?: number, timeout?: number) => Promise<unknown>
+    execute: (input: string) => Promise<{ success: boolean; result?: unknown; error?: string }>
+    getTabs: () => Promise<Array<{ tabId: string; url: string; title: string; index: number; isActive: boolean }>>
+    parse: (input: string) => Promise<{ type: 'structured' | 'natural'; target: { type: string; value?: any }; action: string; args: string[] }>
+    generateCode: (command: string, options?: { includeExplanation?: boolean }) => Promise<{ success: boolean; code?: string; error?: string }>
+    generateCodeStream: (command: string) => Promise<unknown>
+    cancelStream: () => Promise<unknown>
+    onStreamToken: (callback: (token: { type: string; content: string; code?: string }) => void) => () => void
+    generateCodeWithRetry: (command: string, previousCode: string, error: string) => Promise<unknown>
+    generateMultiStepPlan: (command: string) => Promise<unknown>
+    executeMultiStepPlan: (plan: unknown) => Promise<unknown>
+    isMultiStepCommand: (command: string) => Promise<unknown>
+    run: (command: string, options?: { autoRetry?: boolean }) => Promise<{ success: boolean; result?: unknown; code?: string; error?: string; stack?: string }>
+    agent: (query: string) => Promise<{ success: boolean; result?: string; error?: string }>
+    onStep: (callback: (step: { phase: string; status: string; data?: unknown; error?: string }) => void) => () => void
+  }
 }

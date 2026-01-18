@@ -159,9 +159,9 @@ export interface TabGroup {
 
 export type TabsLayout = 'horizontal' | 'vertical';
 
-export type SidebarPanel = 'agent' | 'tabs' | 'workflows' | null;
+export type SidebarPanel = 'terminal' | 'tabs' | 'workflows' | null;
 
-export type DockCoreItemId = 'agent' | 'tabs' | 'workflows';
+export type DockCoreItemId = 'tabs' | 'workflows';
 export type DockAeroItemId = 'aerocore-portal' | 'aerocore-admin' | 'aerocore-dispatch' | 'aerocore-fleet';
 
 export interface DockConfig {
@@ -172,7 +172,7 @@ export interface DockConfig {
 }
 
 const defaultDockConfig: DockConfig = {
-  coreOrder: ['agent', 'tabs', 'workflows'],
+  coreOrder: ['tabs', 'workflows'],
   coreHidden: [],
   aeroOrder: ['aerocore-portal', 'aerocore-admin', 'aerocore-dispatch', 'aerocore-fleet'],
   aeroHidden: [],
@@ -195,6 +195,10 @@ interface BrowserState {
   sessionInfo: SessionInfo;
 
   llmSettings: LLMSettings;
+  
+  // Terminal settings
+  terminalConfirmBeforeExecution: boolean;
+  setTerminalConfirmBeforeExecution: (enabled: boolean) => void;
   
   // Actions
   addTab: (url?: string, options?: AddTabOptions) => string;
@@ -255,6 +259,9 @@ export const useBrowserStore = create<BrowserState>()(
         model: 'llama-3.1-70b',
         apiKeyAccount: 'llm:nvidia:apiKey',
       },
+
+      terminalConfirmBeforeExecution: false,
+      setTerminalConfirmBeforeExecution: (enabled) => set({ terminalConfirmBeforeExecution: enabled }),
 
       sessionInfo: {
         lastSavedAt: Date.now(),

@@ -1,6 +1,6 @@
 import { useBrowserStore } from '@/lib/store';
 import { cn } from '@/lib/utils';
-import { Cpu, Grid, Shield, Navigation, Truck } from 'react-feather';
+import { Grid, Shield, Navigation, Truck, Terminal } from 'react-feather';
 import type { CSSProperties } from 'react';
 
 export function WorkspaceSidebar() {
@@ -40,20 +40,20 @@ export function WorkspaceSidebar() {
 
                 <div className="w-5 h-px my-3 bg-border/30" />
 
-                <div className="mt-auto">
+                <div className="mt-auto flex flex-col items-center gap-1">
                 <button
-                    onClick={() => setSidebarPanel(activeSidebarPanel === 'agent' ? null : 'agent')}
-                    data-testid="toggle-agent-panel"
+                    onClick={() => setSidebarPanel(activeSidebarPanel === 'terminal' ? null : 'terminal')}
+                    data-testid="toggle-terminal-panel"
                     className={cn(
                         "relative w-9 h-9 flex items-center justify-center rounded-lg transition-all group",
-                        activeSidebarPanel === 'agent'
+                        activeSidebarPanel === 'terminal'
                             ? "text-foreground/80"
                             : "text-muted-foreground/60 hover:text-foreground/80"
                     )}
-                    title="Agent"
+                    title="AI Terminal"
                 >
-                    <Cpu size={18} className="shrink-0 transition-opacity" />
-                    {activeSidebarPanel === 'agent' && (
+                    <Terminal size={18} className="shrink-0 transition-opacity" />
+                    {activeSidebarPanel === 'terminal' && (
                         <div className="absolute left-0.5 top-2.5 bottom-2.5 w-[2px] rounded-full bg-foreground/40" />
                     )}
                 </button>
