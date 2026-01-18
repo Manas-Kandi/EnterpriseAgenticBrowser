@@ -184,6 +184,78 @@ export class AgentService {
     this.orchestrator = new WorkflowOrchestrator(this.model);
   }
 
+  /**
+   * Format extracted JSON data into human-readable text
+   */
+  private formatExtractedData(input: unknown): string {
+    let data = input;
+    if (typeof data === 'string') {
+      try {
+        data = JSON.parse(data);
+      } catch {
+        return data as string; // Not JSON, return as-is
+      }
+    }
+
+    if (!data || typeof data !== 'object') {
+      return String(data);
+    }
+
+    const obj = data as Record<string, unknown>;
+    const lines: string[] = [];
+
+    // Handle page title
+    if (obj.pageTitle) {
+      lines.push(`# ${obj.pageTitle}\n`);
+    }
+
+    // Handle arrays of items (common patterns)
+    const arrayKeys = Object.keys(obj).filter(k => Array.isArray(obj[k]) && (obj[k] as unknown[]).length > 0);
+    
+    for (const key of arrayKeys) {
+      const items = obj[key] as Record<string, unknown>[];
+      const prettyKey = key.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase()).trim();
+      lines.push(`## ${prettyKey} (${items.length})\n`);
+
+      items.forEach((item, i) => {
+        // Try to find a name/title field
+        const name = item.name || item.title || item.label || `Item ${i + 1}`;
+        const desc = item.description || item.text || item.summary || '';
+        const extra: string[] = [];
+
+        // Collect other notable fields
+        if (item.stars) extra.push(`⭐ ${item.stars}`);
+        if (item.language) extra.push(`📝 ${item.language}`);
+        if (item.price) extra.push(`💰 ${item.price}`);
+        if (item.rating) extra.push(`⭐ ${item.rating}`);
+        if (item.author) extra.push(`👤 ${item.author}`);
+        if (item.date) extra.push(`📅 ${item.date}`);
+
+        lines.push(`${i + 1}. **${name}**${extra.length ? ' - ' + extra.join(' | ') : ''}`);
+        if (desc) lines.push(`   ${desc}`);
+        if (item.url) lines.push(`   🔗 ${item.url}`);
+        lines.push('');
+      });
+    }
+
+    // Handle scalar summary fields
+    const scalarKeys = Object.keys(obj).filter(k => 
+      !Array.isArray(obj[k]) && 
+      k !== 'pageTitle' && 
+      typeof obj[k] !== 'object'
+    );
+
+    if (scalarKeys.length > 0 && lines.length > 0) {
+      lines.push('---');
+      for (const key of scalarKeys) {
+        const prettyKey = key.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase()).trim();
+        lines.push(`**${prettyKey}:** ${obj[key]}`);
+      }
+    }
+
+    return lines.length > 0 ? lines.join('\n') : JSON.stringify(data, null, 2);
+  }
+
   private redactSecrets(text: string): string {
     if (!text) return text;
     let redacted = text;
@@ -738,6 +810,19 @@ Available tools:\n${langChainTools.map((t) => `- ${t.name}: ${t.description}`).j
         if (action.thought) this.emitStep('thought', action.thought);
         if (action.tool === 'final_response') {
           let finalMessage = (action.args as { message?: string }).message || content;
+          
+          // If the message looks like raw JSON, format it nicely
+          if (finalMessage.trim().startsWith('{') || finalMessage.trim().startsWith('[')) {
+            try {
+              const formatted = this.formatExtractedData(finalMessage);
+              if (formatted !== finalMessage) {
+                finalMessage = formatted;
+              }
+            } catch {
+              // Keep original if formatting fails
+            }
+          }
+          
           if (usedBrowserTools) {
             const verification = await this.verifyTaskSuccess(userMessage, String(messages[messages.length-1].content));
             if (!verification.success) {
