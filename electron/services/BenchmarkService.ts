@@ -1,6 +1,5 @@
 import { agentService, AgentStep } from './AgentService';
 import { browserAutomationService } from '../integrations/BrowserAutomationService';
-import { PlanMemory } from './PlanMemory';
 import { BENCHMARK_SUITE, BenchmarkScenario } from '../benchmarks/suite';
 import { v4 as uuidv4 } from 'uuid';
 import fs from 'node:fs/promises';
@@ -30,7 +29,6 @@ export class BenchmarkService {
   private trajectory: TrajectoryEntry[] = [];
   private llmCalls = 0;
   private retries = 0;
-  private planMemory = new PlanMemory();
   private autoLearnEnabled = false;
 
   setAutoLearn(enabled: boolean) {
@@ -69,13 +67,12 @@ export class BenchmarkService {
         content: step.content,
         metadata: step.metadata as Record<string, unknown>,
       });
-      if (step.type === 'action' && step.content.includes('llm_start')) this.llmCalls++; // Approximate based on step contents if needed, or update AgentService to emit explicit llm_start steps
+      if (step.type === 'action') this.llmCalls++;
     };
 
     try {
       // 1. Reset State
       await agentService.resetConversation();
-      agentService.toggleActionsPolicy(!!enableActionsPolicy);
       agentService.setStepHandler(stepCollector);
 
       // 2. Run Agent
@@ -83,15 +80,6 @@ export class BenchmarkService {
 
       // 3. Verify Outcome
       const success = await this.verifyOutcome(scenario);
-
-      // Auto-save successful trajectories as plans
-      if (success && this.autoLearnEnabled) {
-        const planSteps = this.extractPlanSteps(this.trajectory);
-        if (planSteps.length > 0) {
-          await this.planMemory.savePlan(scenario.id, planSteps);
-          console.log(`[Benchmark] Auto-saved plan for ${scenario.id}`);
-        }
-      }
 
       return {
         scenarioId: scenario.id,

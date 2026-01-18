@@ -175,16 +175,8 @@ contextBridge.exposeInMainWorld('terminal', {
   queryDOM: (selector: string) => ipcRenderer.invoke('terminal:queryDOM', selector),
   click: (selector: string) => ipcRenderer.invoke('terminal:click', selector),
   type: (selector: string, text: string) => ipcRenderer.invoke('terminal:type', selector, text),
-  waitForElementToDisappear: (selector: string, timeout?: number) =>
-    ipcRenderer.invoke('terminal:waitForElementToDisappear', selector, timeout),
-  waitForURLChange: (pattern?: string, timeout?: number) =>
-    ipcRenderer.invoke('terminal:waitForURLChange', pattern, timeout),
-  waitForDOMStable: (stabilityMs?: number, timeout?: number) =>
-    ipcRenderer.invoke('terminal:waitForDOMStable', stabilityMs, timeout),
-  waitForCondition: (conditionCode: string, timeout?: number, pollInterval?: number) =>
-    ipcRenderer.invoke('terminal:waitForCondition', conditionCode, timeout, pollInterval),
-  waitForNetworkIdle: (idleMs?: number, timeout?: number) =>
-    ipcRenderer.invoke('terminal:waitForNetworkIdle', idleMs, timeout),
+  waitForElement: (selector: string, timeout?: number) =>
+    ipcRenderer.invoke('terminal:waitForElement', selector, timeout),
   execute: (input: string) => ipcRenderer.invoke('terminal:execute', input),
   getTabs: () => ipcRenderer.invoke('terminal:get-tabs'),
   parse: (input: string) => ipcRenderer.invoke('terminal:parse', input),
@@ -198,20 +190,12 @@ contextBridge.exposeInMainWorld('terminal', {
     ipcRenderer.on('terminal:streamToken', listener);
     return () => ipcRenderer.off('terminal:streamToken', listener);
   },
-  generateCodeWithRetry: (command: string, previousCode: string, error: string) =>
-    ipcRenderer.invoke('terminal:generateCodeWithRetry', command, previousCode, error),
-  generateMultiStepPlan: (command: string) =>
-    ipcRenderer.invoke('terminal:generateMultiStepPlan', command),
-  executeMultiStepPlan: (plan: unknown) =>
-    ipcRenderer.invoke('terminal:executeMultiStepPlan', plan),
-  isMultiStepCommand: (command: string) =>
-    ipcRenderer.invoke('terminal:isMultiStepCommand', command),
-  run: (command: string, options?: { autoRetry?: boolean }) =>
-    ipcRenderer.invoke('terminal:run', command, options),
+  run: (command: string) =>
+    ipcRenderer.invoke('terminal:run', command),
   agent: (query: string) =>
     ipcRenderer.invoke('terminal:agent', query),
-  onStep: (callback: (step: { phase: string; status: string; data?: unknown; error?: string }) => void) => {
-    const listener = (_: unknown, step: { phase: string; status: string; data?: unknown; error?: string }) => callback(step);
+  onStep: (callback: (step: any) => void) => {
+    const listener = (_: unknown, step: any) => callback(step);
     ipcRenderer.on('terminal:step', listener);
     return () => ipcRenderer.off('terminal:step', listener);
   },

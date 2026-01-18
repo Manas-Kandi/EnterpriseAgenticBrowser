@@ -25,7 +25,6 @@ export interface ExecutionOptions {
 
 /**
  * JavaScript wrapper that handles serialization of results.
- * This runs in the page context to safely serialize the result.
  */
 interface TabInfo {
   id: string;
@@ -38,7 +37,6 @@ function createExecutionWrapper(userCode: string, context?: { tabs?: TabInfo[], 
   const contextJson = JSON.stringify(context || {});
   return `
 (async function() {
-  // Inject context
   const __context = ${contextJson};
   window.__enterprise_tabs = __context.tabs || [];
   window.__enterprise_state = window.__enterprise_state || __context.state || {};
@@ -49,31 +47,14 @@ function createExecutionWrapper(userCode: string, context?: { tabs?: TabInfo[], 
     if (value === undefined) return undefined;
     
     const type = typeof value;
-    if (type === 'string' || type === 'number' || type === 'boolean') {
-      return value;
-    }
+    if (type === 'string' || type === 'number' || type === 'boolean') return value;
+    if (type === 'function') return '[Function: ' + (value.name || 'anonymous') + ']';
+    if (type === 'symbol') return value.toString();
     
-    if (type === 'function') {
-      return '[Function: ' + (value.name || 'anonymous') + ']';
-    }
+    if (value instanceof Error) return { __type: 'Error', message: value.message, stack: value.stack };
+    if (value instanceof Date) return { __type: 'Date', value: value.toISOString() };
+    if (value instanceof RegExp) return { __type: 'RegExp', value: value.toString() };
     
-    if (type === 'symbol') {
-      return value.toString();
-    }
-    
-    if (value instanceof Error) {
-      return { __type: 'Error', message: value.message, stack: value.stack };
-    }
-    
-    if (value instanceof Date) {
-      return { __type: 'Date', value: value.toISOString() };
-    }
-    
-    if (value instanceof RegExp) {
-      return { __type: 'RegExp', value: value.toString() };
-    }
-    
-    // Handle DOM nodes
     if (value instanceof Node) {
       if (value instanceof Element) {
         return {
@@ -87,31 +68,23 @@ function createExecutionWrapper(userCode: string, context?: { tabs?: TabInfo[], 
       return { __type: 'Node', nodeName: value.nodeName };
     }
     
-    // Handle NodeList and HTMLCollection
     if (value instanceof NodeList || value instanceof HTMLCollection) {
       return Array.from(value).slice(0, 100).map(n => __serializeResult(n, seen, depth + 1));
     }
     
-    // Handle arrays
     if (Array.isArray(value)) {
       if (seen.has(value)) return '[Circular]';
       seen.add(value);
       return value.slice(0, 1000).map(item => __serializeResult(item, seen, depth + 1));
     }
     
-    // Handle objects
     if (type === 'object') {
       if (seen.has(value)) return '[Circular]';
       seen.add(value);
-      
       const result = {};
       const keys = Object.keys(value).slice(0, 100);
       for (const key of keys) {
-        try {
-          result[key] = __serializeResult(value[key], seen, depth + 1);
-        } catch (e) {
-          result[key] = '[Unserializable]';
-        }
+        try { result[key] = __serializeResult(value[key], seen, depth + 1); } catch { result[key] = '[Unserializable]'; }
       }
       return result;
     }
@@ -135,50 +108,22 @@ function createExecutionWrapper(userCode: string, context?: { tabs?: TabInfo[], 
 `;
 }
 
-/**
- * Service for safely executing JavaScript code in the browser context
- */
 export class CodeExecutorService {
-  private static readonly DEFAULT_TIMEOUT = 30000; // 30 seconds
+  private static readonly DEFAULT_TIMEOUT = 30000;
 
-  /**
-   * Execute JavaScript code in the active webview
-   */
   async execute(code: string, options: ExecutionOptions = {}): Promise<ExecutionResult> {
-    const {
-      timeout = CodeExecutorService.DEFAULT_TIMEOUT,
-      tabId,
-      wrapInTryCatch = true,
-    } = options;
-
+    const { timeout = CodeExecutorService.DEFAULT_TIMEOUT, tabId, wrapInTryCatch = true } = options;
     const startTime = Date.now();
 
-    // Get the target webview
-    const wc = tabId
-      ? browserTargetService.getWebContents(tabId)
-      : browserTargetService.getActiveWebContents();
-
+    const wc = tabId ? browserTargetService.getWebContents(tabId) : browserTargetService.getActiveWebContents();
     if (!wc || wc.isDestroyed()) {
-      return {
-        success: false,
-        error: 'No active webview available. Please open a tab first.',
-        duration: Date.now() - startTime,
-      };
+      return { success: false, error: 'No active tab available.', duration: Date.now() - startTime };
     }
 
-    // Prepare context for injection
-    const tabs = browserTargetService.getAllTabs().map(t => ({
-      id: t.id,
-      url: t.url,
-      title: t.title,
-      active: t.active
-    }));
-
-    // Prepare the code
+    const tabs = browserTargetService.getAllTabs().map(t => ({ id: t.id, url: t.url, title: t.title, active: t.active }));
     const executableCode = wrapInTryCatch ? createExecutionWrapper(code, { tabs }) : code;
 
     try {
-      // Execute with timeout
       const resultPromise = wc.executeJavaScript(executableCode);
       const timeoutPromise = new Promise<never>((_, reject) => {
         setTimeout(() => reject(new Error('Execution timed out')), timeout);
@@ -187,53 +132,29 @@ export class CodeExecutorService {
       const result = await Promise.race([resultPromise, timeoutPromise]);
       const duration = Date.now() - startTime;
 
-      // If wrapped, result contains { success, result, error, stack }
       if (wrapInTryCatch && typeof result === 'object' && result !== null) {
-        const wrapped = result as { success: boolean; result?: unknown; error?: string; stack?: string };
-        return {
-          success: wrapped.success,
-          result: wrapped.result,
-          error: wrapped.error,
-          stack: wrapped.stack,
-          duration,
-        };
+        const wrapped = result as any;
+        return { success: wrapped.success, result: wrapped.result, error: wrapped.error, stack: wrapped.stack, duration };
       }
 
-      // Raw execution result
-      return {
-        success: true,
-        result,
-        duration,
-      };
+      return { success: true, result, duration };
     } catch (err) {
       const duration = Date.now() - startTime;
-      const isTimeout = err instanceof Error && err.message === 'Execution timed out';
-
       return {
         success: false,
         error: err instanceof Error ? err.message : String(err),
         stack: err instanceof Error ? err.stack : undefined,
         duration,
-        timedOut: isTimeout,
+        timedOut: err instanceof Error && err.message === 'Execution timed out'
       };
     }
   }
 
-  /**
-   * Execute a simple expression and return the result
-   * Useful for quick evaluations like `document.title`
-   */
   async evaluate(expression: string, options: ExecutionOptions = {}): Promise<ExecutionResult> {
-    // Wrap expression in return statement if it doesn't have one
-    const code = expression.trim().startsWith('return ')
-      ? expression
-      : `return (${expression});`;
+    const code = expression.trim().startsWith('return ') ? expression : `return (${expression});`;
     return this.execute(code, options);
   }
 
-  /**
-   * Execute code that performs DOM queries and returns elements
-   */
   async queryDOM(selector: string, options: ExecutionOptions = {}): Promise<ExecutionResult> {
     const code = `
       const elements = document.querySelectorAll(${JSON.stringify(selector)});
@@ -249,9 +170,6 @@ export class CodeExecutorService {
     return this.execute(code, options);
   }
 
-  /**
-   * Click an element by selector
-   */
   async click(selector: string, options: ExecutionOptions = {}): Promise<ExecutionResult> {
     const code = `
       const el = document.querySelector(${JSON.stringify(selector)});
@@ -262,9 +180,6 @@ export class CodeExecutorService {
     return this.execute(code, options);
   }
 
-  /**
-   * Type text into an input element
-   */
   async type(selector: string, text: string, options: ExecutionOptions = {}): Promise<ExecutionResult> {
     const code = `
       const el = document.querySelector(${JSON.stringify(selector)});
@@ -279,379 +194,28 @@ export class CodeExecutorService {
     return this.execute(code, options);
   }
 
-  /**
-   * Wait for an element to appear
-   */
-  async waitForElement(
-    selector: string,
-    timeout: number = 10000,
-    options: ExecutionOptions = {}
-  ): Promise<ExecutionResult> {
+  async waitForElement(selector: string, timeout = 10000, options: ExecutionOptions = {}): Promise<ExecutionResult> {
     const code = `
       return new Promise((resolve, reject) => {
         const el = document.querySelector(${JSON.stringify(selector)});
-        if (el) {
-          resolve({ found: true, element: el.tagName.toLowerCase() });
-          return;
-        }
-        
+        if (el) return resolve({ found: true, element: el.tagName.toLowerCase() });
         const observer = new MutationObserver(() => {
           const el = document.querySelector(${JSON.stringify(selector)});
-          if (el) {
-            observer.disconnect();
-            resolve({ found: true, element: el.tagName.toLowerCase() });
-          }
+          if (el) { observer.disconnect(); resolve({ found: true, element: el.tagName.toLowerCase() }); }
         });
-        
         observer.observe(document.body, { childList: true, subtree: true });
-        
-        setTimeout(() => {
-          observer.disconnect();
-          reject(new Error('Timeout waiting for element: ${selector}'));
-        }, ${timeout});
+        setTimeout(() => { observer.disconnect(); reject(new Error('Timeout waiting for element: ${selector}')); }, ${timeout});
       });
     `;
     return this.execute(code, { ...options, timeout: timeout + 1000 });
   }
 
-  /**
-   * Wait for an element to disappear (e.g., loading spinner)
-   */
-  async waitForElementToDisappear(
-    selector: string,
-    timeout: number = 10000,
-    options: ExecutionOptions = {}
-  ): Promise<ExecutionResult> {
-    const code = `
-      return new Promise((resolve, reject) => {
-        const el = document.querySelector(${JSON.stringify(selector)});
-        if (!el) {
-          resolve({ disappeared: true, wasPresent: false });
-          return;
-        }
-        
-        const observer = new MutationObserver(() => {
-          const el = document.querySelector(${JSON.stringify(selector)});
-          if (!el) {
-            observer.disconnect();
-            resolve({ disappeared: true, wasPresent: true });
-          }
-        });
-        
-        observer.observe(document.body, { childList: true, subtree: true, attributes: true });
-        
-        setTimeout(() => {
-          observer.disconnect();
-          const stillExists = !!document.querySelector(${JSON.stringify(selector)});
-          if (stillExists) {
-            reject(new Error('Timeout waiting for element to disappear: ${selector}'));
-          } else {
-            resolve({ disappeared: true, wasPresent: true });
-          }
-        }, ${timeout});
-      });
-    `;
-    return this.execute(code, { ...options, timeout: timeout + 1000 });
-  }
-
-  /**
-   * Wait for URL to change (SPA navigation)
-   */
-  async waitForURLChange(
-    expectedPattern?: string | RegExp,
-    timeout: number = 10000,
-    options: ExecutionOptions = {}
-  ): Promise<ExecutionResult> {
-    const patternStr = expectedPattern 
-      ? (expectedPattern instanceof RegExp ? expectedPattern.source : expectedPattern)
-      : null;
-    const isRegex = expectedPattern instanceof RegExp;
-    
-    const code = `
-      return new Promise((resolve, reject) => {
-        const initialUrl = window.location.href;
-        const pattern = ${patternStr ? JSON.stringify(patternStr) : 'null'};
-        const isRegex = ${isRegex};
-        
-        const checkUrl = () => {
-          const currentUrl = window.location.href;
-          if (currentUrl !== initialUrl) {
-            if (pattern) {
-              const matches = isRegex 
-                ? new RegExp(pattern).test(currentUrl)
-                : currentUrl.includes(pattern);
-              if (matches) {
-                return { changed: true, from: initialUrl, to: currentUrl, matched: true };
-              }
-            } else {
-              return { changed: true, from: initialUrl, to: currentUrl };
-            }
-          }
-          return null;
-        };
-        
-        // Check immediately
-        const immediate = checkUrl();
-        if (immediate) {
-          resolve(immediate);
-          return;
-        }
-        
-        // Use popstate for history changes
-        const onPopState = () => {
-          const result = checkUrl();
-          if (result) {
-            cleanup();
-            resolve(result);
-          }
-        };
-        
-        // Use MutationObserver for SPA changes that don't trigger popstate
-        const observer = new MutationObserver(() => {
-          const result = checkUrl();
-          if (result) {
-            cleanup();
-            resolve(result);
-          }
-        });
-        
-        const cleanup = () => {
-          window.removeEventListener('popstate', onPopState);
-          observer.disconnect();
-        };
-        
-        window.addEventListener('popstate', onPopState);
-        observer.observe(document.body, { childList: true, subtree: true });
-        
-        // Also poll periodically for pushState changes
-        const pollInterval = setInterval(() => {
-          const result = checkUrl();
-          if (result) {
-            clearInterval(pollInterval);
-            cleanup();
-            resolve(result);
-          }
-        }, 100);
-        
-        setTimeout(() => {
-          clearInterval(pollInterval);
-          cleanup();
-          const currentUrl = window.location.href;
-          if (currentUrl !== initialUrl) {
-            resolve({ changed: true, from: initialUrl, to: currentUrl, timedOut: false });
-          } else {
-            reject(new Error('Timeout waiting for URL change'));
-          }
-        }, ${timeout});
-      });
-    `;
-    return this.execute(code, { ...options, timeout: timeout + 1000 });
-  }
-
-  /**
-   * Wait for DOM to stabilize (no mutations for a period)
-   */
-  async waitForDOMStable(
-    stabilityMs: number = 500,
-    timeout: number = 10000,
-    options: ExecutionOptions = {}
-  ): Promise<ExecutionResult> {
-    const code = `
-      return new Promise((resolve, reject) => {
-        let lastMutationTime = Date.now();
-        let checkInterval;
-        
-        const observer = new MutationObserver(() => {
-          lastMutationTime = Date.now();
-        });
-        
-        observer.observe(document.body, { 
-          childList: true, 
-          subtree: true, 
-          attributes: true,
-          characterData: true 
-        });
-        
-        checkInterval = setInterval(() => {
-          const timeSinceLastMutation = Date.now() - lastMutationTime;
-          if (timeSinceLastMutation >= ${stabilityMs}) {
-            clearInterval(checkInterval);
-            observer.disconnect();
-            resolve({ stable: true, stableFor: timeSinceLastMutation });
-          }
-        }, 100);
-        
-        setTimeout(() => {
-          clearInterval(checkInterval);
-          observer.disconnect();
-          reject(new Error('Timeout waiting for DOM to stabilize'));
-        }, ${timeout});
-      });
-    `;
-    return this.execute(code, { ...options, timeout: timeout + 1000 });
-  }
-
-  /**
-   * Wait for a condition to become true
-   */
-  async waitForCondition(
-    conditionCode: string,
-    timeout: number = 10000,
-    pollInterval: number = 100,
-    options: ExecutionOptions = {}
-  ): Promise<ExecutionResult> {
-    const code = `
-      return new Promise((resolve, reject) => {
-        const checkCondition = () => {
-          try {
-            const result = (function() { ${conditionCode} })();
-            return result;
-          } catch (e) {
-            return false;
-          }
-        };
-        
-        // Check immediately
-        if (checkCondition()) {
-          resolve({ conditionMet: true, immediate: true });
-          return;
-        }
-        
-        const interval = setInterval(() => {
-          if (checkCondition()) {
-            clearInterval(interval);
-            resolve({ conditionMet: true, immediate: false });
-          }
-        }, ${pollInterval});
-        
-        setTimeout(() => {
-          clearInterval(interval);
-          reject(new Error('Timeout waiting for condition'));
-        }, ${timeout});
-      });
-    `;
-    return this.execute(code, { ...options, timeout: timeout + 1000 });
-  }
-
-  /**
-   * Wait for network idle (no pending requests)
-   */
-  async waitForNetworkIdle(
-    idleMs: number = 500,
-    timeout: number = 10000,
-    options: ExecutionOptions = {}
-  ): Promise<ExecutionResult> {
-    const code = `
-      return new Promise((resolve, reject) => {
-        let pendingRequests = 0;
-        let lastActivityTime = Date.now();
-        
-        const originalFetch = window.fetch;
-        const originalXHROpen = XMLHttpRequest.prototype.open;
-        const originalXHRSend = XMLHttpRequest.prototype.send;
-        
-        // Track fetch requests
-        window.fetch = function(...args) {
-          pendingRequests++;
-          lastActivityTime = Date.now();
-          return originalFetch.apply(this, args).finally(() => {
-            pendingRequests--;
-            lastActivityTime = Date.now();
-          });
-        };
-        
-        // Track XHR requests
-        XMLHttpRequest.prototype.open = function(...args) {
-          this.__tracked = true;
-          return originalXHROpen.apply(this, args);
-        };
-        
-        XMLHttpRequest.prototype.send = function(...args) {
-          if (this.__tracked) {
-            pendingRequests++;
-            lastActivityTime = Date.now();
-            this.addEventListener('loadend', () => {
-              pendingRequests--;
-              lastActivityTime = Date.now();
-            });
-          }
-          return originalXHRSend.apply(this, args);
-        };
-        
-        const cleanup = () => {
-          window.fetch = originalFetch;
-          XMLHttpRequest.prototype.open = originalXHROpen;
-          XMLHttpRequest.prototype.send = originalXHRSend;
-        };
-        
-        const checkInterval = setInterval(() => {
-          const timeSinceActivity = Date.now() - lastActivityTime;
-          if (pendingRequests === 0 && timeSinceActivity >= ${idleMs}) {
-            clearInterval(checkInterval);
-            cleanup();
-            resolve({ networkIdle: true, idleFor: timeSinceActivity });
-          }
-        }, 100);
-        
-        setTimeout(() => {
-          clearInterval(checkInterval);
-          cleanup();
-          if (pendingRequests === 0) {
-            resolve({ networkIdle: true, timedOut: true });
-          } else {
-            reject(new Error('Timeout waiting for network idle, ' + pendingRequests + ' requests pending'));
-          }
-        }, ${timeout});
-      });
-    `;
-    return this.execute(code, { ...options, timeout: timeout + 1000 });
-  }
-
-  /**
-   * Scroll to an element or position
-   */
-  async scroll(
-    target: string | { x: number; y: number },
-    options: ExecutionOptions = {}
-  ): Promise<ExecutionResult> {
-    if (typeof target === 'string') {
-      const code = `
-        const el = document.querySelector(${JSON.stringify(target)});
-        if (!el) throw new Error('Element not found: ${target}');
-        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        return { scrolled: true, to: 'element' };
-      `;
-      return this.execute(code, options);
-    } else {
-      const code = `
-        window.scrollTo({ left: ${target.x}, top: ${target.y}, behavior: 'smooth' });
-        return { scrolled: true, to: { x: ${target.x}, y: ${target.y} } };
-      `;
-      return this.execute(code, options);
-    }
-  }
-
-  /**
-   * Wait for navigation to complete
-   */
-  async waitForNavigation(timeout: number = 10000, options: ExecutionOptions = {}): Promise<ExecutionResult> {
-    const wc = options.tabId
-      ? browserTargetService.getWebContents(options.tabId)
-      : browserTargetService.getActiveWebContents();
-
-    if (!wc || wc.isDestroyed()) {
-      return {
-        success: false,
-        error: 'No active webview available',
-        duration: 0,
-      };
-    }
-
+  async waitForNavigation(timeout = 10000, options: ExecutionOptions = {}): Promise<ExecutionResult> {
+    const wc = options.tabId ? browserTargetService.getWebContents(options.tabId) : browserTargetService.getActiveWebContents();
+    if (!wc || wc.isDestroyed()) return { success: false, error: 'No active webview available', duration: 0 };
     const startTime = Date.now();
-
     return new Promise((resolve) => {
       let resolved = false;
-
       const cleanup = () => {
         if (!resolved) {
           resolved = true;
@@ -659,7 +223,6 @@ export class CodeExecutorService {
           wc.removeListener('did-fail-load', onFail);
         }
       };
-
       const onLoad = () => {
         cleanup();
         resolve({
@@ -668,9 +231,7 @@ export class CodeExecutorService {
           duration: Date.now() - startTime,
         });
       };
-
-      const onFail = (_: unknown, errorCode: number, errorDescription: string) => {
-        // Ignore aborted loads (user navigated away)
+      const onFail = (_: any, errorCode: number, errorDescription: string) => {
         if (errorCode === -3) return;
         cleanup();
         resolve({
@@ -679,10 +240,8 @@ export class CodeExecutorService {
           duration: Date.now() - startTime,
         });
       };
-
       wc.once('did-finish-load', onLoad);
       wc.once('did-fail-load', onFail);
-
       setTimeout(() => {
         cleanup();
         resolve({
@@ -694,108 +253,11 @@ export class CodeExecutorService {
     });
   }
 
-  /**
-   * Wait for a delay
-   */
-  async waitForDelay(ms: number): Promise<ExecutionResult> {
-    const startTime = Date.now();
-    await new Promise(resolve => setTimeout(resolve, ms));
-    return {
-      success: true,
-      result: { waited: ms },
-      duration: Date.now() - startTime,
-    };
-  }
-
-  /**
-   * Execute a multi-step plan sequentially
-   */
-  async executeMultiStepPlan(
-    plan: { steps: Array<{ id: string; description: string; code: string; waitFor?: string; waitSelector?: string; waitTimeout?: number; continueOnError?: boolean }>; loopUntil?: string; maxIterations?: number },
-    options: ExecutionOptions = {},
-    onStepComplete?: (stepId: string, result: ExecutionResult, iteration: number) => void
-  ): Promise<{ success: boolean; results: Array<{ stepId: string; result: ExecutionResult; iteration: number }>; collectedData: unknown[]; duration: number; iterations: number }> {
-    const startTime = Date.now();
-    const results: Array<{ stepId: string; result: ExecutionResult; iteration: number }> = [];
-    const collectedData: unknown[] = [];
-    const maxIterations = plan.maxIterations ?? 10;
-    let iteration = 0;
-    let previousResult: unknown = null;
-
-    const executeSteps = async (): Promise<boolean> => {
-      for (const step of plan.steps) {
-        // Inject previous result into the code context
-        const codeWithContext = `
-          const __previousResult = ${JSON.stringify(previousResult)};
-          ${step.code}
-        `;
-
-        const stepResult = await this.execute(codeWithContext, options);
-        results.push({ stepId: step.id, result: stepResult, iteration });
-        onStepComplete?.(step.id, stepResult, iteration);
-
-        if (!stepResult.success && !step.continueOnError) {
-          return false; // Stop on error
-        }
-
-        previousResult = stepResult.result;
-
-        // Collect data from results (arrays get merged)
-        if (Array.isArray(stepResult.result)) {
-          collectedData.push(...stepResult.result);
-        } else if (stepResult.result && typeof stepResult.result === 'object') {
-          collectedData.push(stepResult.result);
-        }
-
-        // Handle wait conditions
-        if (step.waitFor === 'element' && step.waitSelector) {
-          const waitResult = await this.waitForElement(step.waitSelector, step.waitTimeout ?? 5000, options);
-          if (!waitResult.success && !step.continueOnError) {
-            results.push({ stepId: `${step.id}_wait`, result: waitResult, iteration });
-            return false;
-          }
-        } else if (step.waitFor === 'navigation') {
-          const waitResult = await this.waitForNavigation(step.waitTimeout ?? 10000, options);
-          if (!waitResult.success && !step.continueOnError) {
-            results.push({ stepId: `${step.id}_wait`, result: waitResult, iteration });
-            return false;
-          }
-        } else if (step.waitFor === 'delay') {
-          await this.waitForDelay(step.waitTimeout ?? 1000);
-        }
-      }
-      return true;
-    };
-
-    // Execute steps, potentially looping
-    do {
-      iteration++;
-      const success = await executeSteps();
-      
-      if (!success) break;
-
-      // Check loop termination condition
-      if (plan.loopUntil) {
-        try {
-          const shouldStop = eval(`(function() { const __previousResult = ${JSON.stringify(previousResult)}; return ${plan.loopUntil}; })()`);
-          if (shouldStop) break;
-        } catch {
-          // If condition evaluation fails, stop looping
-          break;
-        }
-      } else {
-        // No loop condition means single execution
-        break;
-      }
-    } while (iteration < maxIterations);
-
-    return {
-      success: results.every(r => r.result.success || plan.steps.find(s => s.id === r.stepId)?.continueOnError),
-      results,
-      collectedData,
-      duration: Date.now() - startTime,
-      iterations: iteration,
-    };
+  async scroll(target: string | { x: number; y: number }, options: ExecutionOptions = {}): Promise<ExecutionResult> {
+    const code = typeof target === 'string'
+      ? `const el = document.querySelector(${JSON.stringify(target)}); if (!el) throw new Error('Element not found'); el.scrollIntoView({ behavior: 'smooth', block: 'center' }); return { scrolled: true };`
+      : `window.scrollTo({ left: ${target.x}, top: ${target.y}, behavior: 'smooth' }); return { scrolled: true };`;
+    return this.execute(code, options);
   }
 }
 

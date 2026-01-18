@@ -140,11 +140,10 @@ interface Window {
     queryDOM: (selector: string) => Promise<{ success: boolean; result?: unknown; error?: string; duration: number }>;
     click: (selector: string) => Promise<{ success: boolean; result?: unknown; error?: string; duration: number }>;
     type: (selector: string, text: string) => Promise<{ success: boolean; result?: unknown; error?: string; duration: number }>;
-    waitForElementToDisappear: (selector: string, timeout?: number) => Promise<{ success: boolean; result?: unknown; error?: string; duration: number }>;
-    waitForURLChange: (pattern?: string, timeout?: number) => Promise<{ success: boolean; result?: unknown; error?: string; duration: number }>;
-    waitForDOMStable: (stabilityMs?: number, timeout?: number) => Promise<{ success: boolean; result?: unknown; error?: string; duration: number }>;
-    waitForCondition: (conditionCode: string, timeout?: number, pollInterval?: number) => Promise<{ success: boolean; result?: unknown; error?: string; duration: number }>;
-    waitForNetworkIdle: (idleMs?: number, timeout?: number) => Promise<{ success: boolean; result?: unknown; error?: string; duration: number }>;
+    waitForElement: (selector: string, timeout?: number) => Promise<{ success: boolean; result?: unknown; error?: string; duration: number }>;
+    execute: (input: string) => Promise<{ success: boolean; result?: unknown; error?: string }>;
+    getTabs: () => Promise<Array<{ tabId: string; url: string; title: string; index: number; isActive: boolean }>>;
+    parse: (input: string) => Promise<{ type: string; [key: string]: unknown } | null>;
     generateCode: (command: string, options?: { includeExplanation?: boolean }) => Promise<{
       success: boolean;
       code?: string;
@@ -155,44 +154,7 @@ interface Window {
     generateCodeStream: (command: string) => Promise<{ started: boolean }>;
     cancelStream: () => Promise<{ cancelled: boolean }>;
     onStreamToken: (callback: (token: { type: string; content: string; code?: string }) => void) => () => void;
-    generateCodeWithRetry: (command: string, previousCode: string, error: string) => Promise<{
-      success: boolean;
-      code?: string;
-      error?: string;
-      tokensUsed?: number;
-      duration: number;
-    }>;
-    generateMultiStepPlan: (command: string) => Promise<{
-      success: boolean;
-      isMultiStep?: boolean;
-      steps?: {
-        steps: Array<{
-          id: string;
-          description: string;
-          code: string;
-          waitFor?: string;
-          waitSelector?: string;
-          waitTimeout?: number;
-          continueOnError?: boolean;
-        }>;
-        loopUntil?: string;
-        maxIterations?: number;
-      };
-      code?: string;
-      error?: string;
-      duration: number;
-    }>;
-    executeMultiStepPlan: (plan: unknown) => Promise<{
-      success: boolean;
-      results: Array<{ stepId: string; result: unknown; iteration: number }>;
-      collectedData: unknown[];
-      duration: number;
-      iterations: number;
-    }>;
-    isMultiStepCommand: (command: string) => Promise<boolean>;
-    parse: (input: string) => Promise<{ type: string; [key: string]: unknown } | null>;
-    execute: (input: string) => Promise<{ success: boolean; result?: unknown; error?: string }>;
-    run: (command: string, options?: { autoRetry?: boolean; maxRetries?: number }) => Promise<{
+    run: (command: string) => Promise<{
       success: boolean;
       code?: string;
       result?: unknown;
@@ -202,7 +164,8 @@ interface Window {
       retryCount?: number;
       errorHistory?: string[];
     }>;
-    onStep: (callback: (step: { phase: string; status: string; data?: unknown; error?: string }) => void) => () => void;
+    agent: (query: string) => Promise<{ success: boolean; result?: string; error?: string }>;
+    onStep: (callback: (step: any) => void) => () => void;
   }
 
   telemetry: {

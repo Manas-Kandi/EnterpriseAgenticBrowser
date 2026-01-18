@@ -12,26 +12,21 @@ import { toolRegistry } from './services/ToolRegistry'
 import { browserTargetService } from './services/BrowserTargetService'
 import { agentRunContext } from './services/AgentRunContext'
 import { telemetryService } from './services/TelemetryService'
-import { PlanMemory } from './services/PlanMemory'
 import { PolicyService } from './services/PolicyService'
 import { benchmarkService, BenchmarkResult } from './services/BenchmarkService'
 import { DummyAeroCoreDataSource, NewTabDashboardService } from './services/NewTabDashboardService'
 import { identityService } from './services/IdentityService'
-import './services/CodeReaderService'
+import { browserKernel } from './services/BrowserKernel';
+import { terminalParser } from './services/TerminalParser';
+
+import './services/WebAPIService'; // Initialize Web API tools (GitHub, HN, Wikipedia APIs)
+import './services/TerminalIntegrationTool'; // Initialize AI Terminal integration for agent
 import './integrations/mock/MockJiraConnector'; // Initialize Mock Jira
 import './integrations/mock/MockConfluenceConnector'; // Initialize Mock Confluence
 import './integrations/mock/MockTrelloConnector'; // Initialize Mock Trello
 import './integrations/BrowserAutomationService'; // Initialize Playwright Automation
-import './services/WebAPIService'; // Initialize Web API tools (GitHub, HN, Wikipedia APIs)
-import './services/CodeExecutionService'; // Initialize dynamic code execution for agent
-import './services/TerminalIntegrationTool'; // Initialize AI Terminal integration for agent
-
-import { browserKernel } from './services/BrowserKernel';
-import { terminalParser } from './services/TerminalParser';
 
 const { app, BrowserWindow, ipcMain, webContents } = electron;
-
-const planMemory = new PlanMemory();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -637,31 +632,6 @@ app.whenReady().then(async () => {
     return codeExecutorService.type(selector, text);
   });
 
-  ipcMain.handle('terminal:waitForElementToDisappear', async (_, selector: string, timeout?: number) => {
-    const { codeExecutorService } = await import('./services/CodeExecutorService');
-    return codeExecutorService.waitForElementToDisappear(selector, timeout);
-  });
-
-  ipcMain.handle('terminal:waitForURLChange', async (_, pattern?: string, timeout?: number) => {
-    const { codeExecutorService } = await import('./services/CodeExecutorService');
-    return codeExecutorService.waitForURLChange(pattern, timeout);
-  });
-
-  ipcMain.handle('terminal:waitForDOMStable', async (_, stabilityMs?: number, timeout?: number) => {
-    const { codeExecutorService } = await import('./services/CodeExecutorService');
-    return codeExecutorService.waitForDOMStable(stabilityMs, timeout);
-  });
-
-  ipcMain.handle('terminal:waitForCondition', async (_, conditionCode: string, timeout?: number, pollInterval?: number) => {
-    const { codeExecutorService } = await import('./services/CodeExecutorService');
-    return codeExecutorService.waitForCondition(conditionCode, timeout, pollInterval);
-  });
-
-  ipcMain.handle('terminal:waitForNetworkIdle', async (_, idleMs?: number, timeout?: number) => {
-    const { codeExecutorService } = await import('./services/CodeExecutorService');
-    return codeExecutorService.waitForNetworkIdle(idleMs, timeout);
-  });
-
   // Page Monitor IPC Handlers
   ipcMain.handle('monitor:create', async (_, config: { name: string; url: string; tabId?: string; checkCode: string; description: string; intervalMs?: number }) => {
     const { pageMonitorService } = await import('./services/PageMonitorService');
@@ -790,23 +760,16 @@ app.whenReady().then(async () => {
   ipcMain.handle('terminal:generateCodeStream', async (event, command: string) => {
     const { codeGeneratorService } = await import('./services/CodeGeneratorService');
     
-    // ... existing code ...
-    // Create abort controller for cancellation
     activeStreamAbort = new AbortController();
-    
     try {
       const generator = codeGeneratorService.generateStream(command);
-      
       for await (const chunk of generator) {
         if (activeStreamAbort?.signal.aborted) {
           event.sender.send('terminal:streamToken', { type: 'cancelled', content: '' });
           break;
         }
         event.sender.send('terminal:streamToken', chunk);
-        
-        if (chunk.type === 'done' || chunk.type === 'error') {
-          break;
-        }
+        if (chunk.type === 'done' || chunk.type === 'error') break;
       }
     } catch (err) {
       event.sender.send('terminal:streamToken', { 
@@ -816,7 +779,6 @@ app.whenReady().then(async () => {
     } finally {
       activeStreamAbort = null;
     }
-    
     return { started: true };
   });
 
@@ -828,31 +790,26 @@ app.whenReady().then(async () => {
     return { cancelled: false };
   });
 
-  ipcMain.handle('terminal:generateCodeWithRetry', async (_, command: string, previousCode: string, error: string) => {
-    const { codeGeneratorService } = await import('./services/CodeGeneratorService');
-    return codeGeneratorService.generateWithRetry(command, previousCode, error);
-  });
+  // Terminal: Full end-to-end pipeline (Simplified)
+  ipcMain.handle('terminal:run', async (event, command: string) => {
+    const { agentService } = await import('./services/AgentService');
+    const { domContextService } = await import('./services/DOMContextService');
+    
+    let browserContext = '';
+    try {
+      const context = await domContextService.getMinimalContext();
+      browserContext = `URL="${context.url}", Title="${context.title}"`;
+    } catch { /* ignore */ }
 
-  ipcMain.handle('terminal:generateMultiStepPlan', async (_, command: string) => {
-    const { codeGeneratorService } = await import('./services/CodeGeneratorService');
-    return codeGeneratorService.generateMultiStepPlan(command);
-  });
-
-  ipcMain.handle('terminal:executeMultiStepPlan', async (event, plan: { steps: Array<{ id: string; description: string; code: string; waitFor?: string; waitSelector?: string; waitTimeout?: number; continueOnError?: boolean }>; loopUntil?: string; maxIterations?: number }) => {
-    const { codeExecutorService } = await import('./services/CodeExecutorService');
-    return codeExecutorService.executeMultiStepPlan(plan, {}, (stepId, result, iteration) => {
-      event.sender.send('terminal:step', {
-        phase: 'multiStep',
-        status: result.success ? 'done' : 'error',
-        data: { stepId, iteration, result: result.result },
-        error: result.error,
-      });
-    });
-  });
-
-  ipcMain.handle('terminal:isMultiStepCommand', async (_, command: string) => {
-    const { codeGeneratorService } = await import('./services/CodeGeneratorService');
-    return codeGeneratorService.isMultiStepCommand(command);
+    agentService.setStepHandler((step) => event.sender.send('terminal:step', step));
+    try {
+      const result = await agentService.chat(command, browserContext);
+      return { success: true, result };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    } finally {
+      agentService.clearStepHandler();
+    }
   });
 
   // Agentic Pipeline: Routes to AgentService for full agent loop
@@ -862,314 +819,23 @@ app.whenReady().then(async () => {
     return { success: true, result };
   });
 
-  // Terminal: Full end-to-end pipeline
-  ipcMain.handle('terminal:run', async (event, command: string, options?: { autoRetry?: boolean; maxRetries?: number }) => {
-    const startTime = Date.now();
-    const maxRetries = options?.maxRetries ?? 2;
+  // Agent IPC Handlers (Simplified)
+  ipcMain.handle('agent:chat', async (event, message) => {
+    const { agentService } = await import('./services/AgentService');
     const { domContextService } = await import('./services/DOMContextService');
-    const { codeGeneratorService } = await import('./services/CodeGeneratorService');
-    const { codeExecutorService } = await import('./services/CodeExecutorService');
 
-    // Step 1: Get DOM context
-    let context;
+    let browserContext = '';
     try {
-      event.sender.send('terminal:step', { phase: 'context', status: 'running' });
-      context = await domContextService.getContext();
-      event.sender.send('terminal:step', { phase: 'context', status: 'done', data: { url: context.url, title: context.title } });
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      event.sender.send('terminal:step', { phase: 'context', status: 'error', error: errorMsg });
-      return {
-        success: false,
-        error: `Failed to get page context: ${errorMsg}`,
-        duration: Date.now() - startTime,
-        retryCount: 0,
-      };
-    }
+      const context = await domContextService.getMinimalContext();
+      browserContext = `URL="${context.url}", Title="${context.title}"`;
+    } catch { /* ignore */ }
 
-    // Step 2: Generate code
-    let generatedCode: string;
+    agentService.setStepHandler((step) => event.sender.send('agent:step', step));
     try {
-      event.sender.send('terminal:step', { phase: 'codegen', status: 'running' });
-      const codeResult = await codeGeneratorService.generate(command, context);
-      if (!codeResult.success || !codeResult.code) {
-        throw new Error(codeResult.error || 'Code generation failed');
-      }
-      generatedCode = codeResult.code;
-      event.sender.send('terminal:step', { phase: 'codegen', status: 'done', data: { code: generatedCode } });
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      event.sender.send('terminal:step', { phase: 'codegen', status: 'error', error: errorMsg });
-      return {
-        success: false,
-        error: `Failed to generate code: ${errorMsg}`,
-        duration: Date.now() - startTime,
-        retryCount: 0,
-      };
-    }
-
-    // Step 3: Execute code with retry loop
-    event.sender.send('terminal:step', { phase: 'execute', status: 'running' });
-    let execResult = await codeExecutorService.execute(generatedCode);
-    let retryCount = 0;
-    const errorHistory: string[] = [];
-
-    // Auto-retry loop (up to maxRetries attempts)
-    while (!execResult.success && options?.autoRetry !== false && retryCount < maxRetries) {
-      retryCount++;
-      const currentError = execResult.error || 'Unknown error';
-      errorHistory.push(currentError);
-      
-      event.sender.send('terminal:step', { 
-        phase: 'retry', 
-        status: 'running', 
-        data: { 
-          error: currentError, 
-          attempt: retryCount, 
-          maxRetries,
-          analysis: `Attempt ${retryCount}/${maxRetries}: Analyzing error and generating fix...`
-        } 
-      });
-      
-      const retryResult = await codeGeneratorService.generateWithRetry(
-        command,
-        generatedCode,
-        currentError,
-        context
-      );
-
-      if (retryResult.success && retryResult.code) {
-        generatedCode = retryResult.code;
-        event.sender.send('terminal:step', { 
-          phase: 'codegen', 
-          status: 'done', 
-          data: { code: retryResult.code, isRetry: true, attempt: retryCount } 
-        });
-        
-        event.sender.send('terminal:step', { phase: 'execute', status: 'running' });
-        execResult = await codeExecutorService.execute(retryResult.code);
-      } else {
-        // Code generation failed, stop retrying
-        event.sender.send('terminal:step', { 
-          phase: 'retry', 
-          status: 'error', 
-          data: { attempt: retryCount },
-          error: retryResult.error || 'Failed to generate fix'
-        });
-        break;
-      }
-    }
-
-    event.sender.send('terminal:step', { 
-      phase: 'execute', 
-      status: execResult.success ? 'done' : 'error',
-      data: execResult.success ? { result: execResult.result } : { errorHistory },
-      error: execResult.error
-    });
-
-    // Log execution telemetry
-    const { telemetryService } = await import('./services/TelemetryService');
-    const contextHash = context ? 
-      Buffer.from(JSON.stringify({ url: context.url, title: context.title })).toString('base64').slice(0, 16) : 
-      undefined;
-    
-    await telemetryService.logTerminalExecution({
-      id: `exec-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      timestamp: Date.now(),
-      command,
-      code: generatedCode,
-      success: execResult.success,
-      result: execResult.success ? execResult.result : undefined,
-      error: execResult.error,
-      duration: Date.now() - startTime,
-      contextHash,
-      url: context?.url,
-      retryCount,
-    }).catch(err => console.error('[Telemetry] Failed to log execution:', err));
-
-    return {
-      success: execResult.success,
-      code: generatedCode,
-      result: execResult.result,
-      error: execResult.error,
-      stack: execResult.stack,
-      duration: Date.now() - startTime,
-      retryCount,
-      errorHistory: execResult.success ? undefined : errorHistory,
-    };
-  });
-
-  // Agent IPC Handlers
-  ipcMain.handle('agent:get-saved-plans', async () => {
-  return planMemory.getPlans();
-});
-
-ipcMain.handle('agent:save-plan', async (_event, taskId: string, plan: string[]) => {
-  await planMemory.savePlan(taskId, plan);
-  return { success: true };
-});
-
-ipcMain.handle('agent:delete-plan', async (_event, taskId: string) => {
-  await planMemory.deletePlan(taskId);
-  return { success: true };
-});
-
-ipcMain.handle('agent:chat', async (event, message) => {
-    const runId = uuidv4();
-
-    try {
-      event.sender.send('agent:step', {
-        type: 'observation',
-        content: `Run started: ${runId}`,
-        metadata: { runId, ts: new Date().toISOString() },
-      });
-    } catch {
-      // ignore
-    }
-
-    // Get browser context early for policy evaluation
-    let url: string | undefined;
-    let domain: string | undefined;
-    try {
-      const activeWebview = browserTargetService.getActiveWebContents();
-      if (activeWebview && !activeWebview.isDestroyed()) {
-        url = activeWebview.getURL();
-        if (url) {
-          try {
-            const urlObj = new URL(url);
-            domain = urlObj.hostname;
-            if (urlObj.port) {
-              domain += `:${urlObj.port}`;
-            }
-          } catch {
-            // Invalid URL, ignore domain extraction
-          }
-        }
-      }
-    } catch {
-      // Ignore errors getting browser context
-    }
-
-    try {
-      await telemetryService.emit({
-        eventId: uuidv4(),
-        runId,
-        ts: new Date().toISOString(),
-        type: 'agent_run_start',
-        name: 'agent:chat',
-        data: { messageLength: String(message ?? '').length },
-      });
-    } catch {
-      // ignore telemetry failures
-    }
-
-    // Log User Input
-    await auditService.log({
-        actor: 'user',
-        action: 'chat_message',
-        details: { message, runId },
-        status: 'success'
-    });
-    
-    // Set up Step Handler
-    agentService.setStepHandler((step) => {
-        event.sender.send('agent:step', step);
-        try {
-          const rawMetadata = (step as any)?.metadata;
-          const toolName = rawMetadata?.tool;
-          const args = rawMetadata?.args;
-          const stepContent = String((step as any)?.content ?? '');
-          const contentLength = stepContent.length;
-          const contentHash = crypto.createHash('sha256').update(stepContent).digest('hex');
-          const contentPreview = contentLength > 2000 ? stepContent.slice(0, 2000) : stepContent;
-
-          const argsJson = (() => {
-            try {
-              return JSON.stringify(args ?? null);
-            } catch {
-              return '[unserializable_args]';
-            }
-          })();
-          const argsHash = crypto.createHash('sha256').update(argsJson).digest('hex');
-
-          const sanitizedMetadata = rawMetadata
-            ? {
-                ...rawMetadata,
-                ...(args !== undefined ? { args: undefined, argsHash } : null),
-              }
-            : undefined;
-
-          auditService
-            .log({
-              actor: 'agent',
-              action: 'agent_step',
-              details: {
-                runId,
-                type: (step as any)?.type,
-                toolName,
-                contentPreview,
-                contentLength,
-                contentHash,
-                argsHash: args !== undefined ? argsHash : undefined,
-                metadata: sanitizedMetadata,
-              },
-              status: 'success',
-            })
-            .catch(() => undefined);
-        } catch {
-          // ignore
-        }
-    });
-
-    // Set up Token Handler for streaming
-    agentService.setTokenHandler((token) => {
-        event.sender.send('agent:token', token);
-    });
-
-    // Get current browser context
-    let browserContext = 'Current browser state: No active tab';
-    try {
-        const wc = browserTargetService.getActiveWebContents();
-        const url = wc.getURL();
-        const title = wc.getTitle();
-        browserContext = `Current browser state: URL="${url}", Title="${title}"`;
-    } catch (err) {
-        // Ignore error if no active tab
-    }
-
-    let response = '';
-    try {
-      const permissionMode = agentService.getPermissionMode();
-      response = await agentRunContext.run(
-        { runId, requesterWebContentsId: event.sender.id, browserContext: { url, domain }, permissionMode },
-        async () => {
-        return await agentService.chat(message, browserContext);
-        }
-      );
+      return await agentService.chat(message, browserContext);
     } finally {
-      try {
-        await telemetryService.emit({
-          eventId: uuidv4(),
-          runId,
-          ts: new Date().toISOString(),
-          type: 'agent_run_end',
-          name: 'agent:chat',
-          data: { responseLength: response.length },
-        });
-      } catch {
-        // ignore telemetry failures
-      }
+      agentService.clearStepHandler();
     }
-    
-    // Log Agent Response
-    await auditService.log({
-        actor: 'agent',
-        action: 'chat_response',
-        details: { response, runId },
-        status: 'success'
-    });
-
-    return response;
   });
 
   // Agent conversation reset handler
