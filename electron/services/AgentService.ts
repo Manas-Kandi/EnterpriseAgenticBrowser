@@ -7,7 +7,6 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 
 import { toolRegistry } from './ToolRegistry';
-import { taskKnowledgeService } from './TaskKnowledgeService';
 import { agentRunContext } from './AgentRunContext';
 import { telemetryService } from './TelemetryService';
 import { auditService } from './AuditService';
@@ -15,9 +14,6 @@ import { classifyIntent, shouldNavigateActiveTab } from './IntentClassifier';
 import { safeParseTOON, TOON_SUMMARY_PROMPT_TEMPLATE } from '../lib/toon';
 import { safeValidateToonSummary, createToonSummary, ToonSummary } from '../lib/validateToonSummary';
 import { selectorDiscoveryService, ComponentSelector } from './SelectorDiscoveryService';
-import { WorkflowOrchestrator } from './WorkflowOrchestrator';
-import { speculativeExecutor, PredictionContext } from './SpeculativeExecutor';
-import { modelRouter, ModelTier, TaskComplexity } from './ModelRouter';
 import { browserTargetService } from './BrowserTargetService';
 import { agentTabOpenService } from './AgentTabOpenService';
 import { BrowserWindow } from 'electron';
@@ -176,12 +172,9 @@ export class AgentService {
   private static readonly SUMMARY_BLOCK_SIZE = 15;
 
   private summaries: SystemMessage[] = [];
-  private orchestrator: WorkflowOrchestrator;
-
   constructor() {
     this.model = this.createModel('llama-3.1-70b');
     this.systemPrompt = new SystemMessage('');
-    this.orchestrator = new WorkflowOrchestrator(this.model);
   }
 
   /**
@@ -334,6 +327,19 @@ export class AgentService {
   }
 
   private extractDirectNavigationUrl(text: string): string | null {
+    const lower = text.toLowerCase().trim();
+    
+    // Pattern 1: Simple "open [domain]" or "go to [domain]"
+    const simpleMatch = lower.match(/^(?:open|go to|visit|navigate to)\s+([a-z0-9-]+(?:\.[a-z]{2,})?)$/i);
+    if (simpleMatch) {
+      let domain = simpleMatch[1];
+      if (!domain.includes('.')) {
+        domain = `${domain}.com`;
+      }
+      return `https://${domain}`;
+    }
+
+    // Pattern 2: Existing URL match
     const match = text.match(/(?:open|go to|navigate to|visit)\s+(?:the\s+)?["']?(https?:\/\/[^\s"']+|(?:[a-z0-9-]+\.)+[a-z]{2,}[^\s"']*)/i);
     if (!match) return null;
     let url = match[1].replace(/[),.!?]+$/, '');
@@ -407,7 +413,6 @@ export class AgentService {
     this.llmConfig = merged;
     if (typeof next?.modelId === 'string' && next.modelId.trim()) this.currentModelId = next.modelId.trim();
     this.model = this.createModel(this.currentModelId);
-    this.orchestrator = new WorkflowOrchestrator(this.model);
   }
 
   getLLMConfig(): Omit<LLMConfig, 'apiKey'> {
@@ -431,24 +436,28 @@ export class AgentService {
 
   private createModel(modelId: string): Runnable {
     const cfg = AVAILABLE_MODELS.find((m) => m.id === modelId) || AVAILABLE_MODELS[0];
-    return new ChatOpenAI({
-      configuration: { baseURL: this.llmConfig.baseUrl, apiKey: this.llmConfig.apiKey ?? 'local' },
-      modelName: cfg.modelName,
-      temperature: cfg.temperature,
-      maxTokens: cfg.maxTokens,
-      streaming: false,
-      modelKwargs: { response_format: { type: 'json_object' }, ...(cfg.extraBody ?? {}) },
-    });
-  }
+    
+    // Always prefer Kimi K2 for 'do' mode complex reasoning if available
+    const useModelName = (this.agentMode === 'do' && modelId !== 'actions-policy-v1') 
+      ? 'moonshotai/kimi-k2-thinking' 
+      : cfg.modelName;
 
-  private createModelForRouting(tier: ModelTier): Runnable {
     return new ChatOpenAI({
-      configuration: { baseURL: this.llmConfig.baseUrl, apiKey: this.llmConfig.apiKey ?? 'local' },
-      modelName: tier.modelName,
-      temperature: tier.temperature,
-      maxTokens: tier.maxTokens,
+      configuration: { 
+        baseURL: this.llmConfig.baseUrl, 
+        apiKey: this.llmConfig.apiKey ?? 'local' 
+      },
+      modelName: useModelName,
+      temperature: 1, // Kimi K2 optimal
+      maxTokens: 16384,
       streaming: false,
-      modelKwargs: { response_format: { type: 'json_object' } },
+      modelKwargs: { 
+        response_format: { type: 'json_object' }, 
+        ...(cfg.extraBody ?? {}),
+        top_p: 0.9,
+        // Ensure thinking is enabled for the engine
+        chat_template_kwargs: { thinking: true }
+      },
     });
   }
 
@@ -576,8 +585,6 @@ You can answer questions about what's on the page, explain content, summarize in
     let lastTool: string | null = null;
     let lastToolResult: string | null = null;
     let lastThought: string | null = null;
-    let speculativeHits = 0;
-    let speculativeMisses = 0;
 
     // If the agent opened a new tab (foreground/background), we target subsequent browser_* tools to it.
     let preferredTabId: string | null = null;
@@ -596,21 +603,24 @@ You can answer questions about what's on the page, explain content, summarize in
     const intentClassification = classifyIntent(userMessage, activeUrl);
     this.emitStep('thought', `Intent: ${intentClassification.type} (${Math.round(intentClassification.confidence * 100)}% confidence) - ${intentClassification.reason}`, { phase: 'intent_classification', intent: intentClassification });
 
-    // Adaptive Model Routing - select optimal model based on task complexity
-    const routingDecision = modelRouter.route(userMessage, browserContext);
-    const selectedModelId = routingDecision.selectedModel.id;
-    const isTrivialOrSimple = [TaskComplexity.TRIVIAL, TaskComplexity.SIMPLE].includes(routingDecision.classification.complexity);
-    let currentModelForRun = this.createModelForRouting(routingDecision.selectedModel);
-    this.emitStep('thought', `🎯 Model: ${routingDecision.selectedModel.name} (${routingDecision.classification.complexity} task, ${Math.round(routingDecision.classification.confidence * 100)}% confidence)`, { 
-      phase: 'model_routing', 
-      model: selectedModelId,
-      complexity: routingDecision.classification.complexity,
-      confidence: routingDecision.classification.confidence 
-    });
+    const currentModelForRun = this.model;
+    const lowerMessage = userMessage.toLowerCase();
+    const isLikelySingleAction = !/\b(and|then|after|before|also|,)\b/i.test(lowerMessage);
+    this.emitStep('thought', `🧠 Model: ${this.currentModelId}`, { phase: 'model_selection', model: this.currentModelId });
 
     try {
+      const simpleCommand = this.inferToolFromText(userMessage);
+      if (simpleCommand && isLikelySingleAction) {
+        const tool = langChainTools.find(t => t.name === simpleCommand.tool);
+        if (tool) {
+          this.emitStep('thought', `Fast-path execution: ${simpleCommand.tool}`, { phase: 'fast_path' });
+          const result = await tool.invoke(simpleCommand.args);
+          return String(result);
+        }
+      }
+
       const directNavUrl = this.extractDirectNavigationUrl(userMessage);
-      if (directNavUrl && isTrivialOrSimple) {
+      if (directNavUrl && isLikelySingleAction) {
         const navTool = langChainTools.find(t => t.name === 'browser_navigate');
         if (navTool) {
           try {
@@ -710,7 +720,7 @@ You can answer questions about what's on the page, explain content, summarize in
 <tool_strategy>
 1. API-FIRST: Use api_* tools for speed and reliability (GitHub, HN, etc.).
 2. TERMINAL-PRIMARY: Use browser_terminal_command for complex page interactions, data extraction, and form filling. It is more robust than individual click/type actions.
-3. PLANNING: For complex requests ("Find cheapest flight"), use WorkflowOrchestrator to plan a multi-step DAG.
+3. SINGLE-LOOP: Use browser_* tools for simple interactions; avoid extra planners or speculative execution.
 </tool_strategy>
 
 <response_formatting>
@@ -735,42 +745,6 @@ ${langChainTools.map((t) => `- ${t.name}: ${t.description}`).join('\n')}`);
       await this.maybeSummarize();
       const messages = this.buildMessagesWithSummaries(this.systemPrompt);
 
-      // Workflow Check (skip for trivial/simple tasks to avoid unnecessary LLM calls)
-      if (!isTrivialOrSimple && userMessage.length > 10) {
-        const workflowHit = await withTimeout(
-          taskKnowledgeService.findNearest(userMessage, 0.85),
-          8000,
-          null,
-          'Workflow lookup'
-        ).catch(() => null);
-        if (workflowHit && workflowHit.skill.isWorkflow) {
-          this.emitStep('thought', `Executing workflow: "${workflowHit.skill.name}".`);
-          const result = await this.orchestrator.execute(workflowHit.skill.steps.map(s => ({ id: s.id!, name: s.name || s.tool!, tool: s.tool!, args: (s.args as Record<string, unknown>) || {}, dependencies: s.dependencies || [], status: 'pending' as const })), (type, content, metadata) => this.emitStep(type, content, metadata));
-          if (result.success) {
-            telemetryService.emit({ eventId: uuidv4(), runId, ts: new Date().toISOString(), type: 'agent_run_end', data: { success: true, via: 'workflow_hit', durationMs: Date.now() - runStartedAt } });
-            return `Completed via workflow ${workflowHit.skill.name}`;
-          }
-        }
-
-        const workflowTasks = await withTimeout(
-          this.orchestrator.plan(userMessage, context),
-          15000,
-          [],
-          'Workflow planning'
-        ).catch(() => []);
-        if (workflowTasks.length > 1) {
-          this.emitStep('thought', `Planned ${workflowTasks.length} steps. Executing...`);
-          const result = await this.orchestrator.execute(workflowTasks, (type, content, metadata) => this.emitStep(type, content, metadata));
-          if (result.success) {
-            try {
-              await taskKnowledgeService.addSkill({ name: `workflow_${uuidv4().slice(0, 8)}`, description: userMessage, domain: context.includes('localhost:3000') ? 'localhost:3000' : 'unknown', isWorkflow: true, steps: result.tasks.map(t => ({ action: 'workflow_task' as const, id: t.id, name: t.name, tool: t.tool, args: t.args, dependencies: t.dependencies })), tags: ['workflow'] });
-            } catch { /* ignore skill save errors */ }
-            telemetryService.emit({ eventId: uuidv4(), runId, ts: new Date().toISOString(), type: 'agent_run_end', data: { success: true, via: 'workflow_planned', durationMs: Date.now() - runStartedAt } });
-            return `Workflow completed successfully.`;
-          }
-        }
-      }
-
       for (let i = 0; i < 15; i++) {
         const loopAlert = agentRunContext.consumeLoopAlert();
         if (loopAlert) {
@@ -786,7 +760,10 @@ ${langChainTools.map((t) => `- ${t.name}: ${t.description}`).join('\n')}`);
         }
 
         if (pendingErrorForReflection) {
-          messages.push(new SystemMessage(`Previous error: ${pendingErrorForReflection}. Reflect and choose a different path.`));
+          this.emitStep('thought', `Reflecting on error: ${pendingErrorForReflection}`);
+          messages.push(new SystemMessage(`Previous attempt failed with error: ${pendingErrorForReflection}. 
+          Reflect on why this happened and try a different strategy. 
+          If you are stuck in a loop, try using browser_terminal_command for a fresh perspective or more robust execution.`));
           pendingErrorForReflection = null;
         }
 
@@ -941,33 +918,10 @@ ${langChainTools.map((t) => `- ${t.name}: ${t.description}`).join('\n')}`);
           auditService.log({ actor: 'agent', action: 'tool_execution', details: { runId, tool: tool.name, args: toolArgs }, status: 'pending' });
           const toolStartedAt = Date.now();
           try {
-            // Check if we have a matching speculative result
-            const speculativeMatch = speculativeExecutor.getMatchingSpeculation(
-              tool.name, 
-              action.args as Record<string, unknown>
-            );
-            
-            let resStr: string;
-            let durationMs: number;
-            
-            if (speculativeMatch && speculativeMatch.result) {
-              // Use speculative result - huge latency savings!
-              resStr = speculativeMatch.result;
-              durationMs = 0; // Already executed
-              speculativeHits++;
-              this.emitStep('thought', `⚡ Speculative hit! Saved ${speculativeMatch.executionTimeMs}ms`, { 
-                phase: 'speculative_hit', 
-                savedMs: speculativeMatch.executionTimeMs 
-              });
-              telemetryService.emit({ eventId: uuidv4(), runId, ts: new Date().toISOString(), type: 'tool_call_end', name: tool.name, data: { success: true, durationMs: 0, speculative: true, savedMs: speculativeMatch.executionTimeMs } });
-            } else {
-              // Normal execution
-              if (speculativeMatch) speculativeMisses++;
-              const toolResult = await tool.invoke(toolArgs);
-              resStr = String(toolResult);
-              durationMs = Date.now() - toolStartedAt;
-              telemetryService.emit({ eventId: uuidv4(), runId, ts: new Date().toISOString(), type: 'tool_call_end', name: tool.name, data: { success: true, durationMs } });
-            }
+            const toolResult = await tool.invoke(toolArgs);
+            const resStr = String(toolResult);
+            const durationMs = Date.now() - toolStartedAt;
+            telemetryService.emit({ eventId: uuidv4(), runId, ts: new Date().toISOString(), type: 'tool_call_end', name: tool.name, data: { success: true, durationMs } });
             
             // Format observation for display if it contains JSON data
             let displayResult = resStr;
@@ -979,34 +933,9 @@ ${langChainTools.map((t) => `- ${t.name}: ${t.description}`).join('\n')}`);
             messages.push(new AIMessage(content));
             messages.push(new SystemMessage(`Tool Output:\n${resStr}`));
             
-            // Update context for next prediction
             lastTool = tool.name;
             lastToolResult = resStr;
             lastThought = action.thought || null;
-            
-            // Trigger speculative execution for next likely tool
-            const predictionContext: PredictionContext = {
-              lastTool,
-              lastToolResult,
-              lastThought,
-              userMessage: safeUserMessage,
-              browserUrl: context.includes('URL:') ? context.match(/URL:\s*([^\n]+)/)?.[1] || null : null,
-              browserTitle: null,
-              visibleElements: [],
-              conversationHistory: [],
-              pendingGoal: safeUserMessage,
-            };
-            
-            const prediction = speculativeExecutor.predict(predictionContext);
-            if (prediction) {
-              this.emitStep('thought', `🔮 Speculating: ${prediction.tool} (${Math.round(prediction.confidence * 100)}% confidence)`, { 
-                phase: 'speculative_predict', 
-                tool: prediction.tool,
-                confidence: prediction.confidence 
-              });
-              // Execute speculatively in background (don't await)
-              speculativeExecutor.executeSpeculative(prediction).catch(() => {});
-            }
           } catch (e: unknown) {
             const durationMs = Date.now() - toolStartedAt;
             const errMsg = e instanceof Error ? e.message : String(e);

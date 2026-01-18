@@ -35,8 +35,9 @@ export interface ModelTier {
   tier: 'fast' | 'balanced' | 'powerful';
   avgLatencyMs: number;
   maxTokens: number;
-  temperature: number;
-  supportsThinking: boolean;
+  temperature?: number;
+  topP?: number;
+  supportsThinking?: boolean;
   complexities: TaskComplexity[];
 }
 
@@ -138,6 +139,7 @@ const MODEL_TIERS: ModelTier[] = [
     avgLatencyMs: 3000,
     maxTokens: 16384,
     temperature: 1,
+    topP: 0.9,
     supportsThinking: true,
     complexities: [TaskComplexity.EXPERT],
   },

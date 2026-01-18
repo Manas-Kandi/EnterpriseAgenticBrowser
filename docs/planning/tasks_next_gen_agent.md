@@ -6,45 +6,43 @@
 
 ## Current System Snapshot (Repo Anchors)
 
-- **Core Loop**: `electron/services/AgentService.ts` (Sequential execution, limited lookahead).
+- **Core Loop**: `electron/services/AgentService.ts` (Single-loop execution, terminal-first).
 - **Perception**: `electron/services/DOMContextService.ts` (Text/DOM-only, no vision).
-- **Planning**: `electron/services/WorkflowOrchestrator.ts` (DAG-based, static planning).
+- **Execution**: `electron/services/TerminalIntegrationTool.ts` + `electron/services/CodeExecutorService.ts` (Natural language → JS execution).
 - **Memory**: `electron/services/TaskKnowledgeService.ts` (Explicit skill saving, limited episodic retrieval).
-- **Control**: `electron/services/ModelRouter.ts` (Complexity-based routing).
+- **Control**: `electron/services/ModelRouter.ts` (Optional complexity heuristics).
 
 ---
 
 ## Execution Roadmap
 
 1.  **Foundation (Speed & Reliability)**: Model Router, Selector Cache, Context Compression.
-2.  **Intelligence (Planning & Perception)**: Speculative Execution, Multimodal Vision, World Model.
+2.  **Intelligence (Planning & Perception)**: Multimodal Vision, World Model.
 3.  **Evolution (Learning)**: Episodic Memory, Self-Healing, User Collaboration.
 
 ---
 
-## Task 1: Implement Speculative Execution Pipeline
+## Task 1: Single-Loop Execution Reliability
 
-**Goal**: Execute tool calls speculatively before LLM confirmation to reduce latency by 40-60%.
+**Goal**: Harden terminal-first single-loop execution to reduce stalls and improve accuracy.
 
 ### Context
-- `electron/services/SpeculativeExecutor.ts` exists but is limited.
-- Integration required in `AgentService.ts#doMode()`.
+- `electron/services/AgentService.ts` is the primary loop.
+- `electron/services/TerminalIntegrationTool.ts` is the primary executor for complex DOM work.
+- `electron/services/ToolRegistry.ts` enforces policy/approval.
 
 ### Subtasks
-1.1. **Predictive Action Generator**
-   - Create lightweight model/heuristic to predict next 3 likely actions based on DOM + Goal.
-   - Implement "Tree of Thoughts" exploration for high-stakes decisions.
-   - **Test**: Prediction accuracy >85% on standard navigation tasks.
+1.1. **Fast-path accuracy**
+   - Keep direct navigation + simple search detection tight to avoid LLM overhead.
+   - **Test**: Common intents succeed without LLM ("open youtube", "search for X").
 
-1.2. **Parallel Stream Execution**
-   - Execute top-K predictions in background tabs/forked processes.
-   - Stream LLM verification in parallel; commit the branch that matches.
-   - **Test**: Latency reduction of 50% on multi-step forms.
+1.2. **Terminal fallback hardening**
+   - When tool parsing fails, fall back to `browser_terminal_command` with full context.
+   - Ensure DOM context capture is robust.
 
-1.3. **State Rollback Mechanism**
-   - Snapshot browser state (cookies, storage, history) before speculative branches.
-   - fast-revert if prediction fails.
-   - **Test**: Zero side-effects on failed speculation.
+1.3. **Loop guardrails**
+   - Strengthen loop detection and error reflection to avoid stalls.
+   - Keep responses human-readable and concise.
 
 ---
 
@@ -90,21 +88,22 @@
 
 ---
 
-## Task 4: Parallel Multi-Tab Orchestration
+## Task 4: Multi-Tab Coordination
 
-**Goal**: Execute independent workflow branches in parallel across tabs.
+**Goal**: Execute multi-tab work without a DAG planner.
 
 ### Context
-- `WorkflowOrchestrator.ts` builds the DAG. `AgentTabOpenService.ts` manages tabs.
+- `BrowserTargetService.ts` tracks tabs. `AgentTabOpenService.ts` opens/activates tabs.
 
 ### Subtasks
-4.1. **Dependency Analysis**
-   - Enhance `WorkflowOrchestrator` to identify truly independent branches.
-   - Resource locking for shared credentials.
+4.1. **Reuse heuristics**
+   - Prefer the most recent tab for a domain to reduce tab sprawl.
 
-4.2. **Tab Worker Pool**
-   - Maintain a pool of "Worker Tabs" for background execution.
-   - `ParallelTabOrchestrator` to manage message passing between workers and main agent.
+4.2. **Background vs foreground policy**
+   - Honor user intent and preserve context.
+
+4.3. **Cross-tab state**
+   - Track minimal shared state (URLs, summaries) for continuity.
 
 ---
 

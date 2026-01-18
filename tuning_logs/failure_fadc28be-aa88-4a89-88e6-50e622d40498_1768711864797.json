@@ -1,0 +1,10 @@
+{
+  "runId": "fadc28be-aa88-4a89-88e6-50e622d40498",
+  "timestamp": "2026-01-18T04:51:04.797Z",
+  "userMessage": "summarize whats on this page",
+  "result": "Request timed out",
+  "stepCount": 0,
+  "toolsUsed": [],
+  "durationMs": 68017,
+  "model": "llama-3.1-70b"
+}

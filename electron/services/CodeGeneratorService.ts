@@ -168,12 +168,16 @@ export class CodeGeneratorService {
     // Always use NVIDIA API with Kimi K2 thinking model
     return new ChatOpenAI({
       apiKey: apiKeyInfo.key,
-      model: 'moonshotai/kimi-k2-instruct',  // Kimi K2 thinking model
-      temperature: options.temperature ?? 0.1,
-      maxTokens: options.maxTokens ?? 2048,
+      model: 'moonshotai/kimi-k2-thinking',  // Kimi K2 thinking model
+      temperature: 1, // Kimi K2 optimal
+      maxTokens: 16384,
       configuration: {
         baseURL: 'https://integrate.api.nvidia.com/v1',
       },
+      modelKwargs: {
+        top_p: 0.9,
+        chat_template_kwargs: { thinking: true }
+      }
     });
   }
 

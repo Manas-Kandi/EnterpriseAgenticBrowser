@@ -2,15 +2,19 @@
 
 The Browser Terminal is the core execution engine of the Enterprise Agentic Browser. It transforms natural language intent into complex, multi-step operations across web pages and APIs.
 
-## Architecture Philosophy
+## Autonomous Intelligence
 
-**The terminal is invisible. The LLM is the interface.**
+### 1. Autonomous Decision Engine
+The agent now includes a specialized decision layer that analyzes requests before execution:
+- **DIRECT_NAV:** Bypasses the heavy reasoning loop for simple site navigation.
+- **WORKFLOW:** Triggers the multi-step DAG planner for complex, cross-site tasks.
+- **TERMINAL:** Hands off to the code-generation engine for high-confidence page interactions.
+- **CHAT:** Handles purely informational queries without browser side-effects.
 
-Instead of manual clicking or raw scripting, the system follows a 4-stage pipeline:
-1. **Reason:** Understand human intent and classify context.
-2. **Plan:** Decompose the request into a Directed Acyclic Graph (DAG) of tasks.
-3. **Execute:** Run robust JavaScript and API calls via the Enhanced Terminal.
-4. **Present:** Transform raw data into human-centric Markdown.
+### 2. Self-Correction & Reflection Loop
+- **Error Reflection:** If a tool fails or a loop is detected, the agent performs a "Reflection" step, analyzing the failure and choosing a different strategy.
+- **Terminal Handoff:** In cases of repeated failure with standard browser primitives, the agent automatically pivots to the `browser_terminal_command` for a more robust, code-based approach.
+- **Verification:** Post-execution verification ensures the final state matches the user's intent before presenting results.
 
 ## Core Capabilities
 
