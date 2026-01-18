@@ -887,7 +887,12 @@ Available tools:\n${langChainTools.map((t) => `- ${t.name}: ${t.description}`).j
               // This avoids the "open and stop" behavior that feels janky.
               const toolResult = await tool.invoke({ ...(action.args as Record<string, unknown>), tabId });
               const resStr = String(toolResult);
-              this.emitStep('observation', resStr, { tool: tool.name, result: resStr, ok: true, tabId });
+              // Format observation for display if it contains JSON data
+              let displayRes = resStr;
+              if (resStr.includes('{') && resStr.includes('}')) {
+                displayRes = this.formatExtractedData(resStr);
+              }
+              this.emitStep('observation', displayRes, { tool: tool.name, result: resStr, ok: true, tabId });
               usedBrowserTools = true;
               messages.push(new AIMessage(content));
               messages.push(new SystemMessage(`Tool Output:\n${resStr}`));
@@ -957,7 +962,12 @@ Available tools:\n${langChainTools.map((t) => `- ${t.name}: ${t.description}`).j
               telemetryService.emit({ eventId: uuidv4(), runId, ts: new Date().toISOString(), type: 'tool_call_end', name: tool.name, data: { success: true, durationMs } });
             }
             
-            this.emitStep('observation', resStr, { tool: tool.name, result: resStr, durationMs, ok: true });
+            // Format observation for display if it contains JSON data
+            let displayResult = resStr;
+            if (resStr.includes('{') && resStr.includes('}') && tool.name.includes('terminal')) {
+              displayResult = this.formatExtractedData(resStr);
+            }
+            this.emitStep('observation', displayResult, { tool: tool.name, result: resStr, durationMs, ok: true });
             if (tool.name.startsWith('browser_')) usedBrowserTools = true;
             messages.push(new AIMessage(content));
             messages.push(new SystemMessage(`Tool Output:\n${resStr}`));
