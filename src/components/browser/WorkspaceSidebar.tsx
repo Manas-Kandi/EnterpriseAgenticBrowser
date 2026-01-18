@@ -1,6 +1,6 @@
 import { useBrowserStore } from '@/lib/store';
 import { cn } from '@/lib/utils';
-import { Cpu, Grid, Shield, Navigation, Truck, Terminal } from 'react-feather';
+import { Grid, Shield, Navigation, Truck, Terminal } from 'react-feather';
 import type { CSSProperties } from 'react';
 
 export function WorkspaceSidebar() {
@@ -54,22 +54,6 @@ export function WorkspaceSidebar() {
                 >
                     <Terminal size={18} className="shrink-0 transition-opacity" />
                     {activeSidebarPanel === 'terminal' && (
-                        <div className="absolute left-0.5 top-2.5 bottom-2.5 w-[2px] rounded-full bg-foreground/40" />
-                    )}
-                </button>
-                <button
-                    onClick={() => setSidebarPanel(activeSidebarPanel === 'agent' ? null : 'agent')}
-                    data-testid="toggle-agent-panel"
-                    className={cn(
-                        "relative w-9 h-9 flex items-center justify-center rounded-lg transition-all group",
-                        activeSidebarPanel === 'agent'
-                            ? "text-foreground/80"
-                            : "text-muted-foreground/60 hover:text-foreground/80"
-                    )}
-                    title="Agent (Legacy)"
-                >
-                    <Cpu size={18} className="shrink-0 transition-opacity" />
-                    {activeSidebarPanel === 'agent' && (
                         <div className="absolute left-0.5 top-2.5 bottom-2.5 w-[2px] rounded-full bg-foreground/40" />
                     )}
                 </button>

@@ -159,9 +159,9 @@ export interface TabGroup {
 
 export type TabsLayout = 'horizontal' | 'vertical';
 
-export type SidebarPanel = 'agent' | 'terminal' | 'tabs' | 'workflows' | null;
+export type SidebarPanel = 'terminal' | 'tabs' | 'workflows' | null;
 
-export type DockCoreItemId = 'agent' | 'tabs' | 'workflows';
+export type DockCoreItemId = 'tabs' | 'workflows';
 export type DockAeroItemId = 'aerocore-portal' | 'aerocore-admin' | 'aerocore-dispatch' | 'aerocore-fleet';
 
 export interface DockConfig {
@@ -172,7 +172,7 @@ export interface DockConfig {
 }
 
 const defaultDockConfig: DockConfig = {
-  coreOrder: ['agent', 'tabs', 'workflows'],
+  coreOrder: ['tabs', 'workflows'],
   coreHidden: [],
   aeroOrder: ['aerocore-portal', 'aerocore-admin', 'aerocore-dispatch', 'aerocore-fleet'],
   aeroHidden: [],

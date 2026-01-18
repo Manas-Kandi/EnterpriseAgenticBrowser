@@ -146,11 +146,7 @@ export function Omnibox({ className }: OmniboxProps) {
         }
         break;
       case 'agent':
-        setSidebarPanel('agent');
-        const command = suggestion.subtitle?.startsWith('⌘') 
-          ? input.trim() 
-          : (suggestion.subtitle || input.trim());
-        window.agent?.chat(command).catch(console.error);
+        setSidebarPanel('terminal');
         break;
     }
     setIsFocused(false);
@@ -184,11 +180,10 @@ export function Omnibox({ className }: OmniboxProps) {
         if (activeTab) setInput(activeTab.url || '');
         break;
       case 'Enter':
-        // Cmd+Enter → force agent delegation
+        // Cmd+Enter → open terminal panel
         if (e.metaKey || e.ctrlKey) {
           e.preventDefault();
-          setSidebarPanel('agent');
-          window.agent?.chat(input.trim()).catch(console.error);
+          setSidebarPanel('terminal');
           setIsFocused(false);
           inputRef.current?.blur();
         }
