@@ -3,7 +3,7 @@ import "node:url";
 import "node:path";
 import "node:crypto";
 import "node:fs/promises";
-import { M, R, V } from "./main-CEh3nkAd.js";
+import { M, R, V } from "./main-CjJ1UnIZ.js";
 export {
   M as MAIN_DIST,
   R as RENDERER_DIST,
