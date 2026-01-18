@@ -164,7 +164,7 @@ export class ContinuousLearningService {
   private failureIndex: Map<string, Set<string>> = new Map(); // keyword -> failure IDs
 
   private static readonly MAX_FAILURES = 1000;
-  private static readonly MAX_CORRECTIONS = 500;
+  private static readonly _MAX_CORRECTIONS = 500;
   private static readonly SIMILARITY_THRESHOLD = 0.6;
   private static readonly MAX_SELF_HEAL_ATTEMPTS = 2;
 

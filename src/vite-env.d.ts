@@ -190,6 +190,8 @@ interface Window {
       iterations: number;
     }>;
     isMultiStepCommand: (command: string) => Promise<boolean>;
+    parse: (input: string) => Promise<{ type: string; [key: string]: unknown } | null>;
+    execute: (input: string) => Promise<{ success: boolean; result?: unknown; error?: string }>;
     run: (command: string, options?: { autoRetry?: boolean; maxRetries?: number }) => Promise<{
       success: boolean;
       code?: string;
