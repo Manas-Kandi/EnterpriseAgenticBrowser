@@ -118,8 +118,7 @@ v1.0 focuses on the **Single-Loop Core with OS Fundamentals**, laying the ground
 
 ### ✅ Core Execution Loop
 - [ ] User: "Go to Hacker News and get the top story."
-- [ ] Agent: Navigates, Scrapes, Returns Result.
-- [ ] **Reliability**: Handles basic errors (popups, slow load) without crashing.
+i - [ ] **Reliability**: Handles basic errors (popups, slow load) without crashing.
 
 ### ✅ Multi-Step Reasoning
 - [ ] User: "Search Amazon for 'mechanical keyboard', find the best rated one under $100, and go to checkout."
