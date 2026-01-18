@@ -811,15 +811,14 @@ Available tools:\n${langChainTools.map((t) => `- ${t.name}: ${t.description}`).j
         if (action.tool === 'final_response') {
           let finalMessage = (action.args as { message?: string }).message || content;
           
-          // If the message looks like raw JSON, format it nicely
-          if (finalMessage.trim().startsWith('{') || finalMessage.trim().startsWith('[')) {
+          // Step 6: Use LLM to format extracted data for human readability
+          if (finalMessage.includes('{') || finalMessage.includes('[')) {
+            this.emitStep('thought', '📝 Formatting response for readability...', { phase: 'formatting' });
             try {
-              const formatted = this.formatExtractedData(finalMessage);
-              if (formatted !== finalMessage) {
-                finalMessage = formatted;
-              }
+              finalMessage = await this.formatResponseWithLLM(safeUserMessage, finalMessage);
             } catch {
-              // Keep original if formatting fails
+              // Fallback to programmatic formatting
+              finalMessage = this.formatExtractedData(finalMessage);
             }
           }
           
@@ -1040,6 +1039,45 @@ Available tools:\n${langChainTools.map((t) => `- ${t.name}: ${t.description}`).j
       await fs.writeFile(logFile, JSON.stringify(logData, null, 2));
     } catch (e) {
       console.error('[AgentService] Failed to write failure log:', e);
+    }
+  }
+
+  /**
+   * Step 6: Use LLM to format the final answer for human readability
+   */
+  private async formatResponseWithLLM(userQuestion: string, rawData: string): Promise<string> {
+    // Skip formatting for simple responses
+    if (rawData.length < 100 || (!rawData.includes('{') && !rawData.includes('['))) {
+      return rawData;
+    }
+
+    const formatPrompt = new SystemMessage(`You are a formatting assistant. The user asked: "${userQuestion}"
+
+Here is the raw data extracted from the page:
+${rawData}
+
+Format this data into a clean, human-readable response using markdown:
+- Use headings (# ##) for sections
+- Use numbered lists for items
+- Bold important values like names, prices, ratings
+- Include relevant emojis (⭐ for stars, 📝 for language, 🔗 for links)
+- Be concise but informative
+- Do NOT include raw JSON
+- Do NOT wrap in code blocks
+
+Respond with ONLY the formatted text, no explanations.`);
+
+    try {
+      const response = await this.model.invoke([formatPrompt]) as AIMessage;
+      const formatted = String(response.content).trim();
+      // If the LLM returned JSON (failed to format), use our fallback
+      if (formatted.startsWith('{') || formatted.startsWith('[')) {
+        return this.formatExtractedData(rawData);
+      }
+      return formatted;
+    } catch {
+      // Fallback to programmatic formatting
+      return this.formatExtractedData(rawData);
     }
   }
 
