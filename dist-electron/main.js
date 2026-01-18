@@ -3,9 +3,9 @@ import "node:url";
 import "node:path";
 import "node:crypto";
 import "node:fs/promises";
-import { M as i, R as _, V as D } from "./main---Jun8Fg.js";
+import { M, R, V } from "./main-BvyHNr25.js";
 export {
-  i as MAIN_DIST,
-  _ as RENDERER_DIST,
-  D as VITE_DEV_SERVER_URL
+  M as MAIN_DIST,
+  R as RENDERER_DIST,
+  V as VITE_DEV_SERVER_URL
 };

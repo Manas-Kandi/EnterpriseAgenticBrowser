@@ -1,4 +1,6 @@
 import { browserTargetService } from './BrowserTargetService';
+import { agentTabOpenService } from './AgentTabOpenService';
+import { BrowserWindow } from 'electron';
 
 /**
  * Result of code execution
@@ -25,9 +27,22 @@ export interface ExecutionOptions {
  * JavaScript wrapper that handles serialization of results.
  * This runs in the page context to safely serialize the result.
  */
-function createExecutionWrapper(userCode: string): string {
+interface TabInfo {
+  id: string;
+  url: string;
+  title: string;
+  active: boolean;
+}
+
+function createExecutionWrapper(userCode: string, context?: { tabs?: TabInfo[], state?: any }): string {
+  const contextJson = JSON.stringify(context || {});
   return `
 (async function() {
+  // Inject context
+  const __context = ${contextJson};
+  window.__enterprise_tabs = __context.tabs || [];
+  window.__enterprise_state = window.__enterprise_state || __context.state || {};
+
   const __serializeResult = (value, seen = new WeakSet(), depth = 0) => {
     if (depth > 10) return '[Max depth exceeded]';
     if (value === null) return null;
@@ -151,8 +166,16 @@ export class CodeExecutorService {
       };
     }
 
+    // Prepare context for injection
+    const tabs = browserTargetService.getAllTabs().map(t => ({
+      id: t.id,
+      url: t.url,
+      title: t.title,
+      active: t.active
+    }));
+
     // Prepare the code
-    const executableCode = wrapInTryCatch ? createExecutionWrapper(code) : code;
+    const executableCode = wrapInTryCatch ? createExecutionWrapper(code, { tabs }) : code;
 
     try {
       // Execute with timeout

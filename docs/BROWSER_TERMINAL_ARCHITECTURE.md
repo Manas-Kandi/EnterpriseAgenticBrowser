@@ -1,30 +1,28 @@
-# Browser Terminal Architecture: Comprehensive Analysis & Design
+# Browser Terminal: The Invisible Execution Layer
 
-> **Vision**: A terminal for the browser that has root access to all tabs, DOM, and JavaScript code, enabling LLM-driven manipulation through a structured 4-stage planning process.
+The Browser Terminal is the core execution engine of the Enterprise Agentic Browser. It transforms natural language intent into complex, multi-step operations across web pages and APIs.
 
----
+## Architecture Philosophy
 
-## Part 1: Current State Analysis
+**The terminal is invisible. The LLM is the interface.**
 
-### Existing Infrastructure
+Instead of manual clicking or raw scripting, the system follows a 4-stage pipeline:
+1. **Reason:** Understand human intent and classify context.
+2. **Plan:** Decompose the request into a Directed Acyclic Graph (DAG) of tasks.
+3. **Execute:** Run robust JavaScript and API calls via the Enhanced Terminal.
+4. **Present:** Transform raw data into human-centric Markdown.
 
-#### 1. Code Execution Layer
-| Service | File | Capabilities |
-|---------|------|--------------|
-| **CodeExecutorService** | `electron/services/CodeExecutorService.ts` | Execute JS in webview context, timeout handling, result serialization, DOM node handling |
-| **CodeGeneratorService** | `electron/services/CodeGeneratorService.ts` | LLM-based JS code generation from natural language, multi-step plan generation |
-| **TerminalIntegrationTool** | `electron/services/TerminalIntegrationTool.ts` | Bridges agent to terminal, `browser_terminal_command` tool |
+## Core Capabilities
 
-**Current Capabilities:**
-- ✅ Execute arbitrary JS in active webview via `webview.executeJavaScript()`
-- ✅ Timeout protection (30s default)
-- ✅ Error capture with stack traces
-- ✅ Result serialization (handles DOM nodes, circular refs)
-- ✅ Helper methods: `click()`, `type()`, `scroll()`, `waitForElement()`, `waitForNavigation()`
-- ✅ Multi-step plan execution with `executeMultiStepPlan()`
+### 1. Enhanced Execution Engine (`CodeExecutorService`)
+- **Context Injection:** Every execution automatically receives a global `window.__enterprise_tabs` object containing metadata about all open tabs.
+- **State Persistence:** Workflows can persist data between steps and across tabs using `window.__enterprise_state`.
+- **Robust Serialization:** A multi-layered serialization wrapper ensures DOM nodes and complex objects are safely returned to the agent.
 
-#### 2. Tab/Target Management
-| Service | File | Capabilities |
+### 2. Intelligent Code Generation (`CodeGeneratorService`)
+- **API-First Strategy:** Prioritizes native fetch calls for speed (e.g., GitHub, HackerNews) before falling back to browser scraping.
+- **Semantic Understanding:** Uses the Kimi K2 thinking model to generate code that understands the *purpose* of page elements rather than just their selectors.
+- **Multi-Step Planning:** Automatically detects complex commands and generates paginated or multi-page execution plans.
 |---------|------|--------------|
 | **BrowserTargetService** | `electron/services/BrowserTargetService.ts` | Tab registry, active tab tracking, webContents access |
 | **TabOrchestrator** | `electron/services/agent/TabOrchestrator.ts` | Parallel tab execution, tab pooling, cross-tab data correlation |

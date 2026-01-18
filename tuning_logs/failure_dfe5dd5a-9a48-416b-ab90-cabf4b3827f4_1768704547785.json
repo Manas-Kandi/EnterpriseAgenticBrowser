@@ -1,0 +1,10 @@
+{
+  "runId": "dfe5dd5a-9a48-416b-ab90-cabf4b3827f4",
+  "timestamp": "2026-01-18T02:49:07.785Z",
+  "userMessage": "open youtube",
+  "result": "Parse failures",
+  "stepCount": 0,
+  "toolsUsed": [],
+  "durationMs": 34888,
+  "model": "llama-3.1-70b"
+}

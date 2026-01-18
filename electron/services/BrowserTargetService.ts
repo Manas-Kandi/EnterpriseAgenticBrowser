@@ -106,6 +106,19 @@ export class BrowserTargetService {
     return null;
   }
 
+  getAllTabs() {
+    return Array.from(this.tabIdToWebContentsId.values()).map(reg => {
+      const wc = webContents.fromId(reg.webContentsId);
+      if (!wc || wc.isDestroyed()) return null;
+      return {
+        id: reg.tabId,
+        url: wc.getURL(),
+        title: wc.getTitle(),
+        active: reg.tabId === this.activeTabId
+      };
+    }).filter((t): t is { id: string; url: string; title: string; active: boolean } => t !== null);
+  }
+
   getActiveWebContents(): WebContents {
     const activeTabId = this.activeTabId;
     if (activeTabId) {

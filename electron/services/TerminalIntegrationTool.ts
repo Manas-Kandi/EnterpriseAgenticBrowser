@@ -14,8 +14,12 @@ function formatResultForAgent(result: unknown): string {
   }
   if (typeof result === 'object') {
     try {
-      // Format as human-readable markdown instead of raw JSON
-      return formatObjectAsMarkdown(result as Record<string, unknown>);
+      const obj = result as Record<string, unknown>;
+      // If the result looks like it's from an API or structured extraction
+      if (obj.results || obj.items || obj.data || obj.pageTitle) {
+        return formatObjectAsMarkdown(obj);
+      }
+      return JSON.stringify(result, null, 2);
     } catch (e) {
       return `[Unserializable Object: ${String(result)}]`;
     }
@@ -62,11 +66,12 @@ function formatObjectAsMarkdown(obj: Record<string, unknown>): string {
     });
   }
 
-  // Handle nested objects (like filters)
+  // Handle nested objects (like filters or metadata)
   const objectKeys = Object.keys(obj).filter(k => 
     typeof obj[k] === 'object' && 
     obj[k] !== null && 
-    !Array.isArray(obj[k])
+    !Array.isArray(obj[k]) &&
+    !k.startsWith('__') // Skip internal fields
   );
 
   for (const key of objectKeys) {
@@ -84,7 +89,8 @@ function formatObjectAsMarkdown(obj: Record<string, unknown>): string {
   const scalarKeys = Object.keys(obj).filter(k => 
     !Array.isArray(obj[k]) && 
     k !== 'pageTitle' && 
-    typeof obj[k] !== 'object'
+    typeof obj[k] !== 'object' &&
+    !k.startsWith('__') // Skip internal fields
   );
 
   if (scalarKeys.length > 0 && lines.length > 0) {
