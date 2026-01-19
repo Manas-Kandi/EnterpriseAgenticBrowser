@@ -120,9 +120,9 @@ export function TerminalPanel() {
   const [isStreaming, setIsStreaming] = useState(false);
   const [autocompleteSuggestions, setAutocompleteSuggestions] = useState<string[]>([]);
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(-1);
-  
+
   const { terminalConfirmBeforeExecution, setTerminalConfirmBeforeExecution } = useBrowserStore();
-  
+
   const inputRef = useRef<HTMLInputElement>(null);
   const outputRef = useRef<HTMLDivElement>(null);
   const codeEditorRef = useRef<HTMLTextAreaElement>(null);
@@ -171,7 +171,7 @@ export function TerminalPanel() {
   useEffect(() => {
     const off = window.terminal?.onStep?.((step) => {
       setCurrentPhase(step.status === 'running' ? step.phase : null);
-      
+
       // Track retry information
       if (step.phase === 'retry' && step.status === 'running') {
         const data = step.data as { attempt?: number; maxRetries?: number; error?: string } | undefined;
@@ -253,18 +253,18 @@ export function TerminalPanel() {
   // Save script handler
   const handleSaveScript = useCallback(async (name?: string) => {
     if (!lastSuccessfulExecution) return;
-    
+
     const scriptName = name || await window.scripts?.generateName(lastSuccessfulExecution.command);
     const currentUrl = await window.terminal?.evaluate('window.location.href');
     const urlPattern = currentUrl?.result ? new URL(String(currentUrl.result)).hostname : undefined;
-    
+
     await window.scripts?.save({
       name: scriptName || 'Untitled Script',
       command: lastSuccessfulExecution.command,
       code: lastSuccessfulExecution.code,
       urlPattern,
     });
-    
+
     addEntry('info', `📁 Script saved: ${scriptName}`);
     setShowSavePrompt(false);
     setLastSuccessfulExecution(null);
@@ -276,11 +276,11 @@ export function TerminalPanel() {
     addEntry('command', `[Script: ${script.name}] ${script.command}`);
     addEntry('code', script.code);
     setIsExecuting(true);
-    
+
     try {
       const result = await window.terminal?.executeCode(script.code);
       await window.scripts?.recordUsage(script.id);
-      
+
       if (result?.success) {
         const formatted = formatResult(result.result);
         addEntry('result', formatted.display, result.result);
@@ -308,7 +308,7 @@ export function TerminalPanel() {
 
     try {
       const result = await window.terminal?.executeCode(code);
-      
+
       if (!result) {
         addEntry('error', 'Terminal API not available');
         return;
@@ -371,28 +371,7 @@ export function TerminalPanel() {
     addEntry('command', command);
     setInput('');
 
-    // 1. Try Structured Execution via BrowserKernel
-    const parsed = await window.terminal?.parse(command);
-    if (parsed && parsed.type === 'structured') {
-      setIsExecuting(true);
-      try {
-        const result = await window.terminal?.execute(command);
-        if (result?.success) {
-          const formatted = formatResult(result.result);
-          addEntry('result', formatted.display, result.result);
-        } else {
-          addEntry('error', result?.error || 'Execution failed');
-        }
-        return;
-      } catch (err) {
-        addEntry('error', err instanceof Error ? err.message : String(err));
-        return;
-      } finally {
-        setIsExecuting(false);
-      }
-    }
-
-    // 2. If confirmation mode is enabled and not bypassed, generate code first
+    // If confirmation mode is enabled and not bypassed, generate code first (Plan view)
     if (terminalConfirmBeforeExecution && !bypassConfirm) {
       setIsExecuting(true);
       try {
@@ -402,7 +381,6 @@ export function TerminalPanel() {
           setIsExecuting(false);
           return;
         }
-        // Show pending code for confirmation
         setPendingCode({
           command,
           code: genResult.code,
@@ -411,103 +389,27 @@ export function TerminalPanel() {
         });
         setIsExecuting(false);
       } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : String(err);
-        addEntry('error', `Code generation failed: ${errorMessage}`);
+        addEntry('error', `Code generation failed: ${err instanceof Error ? err.message : String(err)}`);
         setIsExecuting(false);
       }
       return;
     }
 
-    // FAST-PATH: Simple navigation commands ("open github", "go to youtube")
-    const simpleNavMatch = command.match(/^(open|go to|navigate to|visit|goto)\s+(.+?)$/i);
-    if (simpleNavMatch) {
-      const target = simpleNavMatch[2].trim().toLowerCase();
-      
-      // Check if it's a common site
-      const commonUrl = COMMON_SITES[target];
-      if (commonUrl) {
-        setIsExecuting(true);
-        try {
-          addEntry('info', `🚀 Opening ${target}...`);
-          const navResult = await window.browser?.navigate(commonUrl);
-          if (navResult?.success) {
-            addEntry('result', `Navigated to ${commonUrl}`);
-          } else {
-            addEntry('error', navResult?.error || 'Navigation failed');
-          }
-          return;
-        } catch (err) {
-          addEntry('error', err instanceof Error ? err.message : String(err));
-          return;
-        } finally {
-          setIsExecuting(false);
-        }
-      }
-      
-      // Check if it looks like a URL
-      if (target.includes('.') || target.startsWith('http://') || target.startsWith('https://')) {
-        setIsExecuting(true);
-        try {
-          const url = target.startsWith('http') ? target : `https://${target}`;
-          addEntry('info', `🚀 Opening ${url}...`);
-          const navResult = await window.browser?.navigate(url);
-          if (navResult?.success) {
-            addEntry('result', `Navigated to ${url}`);
-          } else {
-            addEntry('error', navResult?.error || 'Navigation failed');
-          }
-          return;
-        } catch (err) {
-          addEntry('error', err instanceof Error ? err.message : String(err));
-          return;
-        } finally {
-          setIsExecuting(false);
-        }
-      }
-    }
-
-    // Check for agentic mode (prefix with /agent or @agent)
-    // Also auto-detect complex requests that need the agent pipeline
-    const explicitAgentMode = command.startsWith('/agent ') || command.startsWith('@agent ');
-    const complexPattern = /^(find|search|summarize|explain|analyze|what|how|why|tell me|show me)\s+/i;
-    const isAgentMode = explicitAgentMode || complexPattern.test(command);
-    const actualCommand = explicitAgentMode ? command.replace(/^[@/]agent\s+/, '') : command;
-
-    // Direct execution (no confirmation)
+    // Unified execution path - All roads lead to InterleavedExecutor (Parse -> Plan -> Execute -> Evaluate)
     setIsExecuting(true);
     try {
-      // Use agentic pipeline for /agent commands
-      if (isAgentMode) {
-        const result = await (window.terminal as any)?.agent(actualCommand);
-        if (result?.success) {
-          addEntry('result', result.result);
-        } else {
-          addEntry('error', result?.error || 'Agent pipeline failed');
-        }
-        return;
-      }
+      const result = await window.terminal?.run(command);
 
-      const result = await window.terminal?.run(actualCommand);
-      
       if (!result) {
         addEntry('error', 'Terminal API not available');
         return;
       }
 
-      if (result.code) {
-        addEntry('code', result.code);
-      }
-
       if (result.success) {
         const formatted = formatResult(result.result);
         addEntry('result', formatted.display, result.result);
-        // Track successful execution for save prompt
-        if (result.code) {
-          setLastSuccessfulExecution({ command, code: result.code });
-          setShowSavePrompt(true);
-        }
       } else {
-        const errorMsg = result.stack || result.error || 'Unknown error';
+        const errorMsg = result.error || 'Unknown error';
         addEntry('error', errorMsg);
       }
     } catch (err) {
@@ -560,14 +462,14 @@ export function TerminalPanel() {
     }
 
     // Check script library
-    const scriptMatches = scripts.filter(s => 
+    const scriptMatches = scripts.filter(s =>
       s.name.toLowerCase().includes(lowerInput) ||
       s.command.toLowerCase().includes(lowerInput)
     ).map(s => s.command);
     suggestions.push(...scriptMatches);
 
     // Check command history
-    const historyMatches = commandHistory.filter(cmd => 
+    const historyMatches = commandHistory.filter(cmd =>
       cmd.toLowerCase().includes(lowerInput)
     );
     suggestions.push(...historyMatches);
@@ -587,7 +489,7 @@ export function TerminalPanel() {
   // Tab autocomplete - cycle through suggestions or complete
   const handleTabComplete = useCallback(() => {
     if (autocompleteSuggestions.length === 0) return;
-    
+
     if (autocompleteSuggestions.length === 1) {
       setInput(autocompleteSuggestions[0]);
       setAutocompleteSuggestions([]);
@@ -639,8 +541,8 @@ export function TerminalPanel() {
     if (autocompleteSuggestions.length > 0) {
       if (e.key === 'ArrowDown' && !e.ctrlKey) {
         e.preventDefault();
-        const nextIndex = selectedSuggestionIndex < autocompleteSuggestions.length - 1 
-          ? selectedSuggestionIndex + 1 
+        const nextIndex = selectedSuggestionIndex < autocompleteSuggestions.length - 1
+          ? selectedSuggestionIndex + 1
           : 0;
         setSelectedSuggestionIndex(nextIndex);
         setInput(autocompleteSuggestions[nextIndex]);
@@ -648,8 +550,8 @@ export function TerminalPanel() {
       }
       if (e.key === 'ArrowUp' && !e.ctrlKey) {
         e.preventDefault();
-        const prevIndex = selectedSuggestionIndex > 0 
-          ? selectedSuggestionIndex - 1 
+        const prevIndex = selectedSuggestionIndex > 0
+          ? selectedSuggestionIndex - 1
           : autocompleteSuggestions.length - 1;
         setSelectedSuggestionIndex(prevIndex);
         setInput(autocompleteSuggestions[prevIndex]);
@@ -714,7 +616,7 @@ export function TerminalPanel() {
   const exportToCSV = useCallback((data: unknown, filename: string = 'export.csv') => {
     try {
       let rows: any[] = [];
-      
+
       // Handle different data structures
       if (Array.isArray(data)) {
         rows = data;
@@ -767,25 +669,25 @@ export function TerminalPanel() {
   // Parse agent response into sections
   const parseAgentResponse = (content: string) => {
     const sections: { type: 'reasoning' | 'plan' | 'execution' | 'response' | 'timing'; content: string }[] = [];
-    
+
     // Match sections by headers
     const reasoningMatch = content.match(/## 🧠 Reasoning\n([\s\S]*?)(?=## 📋|## ⚡|## 💬|$)/);
     const planMatch = content.match(/## 📋 Plan\n([\s\S]*?)(?=## ⚡|## 💬|$)/);
     const executionMatch = content.match(/## ⚡ Execution\n([\s\S]*?)(?=## 💬|$)/);
     const responseMatch = content.match(/## 💬 Response\n([\s\S]*?)(?=Completed in|$)/);
     const timingMatch = content.match(/(Completed in \d+ms)/);
-    
+
     if (reasoningMatch) sections.push({ type: 'reasoning', content: reasoningMatch[1].trim() });
     if (planMatch) sections.push({ type: 'plan', content: planMatch[1].trim() });
     if (executionMatch) sections.push({ type: 'execution', content: executionMatch[1].trim() });
     if (responseMatch) sections.push({ type: 'response', content: responseMatch[1].trim() });
     if (timingMatch) sections.push({ type: 'timing', content: timingMatch[1] });
-    
+
     // If no sections found, treat entire content as response
     if (sections.length === 0) {
       sections.push({ type: 'response', content });
     }
-    
+
     return sections;
   };
 
@@ -825,7 +727,7 @@ export function TerminalPanel() {
         const sections = parseAgentResponse(entry.content);
         const hasStructuredResponse = sections.some(s => s.type !== 'response');
         const canExport = entry.rawResult !== undefined && isExportable(entry.rawResult);
-        
+
         return (
           <div key={entry.id} className="flex items-start gap-2 py-2">
             <div className="w-5 h-5 rounded-full bg-secondary flex items-center justify-center flex-shrink-0 mt-0.5">
@@ -867,7 +769,7 @@ export function TerminalPanel() {
                       </p>
                     </details>
                   )}
-                  
+
                   {/* Collapsible plan + execution */}
                   {(sections.find(s => s.type === 'plan') || sections.find(s => s.type === 'execution')) && (
                     <details className="group">
@@ -896,36 +798,36 @@ export function TerminalPanel() {
                       </div>
                     </details>
                   )}
-                  
+
                   {/* Main response - always visible */}
                   {sections.find(s => s.type === 'response') && (
                     <div className="text-sm text-foreground/90 leading-relaxed">
                       <ReactMarkdown
                         components={{
-                          p: ({children}) => <p className="mb-2 last:mb-0">{children}</p>,
-                          h1: ({children}) => <h1 className="font-semibold text-base mt-3 mb-1 first:mt-0">{children}</h1>,
-                          h2: ({children}) => <h2 className="font-semibold text-sm mt-2 mb-1">{children}</h2>,
-                          h3: ({children}) => <h3 className="font-medium mt-2 mb-1">{children}</h3>,
-                          ul: ({children}) => <ul className="list-disc pl-4 mb-2 space-y-1">{children}</ul>,
-                          ol: ({children}) => <ol className="list-decimal pl-4 mb-2 space-y-1">{children}</ol>,
-                          li: ({children}) => <li className="text-sm">{children}</li>,
-                          code: ({children, className}) => {
+                          p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                          h1: ({ children }) => <h1 className="font-semibold text-base mt-3 mb-1 first:mt-0">{children}</h1>,
+                          h2: ({ children }) => <h2 className="font-semibold text-sm mt-2 mb-1">{children}</h2>,
+                          h3: ({ children }) => <h3 className="font-medium mt-2 mb-1">{children}</h3>,
+                          ul: ({ children }) => <ul className="list-disc pl-4 mb-2 space-y-1">{children}</ul>,
+                          ol: ({ children }) => <ol className="list-decimal pl-4 mb-2 space-y-1">{children}</ol>,
+                          li: ({ children }) => <li className="text-sm">{children}</li>,
+                          code: ({ children, className }) => {
                             const isBlock = className?.includes('language-');
-                            return isBlock 
+                            return isBlock
                               ? <code className="block bg-secondary/50 rounded p-2 text-xs font-mono overflow-x-auto my-2">{children}</code>
                               : <code className="bg-secondary/50 rounded px-1 py-0.5 text-xs font-mono">{children}</code>;
                           },
-                          pre: ({children}) => <>{children}</>,
-                          table: ({children}) => <table className="w-full text-xs border-collapse my-2">{children}</table>,
-                          th: ({children}) => <th className="border border-border/50 px-2 py-1 bg-secondary/30 text-left font-medium">{children}</th>,
-                          td: ({children}) => <td className="border border-border/50 px-2 py-1">{children}</td>,
+                          pre: ({ children }) => <>{children}</>,
+                          table: ({ children }) => <table className="w-full text-xs border-collapse my-2">{children}</table>,
+                          th: ({ children }) => <th className="border border-border/50 px-2 py-1 bg-secondary/30 text-left font-medium">{children}</th>,
+                          td: ({ children }) => <td className="border border-border/50 px-2 py-1">{children}</td>,
                         }}
                       >
                         {sections.find(s => s.type === 'response')?.content || ''}
                       </ReactMarkdown>
                     </div>
                   )}
-                  
+
                   {/* Timing - subtle */}
                   {sections.find(s => s.type === 'timing') && (
                     <div className="text-[10px] text-muted-foreground/40">
@@ -938,8 +840,8 @@ export function TerminalPanel() {
                 <div className="text-sm text-foreground/90 leading-relaxed">
                   <ReactMarkdown
                     components={{
-                      p: ({children}) => <p className="mb-2 last:mb-0">{children}</p>,
-                      code: ({children}) => <code className="bg-secondary/50 rounded px-1 py-0.5 text-xs font-mono">{children}</code>,
+                      p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                      code: ({ children }) => <code className="bg-secondary/50 rounded px-1 py-0.5 text-xs font-mono">{children}</code>,
                     }}
                   >
                     {entry.content}
@@ -1169,7 +1071,7 @@ export function TerminalPanel() {
           </div>
         )}
         {entries.map(renderEntry)}
-        
+
         {/* Executing indicator */}
         {isExecuting && !pendingCode && !isStreaming && (
           <div className="flex flex-col gap-1">
@@ -1321,8 +1223,8 @@ export function TerminalPanel() {
               ))}
             </div>
           )}
-          
-          <input 
+
+          <input
             ref={inputRef}
             className="w-full bg-secondary/50 border border-transparent rounded-md pl-3 pr-10 py-2.5 text-xs focus:outline-none focus:border-primary/30 focus:bg-secondary transition-all placeholder:text-muted-foreground/50"
             placeholder={pendingCode ? "Waiting for confirmation..." : "Type a message..."}
@@ -1331,15 +1233,15 @@ export function TerminalPanel() {
             onKeyDown={handleKeyDown}
             disabled={isExecuting || !!pendingCode}
           />
-          <button 
-            type="submit" 
-            disabled={isExecuting || !input.trim() || !!pendingCode} 
+          <button
+            type="submit"
+            disabled={isExecuting || !input.trim() || !!pendingCode}
             className="absolute right-1 top-1 p-1.5 text-muted-foreground hover:text-primary disabled:opacity-30 transition-colors"
           >
             <Send size={14} />
           </button>
         </form>
-        
+
         {/* Footer controls */}
         <div className="flex items-center justify-between text-[10px] text-muted-foreground mt-2">
           <span>
@@ -1349,7 +1251,7 @@ export function TerminalPanel() {
             )}
           </span>
           <div className="flex items-center gap-2">
-            <button 
+            <button
               onClick={clearTerminal}
               className="p-1 hover:text-foreground hover:bg-secondary/50 rounded transition-colors"
               title="Clear conversation"

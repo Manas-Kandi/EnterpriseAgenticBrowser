@@ -36,6 +36,7 @@ export class RequestParser {
 
   /**
    * Parse using LLM with streaming for reasoning visibility
+   * Uses the enhanced LLMClient with NVIDIA API and kimi-k2-thinking model
    */
   private async parseWithLLM(userRequest: string, onReasoning?: (text: string) => void): Promise<ParsedRequest> {
     const systemPrompt = `You are a request parser for a browser automation agent.
@@ -58,15 +59,22 @@ Return JSON only:
       { role: 'user', content: `Parse this request: "${userRequest}"` }
     ];
 
-    const { reasoning, content, error } = await llmClient.complete(messages, { 
-      timeoutMs: this.timeoutMs,
-      maxTokens: 4096
-    });
-
-    // Emit reasoning if callback provided
-    if (reasoning && onReasoning) {
-      onReasoning(reasoning);
-    }
+    // Use streamWithCallback for real-time reasoning visibility
+    const { reasoning, content, error } = await llmClient.streamWithCallback(
+      messages,
+      (reasoningChunk) => {
+        if (onReasoning) {
+          onReasoning(reasoningChunk);
+        }
+      },
+      () => {
+        // Content callback - we don't need to do anything here
+      },
+      { 
+        timeoutMs: this.timeoutMs,
+        maxTokens: 4096
+      }
+    );
 
     if (error) {
       throw new Error(error);

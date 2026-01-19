@@ -19,11 +19,11 @@ export class BrowserKernel {
   getAllTabs(): TabHandle[] {
     const activeTabId = browserTargetService.getActiveTabId();
     const allWebContents = webContents.getAllWebContents();
-    
+
     const handles: TabHandle[] = [];
-    
-    const webviews = allWebContents.filter(wc => 
-      !wc.isDestroyed() && 
+
+    const webviews = allWebContents.filter(wc =>
+      !wc.isDestroyed() &&
       wc.getType() === 'webview' &&
       !wc.getURL().startsWith('devtools://') &&
       !wc.getURL().includes('localhost:5173')
@@ -32,7 +32,7 @@ export class BrowserKernel {
     webviews.forEach((wc, index) => {
       const url = wc.getURL();
       const title = wc.getTitle();
-      
+
       handles.push({
         tabId: `tab-${wc.id}`,
         url,
@@ -58,43 +58,19 @@ export class BrowserKernel {
    * Execute a command from the terminal
    */
   async executeTerminalCommand(input: string): Promise<ExecutionResult> {
-    const parsed = terminalParser.parse(input);
-    
-    if (parsed.type === 'natural') {
-      // For natural language, we currently fall back to active tab execution
-      // This will be enhanced when wired to the 4-stage pipeline
-      const script = `return "Natural language processing for: ${parsed.raw}";`;
-      return codeExecutorService.execute(script);
-    }
+    // Strategy: Route all commands through the standard 4-stage pipeline (Parse -> Plan -> Execute -> Evaluate)
+    // for adaptive reasoning and transparency.
 
-    // Structured command handling
-    const code = this.buildScriptFromCommand(parsed.action, parsed.args);
-    
-    if (parsed.target.type === 'all') {
-      const results = await this.executeInAll(code);
-      return {
-        success: true,
-        result: results,
-        duration: 0
-      };
-    }
+    // Lazy import to avoid circular dependencies if any
+    const { interleavedExecutor } = require('./InterleavedExecutor');
 
-    let tabId: string | undefined;
-    if (parsed.target.type === 'index') {
-      const tab = this.getTabByIndex(parsed.target.value as number);
-      tabId = tab?.tabId;
-    } else if (parsed.target.type === 'active') {
-      // default behavior for active tab
-    } else if (parsed.target.type === 'match') {
-      const tabs = this.getAllTabs();
-      const match = tabs.find(t => 
-        t.url.includes(parsed.target.value as string) || 
-        t.title.includes(parsed.target.value as string)
-      );
-      tabId = match?.tabId;
-    }
+    const result = await interleavedExecutor.execute(input);
 
-    return codeExecutorService.execute(code, { tabId });
+    return {
+      success: result.success,
+      result: result.results,
+      duration: 0 // Handled within steps
+    };
   }
 
   private buildScriptFromCommand(action: string, args: string[]): string {
@@ -125,7 +101,7 @@ export class BrowserKernel {
   async executeInAll(code: string): Promise<Record<string, ExecutionResult>> {
     const tabs = this.getAllTabs();
     const results: Record<string, ExecutionResult> = {};
-    
+
     const promises = tabs.map(async (tab) => {
       const result = await codeExecutorService.execute(code, { tabId: tab.tabId });
       results[tab.tabId] = result;
@@ -172,13 +148,13 @@ export class BrowserKernel {
     `;
     const results = await this.executeInAll(script);
     const final: Record<string, any[]> = {};
-    
+
     for (const [tabId, res] of Object.entries(results)) {
       if (res.success && Array.isArray(res.result)) {
         final[tabId] = res.result;
       }
     }
-    
+
     return final;
   }
 }

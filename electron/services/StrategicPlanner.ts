@@ -44,6 +44,7 @@ export class StrategicPlanner {
 
   /**
    * Plan using LLM with streaming
+   * Uses the enhanced LLMClient with NVIDIA API and kimi-k2-thinking model
    */
   private async planWithLLM(
     request: ParsedRequest,
@@ -54,24 +55,23 @@ export class StrategicPlanner {
 Given a user's goal and current browser state, generate a sequence of terminal commands.
 
 Available commands:
-- navigate <url> - Go to a URL
-- click <selector_or_text> - Click an element
-- type <selector> "<text>" - Type text into an input
-- extract <what_to_extract> - Extract data from the page
-- wait <ms> - Wait for a duration
+- navigate <url> - Go to a URL (e.g., navigate https://youtube.com)
+- click <selector_or_text> - Click an element (e.g., click button#search or click "Submit")
+- type <selector> "<text>" - Type text into an input (e.g., type input[name="q"] "search term")
+- extract <what_to_extract> - Extract data from the page (e.g., extract the first video title)
+- wait <ms> - Wait for a duration (e.g., wait 2000)
 - scroll <direction> - Scroll the page (up/down/top/bottom)
 
 Rules:
-1. Be specific with selectors when possible
-2. Include waits after navigation if needed
+1. Use CSS selectors when possible (e.g., input[name="search_query"], button#search-icon-legacy)
+2. Include wait 1500-2000 after navigation for page load
 3. Break complex tasks into atomic steps
 4. Each command should do ONE thing
 
-Return JSON only:
-{
-  "commands": ["command 1", "command 2", ...],
-  "reasoning": "Why this sequence will accomplish the goal"
-}`;
+IMPORTANT: You MUST return a valid JSON object. Do not just think - output the JSON.
+
+Output format (JSON only, no markdown):
+{"commands": ["command 1", "command 2"], "reasoning": "brief explanation"}`;
 
     const userPrompt = `Goal: ${request.primaryGoal}
 Intent: ${request.intent}
@@ -90,14 +90,22 @@ Generate the command sequence:`;
       { role: 'user', content: userPrompt }
     ];
 
-    const { reasoning, content, error } = await llmClient.complete(messages, {
-      timeoutMs: this.timeoutMs,
-      maxTokens: 4096
-    });
-
-    if (reasoning && onReasoning) {
-      onReasoning(reasoning);
-    }
+    // Use streamWithCallback for real-time reasoning visibility
+    const { reasoning, content, error } = await llmClient.streamWithCallback(
+      messages,
+      (reasoningChunk) => {
+        if (onReasoning) {
+          onReasoning(reasoningChunk);
+        }
+      },
+      () => {
+        // Content callback - we don't need to do anything here
+      },
+      {
+        timeoutMs: this.timeoutMs,
+        maxTokens: 4096
+      }
+    );
 
     if (error) {
       throw new Error(error);
@@ -116,86 +124,36 @@ Generate the command sequence:`;
   }
 
   /**
-   * Fallback planner using heuristics (no LLM)
+   * Fallback planner - minimal, general-purpose
+   * Only used when LLM fails. Extracts URL and creates basic navigation + extraction.
    */
   private fallbackPlan(request: ParsedRequest, browserState: BrowserState): CommandPlan {
     const commands: string[] = [];
     const lower = request.rawRequest.toLowerCase();
 
-    // Navigation patterns
-    if (request.intent === 'navigate') {
-      const url = this.extractUrl(lower);
-      if (url) {
-        commands.push(`navigate ${url}`);
-      }
+    // Try to extract a URL from the request
+    const url = this.extractUrl(lower);
+    if (url && !browserState.url.includes(new URL(url).hostname)) {
+      commands.push(`navigate ${url}`);
+      commands.push('wait 2000');
     }
 
-    // Hacker News specific
-    if (lower.includes('hacker news') || lower.includes('hn')) {
-      if (!browserState.url.includes('ycombinator')) {
-        commands.push('navigate https://news.ycombinator.com');
-        commands.push('wait 1000');
-      }
-      
-      if (lower.includes('top story') || lower.includes('first story')) {
-        commands.push('extract the title and link of the first story');
-      } else if (lower.includes('stories') || lower.includes('headlines')) {
-        const count = request.constraints.count || 5;
-        commands.push(`extract the titles and links of the top ${count} stories`);
-      }
-    }
-
-    // GitHub specific
-    if (lower.includes('github')) {
-      const userMatch = lower.match(/github\s+([a-z0-9_-]+)/i);
-      if (userMatch) {
-        commands.push(`navigate https://github.com/${userMatch[1]}`);
-        commands.push('wait 1000');
-        if (lower.includes('repos') || lower.includes('repositories')) {
-          commands.push('extract list of repositories');
-        }
-      }
-    }
-
-    // Google search
-    if (lower.includes('google') || lower.includes('search for')) {
-      const searchMatch = lower.match(/(?:search for|google)\s+["']?([^"']+)["']?/i);
-      if (searchMatch) {
-        const query = encodeURIComponent(searchMatch[1].trim());
-        commands.push(`navigate https://google.com/search?q=${query}`);
-        commands.push('wait 1500');
-        commands.push('extract search results');
-      }
-    }
-
-    // Amazon specific
-    if (lower.includes('amazon')) {
-      if (!browserState.url.includes('amazon')) {
-        commands.push('navigate https://amazon.com');
-        commands.push('wait 1500');
-      }
-      const searchMatch = lower.match(/(?:search|for)\s+["']?([^"']+)["']?/i);
-      if (searchMatch) {
-        commands.push(`type #twotabsearchtextbox "${searchMatch[1]}"`);
-        commands.push('click #nav-search-submit-button');
-        commands.push('wait 2000');
-        commands.push('extract product results');
-      }
-    }
-
-    // Generic extraction
-    if (request.intent === 'extract' && commands.length === 0) {
+    // Add extraction based on intent
+    if (request.intent === 'extract' || request.intent === 'search') {
+      commands.push(`extract ${request.primaryGoal}`);
+    } else if (request.intent === 'workflow') {
+      // For workflows, we need the LLM - this fallback is minimal
       commands.push(`extract ${request.primaryGoal}`);
     }
 
-    // If no commands generated, add a generic one
+    // If no commands generated, just extract what the user asked for
     if (commands.length === 0) {
-      commands.push(`execute: ${request.rawRequest}`);
+      commands.push(`extract ${request.primaryGoal}`);
     }
 
     return {
       commands,
-      reasoning: 'Fallback plan based on keyword matching'
+      reasoning: 'Minimal fallback plan - LLM planning failed'
     };
   }
 

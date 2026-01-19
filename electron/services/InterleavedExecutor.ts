@@ -1,6 +1,5 @@
-import { ChatOpenAI } from "@langchain/openai";
-import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { ParsedRequest, requestParser } from './RequestParser';
+import { llmClient } from './LLMClient';
 import { CommandPlan, BrowserState, strategicPlanner } from './StrategicPlanner';
 import { ExecutionStep, CompletionAssessment, taskEvaluator } from './TaskEvaluator';
 import { domContextService } from './DOMContextService';
@@ -31,23 +30,8 @@ export interface ExecutionResult {
 }
 
 export class InterleavedExecutor {
-  private model: ChatOpenAI;
   private maxSteps = 15;
   private onEvent?: ExecutionCallback;
-
-  constructor() {
-    this.model = new ChatOpenAI({
-      configuration: { 
-        baseURL: 'https://integrate.api.nvidia.com/v1', 
-        apiKey: process.env.NVIDIA_API_KEY || 'local' 
-      },
-      modelName: 'moonshotai/kimi-k2-thinking',
-      temperature: 1,
-      maxTokens: 8192,
-      topP: 0.9,
-      streaming: true,
-    });
-  }
 
   setEventCallback(callback: ExecutionCallback) {
     this.onEvent = callback;
@@ -63,7 +47,7 @@ export class InterleavedExecutor {
    */
   async execute(userRequest: string): Promise<ExecutionResult> {
     const steps: ExecutionStep[] = [];
-    
+
     this.emit('parsing', `🧠 Understanding: "${userRequest}"`);
 
     // =========================================================================
@@ -72,7 +56,7 @@ export class InterleavedExecutor {
     const parsed = await requestParser.parse(userRequest, (reasoning) => {
       this.emit('reasoning', reasoning);
     });
-    
+
     this.emit('parsing', `Intent: ${parsed.intent} | Goal: ${parsed.primaryGoal}`);
     this.emit('parsing', `Success Criteria: ${parsed.successCriteria.join(', ')}`);
 
@@ -86,11 +70,11 @@ export class InterleavedExecutor {
     // STEP 3: PLAN - What commands do I need?
     // =========================================================================
     this.emit('planning', '📋 Creating execution plan...');
-    
+
     const plan = await strategicPlanner.plan(parsed, browserState, (reasoning) => {
       this.emit('reasoning', reasoning);
     });
-    
+
     this.emit('planning', `Plan: ${plan.commands.length} commands`);
     plan.commands.forEach((cmd, i) => {
       this.emit('planning', `  ${i + 1}. ${cmd}`);
@@ -100,7 +84,7 @@ export class InterleavedExecutor {
     // STEP 4: INTERLEAVED EXECUTION - Reason → Execute → Evaluate
     // =========================================================================
     let commandIndex = 0;
-    
+
     while (commandIndex < plan.commands.length && steps.length < this.maxSteps) {
       const command = plan.commands[commandIndex];
       const stepNumber = steps.length + 1;
@@ -124,7 +108,7 @@ export class InterleavedExecutor {
 
       // Report result
       if (result.success) {
-        const dataPreview = result.data ? JSON.stringify(result.data).slice(0, 300) : 'Done';
+        const dataPreview = result.data ? (typeof result.data === 'string' ? result.data.slice(0, 300) : JSON.stringify(result.data).slice(0, 300)) : 'Done';
         this.emit('result', `✓ ${dataPreview}`);
       } else {
         this.emit('result', `✗ Error: ${result.error}`);
@@ -151,7 +135,7 @@ export class InterleavedExecutor {
       }
 
       commandIndex++;
-      
+
       // Small delay between steps
       await this.delay(300);
     }
@@ -160,7 +144,7 @@ export class InterleavedExecutor {
     // STEP 5: FINAL EVALUATION
     // =========================================================================
     this.emit('evaluation', '📊 Evaluating task completion...');
-    
+
     const finalBrowserState = await this.getBrowserState();
     const assessment = await taskEvaluator.evaluate(parsed, steps, finalBrowserState, (reasoning) => {
       this.emit('reasoning', reasoning);
@@ -203,54 +187,59 @@ export class InterleavedExecutor {
     const lower = command.toLowerCase().trim();
 
     try {
-      // NAVIGATE
+      // Logic for specific command types
       if (lower.startsWith('navigate ')) {
         const url = command.slice(9).trim();
-        return await this.executeNavigate(url);
+        return this.invokeTool('browser_navigate', { url: this.resolveUrl(url) });
       }
 
-      // CLICK
       if (lower.startsWith('click ')) {
         const target = command.slice(6).trim();
-        return await this.executeClick(target);
+        return this.invokeTool('browser_click', { selector: target });
       }
 
-      // TYPE
       if (lower.startsWith('type ')) {
         const match = command.match(/type\s+(\S+)\s+"([^"]+)"/i);
         if (match) {
-          return await this.executeType(match[1], match[2]);
+          return this.invokeTool('browser_type', { selector: match[1], text: match[2] });
         }
         return { success: false, error: 'Invalid type command format. Use: type <selector> "text"' };
       }
 
-      // EXTRACT
       if (lower.startsWith('extract ')) {
         const what = command.slice(8).trim();
-        return await this.executeExtract(what);
+        return this.executeExtract(what);
       }
 
-      // WAIT
       if (lower.startsWith('wait ')) {
         const ms = parseInt(command.slice(5).trim()) || 1000;
         await this.delay(ms);
         return { success: true, data: { waited: ms } };
       }
 
-      // SCROLL
       if (lower.startsWith('scroll ')) {
         const direction = command.slice(7).trim();
-        return await this.executeScroll(direction);
+        return this.invokeTool('browser_scroll', { direction });
       }
 
-      // EXECUTE (generic code)
       if (lower.startsWith('execute:')) {
         const code = command.slice(8).trim();
-        return await this.executeCode(code);
+        const result = await codeExecutorService.execute(code);
+        return { success: result.success, data: result.result, error: result.error };
       }
 
-      // Unknown command - try to interpret it
-      return await this.executeGeneric(command);
+      // Fallback for unknown commands - try to interpret as click text if it's quoted
+      if (command.startsWith('"') && command.endsWith('"')) {
+        return this.invokeTool('browser_click_text', { text: command.slice(1, -1) });
+      }
+
+      // Try generic search if it looks like one
+      if (lower.startsWith('search ')) {
+        const query = command.slice(7).trim();
+        return this.invokeTool('browser_search', { query });
+      }
+
+      return { success: false, error: `Unknown command: ${command}` };
 
     } catch (err) {
       return {
@@ -261,172 +250,93 @@ export class InterleavedExecutor {
   }
 
   /**
-   * Execute navigation
+   * Helper to invoke a tool from ToolRegistry
    */
-  private async executeNavigate(url: string): Promise<{ success: boolean; data?: any; error?: string }> {
-    // Resolve URL shortcuts
-    const resolvedUrl = this.resolveUrl(url);
-    
-    const tool = toolRegistry.getTool('browser_navigate');
-    if (tool) {
-      try {
-        await tool.execute({ url: resolvedUrl });
-        // Wait for page to load
-        await this.delay(1500);
-        return { success: true, data: { navigatedTo: resolvedUrl } };
-      } catch (err) {
-        return { success: false, error: err instanceof Error ? err.message : String(err) };
+  private async invokeTool(name: string, args: any): Promise<{ success: boolean; data?: any; error?: string }> {
+    try {
+      const tool = toolRegistry.getTool(name);
+      if (!tool) {
+        // Fallback to direct execution if tool not found but we have a name
+        return { success: false, error: `Tool ${name} not found in registry` };
       }
+      const result = await tool.execute(args);
+      return { success: true, data: result };
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
     }
-
-    // Fallback: direct execution
-    const result = await codeExecutorService.execute(`window.location.href = ${JSON.stringify(resolvedUrl)}`);
-    await this.delay(1500);
-    return { success: result.success, data: { navigatedTo: resolvedUrl }, error: result.error };
   }
 
   /**
-   * Execute click
-   */
-  private async executeClick(target: string): Promise<{ success: boolean; data?: any; error?: string }> {
-    // Try as selector first
-    let result = await codeExecutorService.click(target);
-    if (result.success) {
-      return { success: true, data: result.result };
-    }
-
-    // Try finding by text content
-    const textClickCode = `
-      const elements = Array.from(document.querySelectorAll('a, button, [role="button"], [onclick]'));
-      const target = ${JSON.stringify(target.toLowerCase())};
-      const el = elements.find(e => e.textContent?.toLowerCase().includes(target));
-      if (!el) throw new Error('Element not found with text: ${target}');
-      el.click();
-      return { clicked: true, element: el.tagName.toLowerCase(), text: el.textContent?.slice(0, 50) };
-    `;
-    result = await codeExecutorService.execute(textClickCode);
-    return { success: result.success, data: result.result, error: result.error };
-  }
-
-  /**
-   * Execute type
-   */
-  private async executeType(selector: string, text: string): Promise<{ success: boolean; data?: any; error?: string }> {
-    const result = await codeExecutorService.type(selector, text);
-    return { success: result.success, data: result.result, error: result.error };
-  }
-
-  /**
-   * Execute extraction
+   * Execute extraction using LLM to generate the extraction code
    */
   private async executeExtract(what: string): Promise<{ success: boolean; data?: any; error?: string }> {
-    const lower = what.toLowerCase();
+    const browserState = await this.getBrowserState();
 
-    // Hacker News specific extractions
-    if (lower.includes('first story') || lower.includes('top story')) {
-      const code = `
-        const story = document.querySelector('.titleline a, .storylink, .athing .title a');
-        if (!story) throw new Error('No story found');
-        return { title: story.textContent, link: story.href };
-      `;
+    const messages: Array<{ role: 'system' | 'user'; content: string }> = [
+      {
+        role: 'system',
+        content: `You are a browser automation expert. Generate JavaScript code to extract data from a webpage.
+Return ONLY the JavaScript code, no markdown. The code should return the extracted data as a JSON object.`
+      },
+      {
+        role: 'user',
+        content: `Extract: ${what}
+URL: ${browserState.url}
+Title: ${browserState.title}`
+      }
+    ];
+
+    try {
+      const { content } = await llmClient.complete(messages, { timeoutMs: 10000, maxTokens: 2048 });
+      let code = content.trim().replace(/^```(?:javascript|js)?\n?/gm, '').replace(/\n?```$/gm, '').trim();
+
+      if (!code) throw new Error('Failed to generate code');
+
       const result = await codeExecutorService.execute(code);
       return { success: result.success, data: result.result, error: result.error };
-    }
-
-    if (lower.includes('stories') || lower.includes('headlines')) {
-      const countMatch = lower.match(/(\d+)/);
-      const count = countMatch ? parseInt(countMatch[1]) : 10;
-      const code = `
-        const stories = Array.from(document.querySelectorAll('.titleline a, .storylink, .athing .title a')).slice(0, ${count});
-        return stories.map(s => ({ title: s.textContent, link: s.href }));
-      `;
-      const result = await codeExecutorService.execute(code);
+    } catch (err) {
+      // Fallback: generic text extraction
+      const result = await codeExecutorService.execute(`return document.body.innerText.slice(0, 5000)`);
       return { success: result.success, data: result.result, error: result.error };
     }
-
-    // Generic extraction - get main content
-    const code = `
-      const main = document.querySelector('main, article, .content, #content, .main');
-      const text = (main || document.body).innerText.slice(0, 3000);
-      return { content: text, url: window.location.href, title: document.title };
-    `;
-    const result = await codeExecutorService.execute(code);
-    return { success: result.success, data: result.result, error: result.error };
   }
 
   /**
-   * Execute scroll
-   */
-  private async executeScroll(direction: string): Promise<{ success: boolean; data?: any; error?: string }> {
-    const tool = toolRegistry.getTool('browser_scroll');
-    if (tool) {
-      await tool.execute({ direction });
-      return { success: true, data: { scrolled: direction } };
-    }
-
-    const scrollAmount = direction === 'up' ? -500 : direction === 'down' ? 500 : 0;
-    await codeExecutorService.execute(`window.scrollBy(0, ${scrollAmount})`);
-    return { success: true, data: { scrolled: direction } };
-  }
-
-  /**
-   * Execute generic code
-   */
-  private async executeCode(code: string): Promise<{ success: boolean; data?: any; error?: string }> {
-    const result = await codeExecutorService.execute(code);
-    return { success: result.success, data: result.result, error: result.error };
-  }
-
-  /**
-   * Execute generic command (try to interpret)
-   */
-  private async executeGeneric(command: string): Promise<{ success: boolean; data?: any; error?: string }> {
-    // Try to generate code for this command
-    const code = `
-      // Attempting to execute: ${command}
-      return { executed: true, command: ${JSON.stringify(command)} };
-    `;
-    const result = await codeExecutorService.execute(code);
-    return { success: result.success, data: result.result, error: result.error };
-  }
-
-  /**
-   * Reason about a failure and suggest adaptation
+   * Reason about a failure and suggest adaptation using LLM
    */
   private async reasonAboutFailure(
     command: string,
     error: string,
     browserState: BrowserState
   ): Promise<{ shouldRetry: boolean; alternativeCommand?: string; reasoning: string }> {
-    // Simple heuristic adaptations
-    const lower = command.toLowerCase();
-
-    // Selector not found - try alternative
-    if (error.includes('not found') || error.includes('null')) {
-      if (lower.includes('click')) {
-        // Try clicking by text instead
-        const target = command.replace(/click\s+/i, '').trim();
-        return {
-          shouldRetry: true,
-          alternativeCommand: `click "${target}"`,
-          reasoning: `Selector failed, trying to find element by text content`
-        };
+    const messages: Array<{ role: 'system' | 'user'; content: string }> = [
+      {
+        role: 'system',
+        content: `You are a browser automation expert. A command failed. Suggest ONE alternative command.
+Return JSON only: {"shouldRetry": true, "alternativeCommand": "command here", "reasoning": "why"}`
+      },
+      {
+        role: 'user',
+        content: `Failed: ${command} | Error: ${error} | URL: ${browserState.url}`
       }
-    }
+    ];
 
-    // Navigation failed - maybe need to wait
-    if (lower.includes('navigate') && error.includes('timeout')) {
-      return {
-        shouldRetry: true,
-        alternativeCommand: 'wait 2000',
-        reasoning: 'Navigation timed out, waiting for page to load'
-      };
-    }
+    try {
+      const { content } = await llmClient.complete(messages, { timeoutMs: 8000, maxTokens: 1024 });
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        if (parsed.alternativeCommand && parsed.alternativeCommand !== command) {
+          return {
+            shouldRetry: parsed.shouldRetry ?? false,
+            alternativeCommand: parsed.alternativeCommand,
+            reasoning: parsed.reasoning || 'LLM suggested alternative'
+          };
+        }
+      }
+    } catch (err) { }
 
-    return {
-      shouldRetry: false,
-      reasoning: `Cannot adapt to error: ${error}`
-    };
+    return { shouldRetry: false, reasoning: `Cannot adapt: ${error}` };
   }
 
   /**
@@ -434,36 +344,18 @@ export class InterleavedExecutor {
    */
   private resolveUrl(url: string): string {
     const shortcuts: Record<string, string> = {
-      'hacker news': 'https://news.ycombinator.com',
-      'hackernews': 'https://news.ycombinator.com',
       'hn': 'https://news.ycombinator.com',
       'github': 'https://github.com',
       'google': 'https://google.com',
       'youtube': 'https://youtube.com',
-      'twitter': 'https://twitter.com',
-      'reddit': 'https://reddit.com',
       'amazon': 'https://amazon.com',
     };
 
     const lower = url.toLowerCase();
-    for (const [key, value] of Object.entries(shortcuts)) {
-      if (lower === key || lower.startsWith(key + ' ') || lower.startsWith(key + '/')) {
-        const rest = url.slice(key.length).trim();
-        return rest ? `${value}/${rest.replace(/^\//, '')}` : value;
-      }
-    }
-
-    // Already a URL
-    if (url.startsWith('http://') || url.startsWith('https://')) {
-      return url;
-    }
-
-    // Looks like a domain
-    if (url.includes('.')) {
-      return `https://${url}`;
-    }
-
-    return `https://${url}`;
+    if (shortcuts[lower]) return shortcuts[lower];
+    if (url.startsWith('http')) return url;
+    if (url.includes('.')) return `https://${url}`;
+    return `https://www.google.com/search?q=${encodeURIComponent(url)}`;
   }
 
   private delay(ms: number): Promise<void> {
