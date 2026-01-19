@@ -198,6 +198,13 @@ export class LLMClient {
           if (rawJsonMatch) {
             content = rawJsonMatch[1].trim();
             console.log(`[LLMClient] Extracted JSON from reasoning (raw): ${content.length} chars`);
+          } else {
+            // NEW FALLBACK: Try to find ANY JSON object in reasoning if the previous patterns failed
+            const anyJsonMatch = reasoning.match(/\{[\s\S]*\}/);
+            if (anyJsonMatch) {
+              content = anyJsonMatch[0].trim();
+              console.log(`[LLMClient] Extracted JSON from reasoning (any): ${content.length} chars`);
+            }
           }
         }
       }
@@ -268,6 +275,18 @@ export class LLMClient {
 
       clearTimeout(timeoutId);
       console.log(`[LLMClient] Streaming completed. Reasoning: ${reasoning.length} chars, Content: ${content.length} chars`);
+
+      // CRITICAL FIX: Extract JSON from reasoning if content is empty (for streamWithCallback)
+      if (!content.trim() && reasoning) {
+        const jsonMatch = reasoning.match(/```json\s*([\s\S]*?)```/) || 
+                         reasoning.match(/(\{[\s\S]*\})\s*$/) ||
+                         reasoning.match(/\{[\s\S]*\}/);
+        
+        if (jsonMatch) {
+          content = (jsonMatch[1] || jsonMatch[0]).trim();
+          console.log(`[LLMClient] Extracted JSON from reasoning (streamWithCallback): ${content.length} chars`);
+        }
+      }
 
       return { reasoning, content };
     } catch (err) {

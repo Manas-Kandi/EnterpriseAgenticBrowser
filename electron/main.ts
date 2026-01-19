@@ -742,7 +742,9 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('terminal:generateCode', async (_, command: string, options?: { includeExplanation?: boolean }) => {
     const { codeGeneratorService } = await import('./services/CodeGeneratorService');
-    return codeGeneratorService.generate(command, undefined, options);
+    // CodeGeneratorService.generate only accepts (command, context).
+    // Mapping options to the service call if needed, or just passing command.
+    return codeGeneratorService.generate(command);
   });
 
   ipcMain.handle('terminal:execute', async (_, input: string) => {
@@ -794,11 +796,30 @@ app.whenReady().then(async () => {
   ipcMain.handle('terminal:run', async (event, command: string) => {
     const { interleavedExecutor } = await import('./services/InterleavedExecutor');
     
+    let reasoningBuffer = '';
+
     // Set up event callback to stream steps to the terminal
     interleavedExecutor.setEventCallback((evt) => {
-      // Map executor events to terminal step format
+      // Buffer reasoning to avoid token-by-token staircase effect
+      if (evt.type === 'reasoning') {
+        reasoningBuffer += evt.content;
+        
+        // If we have a word boundary or a newline, flush the buffer
+        if (/[ \n\r\t]/.test(evt.content) || reasoningBuffer.length > 50) {
+          const contentToEmit = reasoningBuffer;
+          reasoningBuffer = '';
+          
+          event.sender.send('terminal:step', {
+            type: 'thought',
+            content: contentToEmit,
+            metadata: { ...evt.data, executorType: 'reasoning', ts: new Date().toISOString() }
+          });
+        }
+        return;
+      }
+
+      // Map other executor events to terminal step format
       const stepType = 
-        evt.type === 'reasoning' ? 'thought' :
         evt.type === 'parsing' ? 'thought' :
         evt.type === 'planning' ? 'thought' :
         evt.type === 'action' ? 'action' :
@@ -826,6 +847,15 @@ app.whenReady().then(async () => {
     } catch (err: any) {
       console.error('[terminal:run] Error:', err);
       return { success: false, error: err.message };
+    } finally {
+      // Flush any remaining reasoning
+      if (reasoningBuffer) {
+        event.sender.send('terminal:step', {
+          type: 'thought',
+          content: reasoningBuffer,
+          metadata: { executorType: 'reasoning', ts: new Date().toISOString() }
+        });
+      }
     }
   });
 

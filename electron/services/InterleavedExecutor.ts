@@ -340,7 +340,7 @@ Return JSON only: {"shouldRetry": true, "alternativeCommand": "command here", "r
   }
 
   /**
-   * Resolve URL shortcuts
+   * Resolve URL shortcuts and clean up malformed LLM URLs
    */
   private resolveUrl(url: string): string {
     const shortcuts: Record<string, string> = {
@@ -351,11 +351,29 @@ Return JSON only: {"shouldRetry": true, "alternativeCommand": "command here", "r
       'amazon': 'https://amazon.com',
     };
 
-    const lower = url.toLowerCase();
+    let cleaned = url.trim();
+    
+    // Fix common LLM "and" suffix or punctuation leakage
+    cleaned = cleaned.replace(/[\/,.!?;:]+and$/i, '');
+    cleaned = cleaned.replace(/[\/,.!?;:]+$/, '');
+
+    const lower = cleaned.toLowerCase();
     if (shortcuts[lower]) return shortcuts[lower];
-    if (url.startsWith('http')) return url;
-    if (url.includes('.')) return `https://${url}`;
-    return `https://www.google.com/search?q=${encodeURIComponent(url)}`;
+    
+    if (cleaned.startsWith('http')) return cleaned;
+    
+    // If it looks like a domain but lacks protocol
+    if (/^[a-z0-9-]+(\.[a-z0-9-]+)+[\/\?#]?.*$/i.test(cleaned)) {
+      return `https://${cleaned}`;
+    }
+    
+    // If it's too long or contains spaces, it's likely instructions, not a URL
+    if (cleaned.includes(' ') || cleaned.length > 100) {
+      console.warn(`[InterleavedExecutor] Rejecting suspicious URL: ${cleaned}`);
+      return 'https://www.google.com';
+    }
+
+    return `https://www.google.com/search?q=${encodeURIComponent(cleaned)}`;
   }
 
   private delay(ms: number): Promise<void> {

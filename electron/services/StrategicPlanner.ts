@@ -133,14 +133,26 @@ Generate the command sequence:`;
 
     // Try to extract a URL from the request
     const url = this.extractUrl(lower);
-    if (url && !browserState.url.includes(new URL(url).hostname)) {
-      commands.push(`navigate ${url}`);
-      commands.push('wait 2000');
+    if (url) {
+      // Validate that the extracted URL doesn't contain suspicious instruction-like patterns
+      const suspiciousPatterns = ['search for', 'extract', 'find', 'look up', 'and', 'then'];
+      const isSuspicious = suspiciousPatterns.some(p => url.toLowerCase().includes(p)) || url.split(' ').length > 2;
+      
+      if (!isSuspicious && !browserState.url.includes(new URL(url).hostname)) {
+        commands.push(`navigate ${url}`);
+        commands.push('wait 2000');
+      }
     }
 
     // Add extraction based on intent
-    if (request.intent === 'extract' || request.intent === 'search') {
+    if (request.intent === 'extract') {
       commands.push(`extract ${request.primaryGoal}`);
+    } else if (request.intent === 'search') {
+      // For search fallback, we need to at least try to type the query
+      // but without the LLM we don't know the selector. 
+      // We'll use a generic search command if available or navigation.
+      const query = request.primaryGoal;
+      commands.push(`search ${query}`);
     } else if (request.intent === 'workflow') {
       // For workflows, we need the LLM - this fallback is minimal
       commands.push(`extract ${request.primaryGoal}`);
